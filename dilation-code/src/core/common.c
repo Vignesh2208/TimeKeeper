@@ -344,7 +344,8 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 		return -1;
 
 	if(hmap_get(&lxc->valid_children, &new_task->pid) != NULL) // child already exists. don't add
-		return 0;
+	{	return 0;
+	}
 
 
 	lxc_schedule_elem * new_element = (lxc_schedule_elem *)kmalloc(sizeof(lxc_schedule_elem), GFP_KERNEL);
@@ -384,8 +385,15 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	spin_lock(&new_task->dialation_lock);
 
 
+	/*new_task->freeze_time = 0;
+	new_task->past_physical_time = lxc->linux_task->past_physical_time;
+	new_task->past_virtual_time = lxc->linux_task->past_virtual_time;
+	new_task->wakeup_time = 0;
+	*/
+
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
 	new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	
 
         dil = new_task->dilation_factor;
 
@@ -399,6 +407,10 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	t = me;
 	n_threads = 0;
 	do {
+
+		bitmap_zero((&t->cpus_allowed)->bits, 8);
+       		cpumask_set_cpu(lxc->cpu_assignment,&t->cpus_allowed);
+
 		n_threads++;
 	} while_each_thread(me, t);
 
@@ -437,6 +449,16 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	new_element->duration_left = base_time_quanta;
 
 	llist_append(&lxc->schedule_queue, new_element); // append to tail of schedule queue.
+
+
+	bitmap_zero((&new_task->cpus_allowed)->bits, 8);
+       	cpumask_set_cpu(lxc->cpu_assignment,&new_task->cpus_allowed);
+
+	struct sched_param sp;
+	sp.sched_priority = 99;
+	sched_setscheduler(new_task, SCHED_RR, &sp);
+
+
 	hmap_put(&lxc->valid_children, &new_element->pid, new_element);
 	
 

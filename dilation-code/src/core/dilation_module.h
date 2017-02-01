@@ -80,6 +80,7 @@ struct dilation_task_struct
 	int cpu_assignment; //-1 if it has been assigned to a CPU yet, else the CPU assignment
 	llist schedule_queue;
 	hashmap valid_children;
+	hashmap sleep_process_lookup;
 	lxc_schedule_elem * last_run;
 	int rr_run_time;
 
@@ -111,6 +112,13 @@ struct select_helper_struct
 	unsigned long n;
 	wait_queue_head_t w_queue;
 	int ret;
+	int done;
+};
+
+struct sleep_helper_struct
+{
+	pid_t process_pid;
+	wait_queue_head_t w_queue;
 	int done;
 };
 
@@ -204,6 +212,11 @@ extern unsigned long **aquire_sys_call_table(void);
 extern asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp);
 extern asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
 extern asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+
+// posix-timing.c
+extern asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+extern asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespec __user * tp);
+
 
 // *** util.c
 extern void send_a_message(int pid);

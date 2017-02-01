@@ -17,8 +17,6 @@
 VERSION {
 	LINUX_2.6 {
 	global:
-		clock_gettime;
-		__vdso_clock_gettime;
 		getcpu;
 		__vdso_getcpu;
 		time;

@@ -31,7 +31,7 @@ extern void set_children_time(struct task_struct *aTask, s64 time);
 extern void set_children_policy(struct task_struct *aTask, int policy, int priority);
 extern void freeze_children(struct task_struct *aTask, s64 time);
 extern int freeze_proc_exp_recurse(struct dilation_task_struct *aTask);
-extern void unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time);
+extern void unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,struct dilation_task_struct * lxc);
 extern int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_time);
 extern void set_children_cpu(struct task_struct *aTask, int cpu);
 extern void clean_exp(void);
