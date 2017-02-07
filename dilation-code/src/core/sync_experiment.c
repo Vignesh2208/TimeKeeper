@@ -337,7 +337,7 @@ void sync_and_freeze() {
        	if (sched_setscheduler(list_node->linux_task, SCHED_RR, &sp) == -1 )
            	printk(KERN_INFO "TimeKeeper: Error setting SCHED_RR %d\n",list_node->linux_task->pid);
         	set_children_time(list_node->linux_task, now);
-		set_children_policy(list_node->linux_task, SCHED_RR, 99);
+		set_children_policy(list_node->linux_task, SCHED_RR, 1);
 
 		if (experiment_type == CS) {
 			//printk(KERN_INFO "TimeKeeper: cpus allowed! : %d \n", list_node->linux_task->cpus_allowed);
@@ -915,11 +915,11 @@ void clean_stopped_containers() {
     struct dilation_task_struct* task;
     struct dilation_task_struct* next_task;
     struct dilation_task_struct* prev_task;
-	struct dilation_task_struct* possible_leader;
+    struct dilation_task_struct* possible_leader;
     int new_highest;
     int did_leader_finish;
 
-	did_leader_finish = 0;
+    did_leader_finish = 0;
     new_highest = -99999;
     possible_leader = NULL;
 	//for every container in the experiment, see if it has finished execution, if yes, clean it up.
@@ -1666,11 +1666,11 @@ int freeze_proc_exp_recurse(struct dilation_task_struct *aTask) {
 Unfreezes all children associated with a container
 ***/
 int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,struct dilation_task_struct * lxc) {
-    struct list_head *list;
-    struct task_struct *taskRecurse;
-    struct dilation_task_struct *dilTask;
-    struct task_struct *me;
-    struct task_struct *t;
+	struct list_head *list;
+	struct task_struct *taskRecurse;
+	struct dilation_task_struct *dilTask;
+	struct task_struct *me;
+	struct task_struct *t;
 	struct poll_helper_struct * task_poll_helper;
 	struct select_helper_struct * task_select_helper;
 
@@ -2063,12 +2063,14 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		t->freeze_time = 0;
 		task_poll_helper->done = 1;
 		wake_up(&task_poll_helper->w_queue);
+		kill(t, SIGCONT, NULL);
 
 	}
 	else if(task_select_helper != NULL){
 		t->freeze_time = 0;
 		task_select_helper->done = 1;
 		wake_up(&task_select_helper->w_queue);
+		kill(t, SIGCONT, NULL);
 	}
 	else if (t->freeze_time > 0 && t->wakeup_time == 0)
    	{	

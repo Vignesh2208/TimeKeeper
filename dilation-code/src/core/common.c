@@ -328,11 +328,11 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	int dilation_factor;
 
 	int dil;
-        s64 temp_proc;
-        s64 temp_high;
-        s32 rem;
+    s64 temp_proc;
+    s64 temp_high;
+    s32 rem;
 	struct task_struct *me;
-        struct task_struct *t;
+    struct task_struct *t;
 	s64 window_duration;
 	s64 expected_increase;
 	int n_threads = 0;
@@ -385,11 +385,11 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	spin_lock(&new_task->dialation_lock);
 
 
-	/*new_task->freeze_time = 0;
-	new_task->past_physical_time = lxc->linux_task->past_physical_time;
-	new_task->past_virtual_time = lxc->linux_task->past_virtual_time;
-	new_task->wakeup_time = 0;
-	*/
+	//new_task->freeze_time = 0;
+	//new_task->past_physical_time = lxc->linux_task->past_physical_time;
+	//new_task->past_virtual_time = lxc->linux_task->past_virtual_time;
+	//new_task->wakeup_time = 0;
+	
 
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
 	new_task->virt_start_time = lxc->linux_task->virt_start_time;
@@ -455,7 +455,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
        	cpumask_set_cpu(lxc->cpu_assignment,&new_task->cpus_allowed);
 
 	struct sched_param sp;
-	sp.sched_priority = 99;
+	sp.sched_priority = 1;
 	sched_setscheduler(new_task, SCHED_RR, &sp);
 
 

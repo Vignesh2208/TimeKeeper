@@ -103,8 +103,8 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	struct sleep_helper_struct * sleep_helper;
 
 	spin_lock(&current->dialation_lock);
-	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
-	{	spin_unlock(&current->dialation_lock);
+	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
+	{		spin_unlock(&current->dialation_lock);
         	list_for_each_safe(pos, n, &exp_list)
         	{
                 	task = list_entry(pos, struct dilation_task_struct, list);
@@ -126,7 +126,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 						return -ENOMEM;
 					}	
 				}
-				set_current_state(TASK_INTERRUPTIBLE);
+				//set_current_state(TASK_INTERRUPTIBLE);
 				init_waitqueue_head(&sleep_helper->w_queue);
 				sleep_helper->done = 0;
 				hmap_put(&task->sleep_process_lookup,&current->pid,sleep_helper);
@@ -137,9 +137,20 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 				printk(KERN_INFO "TimeKeeper : PID : %d, New wake up time : %lld\n",current->pid, current->wakeup_time); 
 				spin_unlock(&current->dialation_lock);
 
-				if(sleep_helper->done == 0)
-				wait_event(sleep_helper->w_queue,sleep_helper->done != 0);
-				//set_current_state(TASK_RUNNING);
+				while(now_new < temp_wakeup_time) {
+					set_current_state(TASK_INTERRUPTIBLE);
+					current->wakeup_time = temp_wakeup_time;
+					if(sleep_helper->done == 0)
+						wait_event(sleep_helper->w_queue,sleep_helper->done != 0);
+					spin_lock(&current->dialation_lock);
+					set_current_state(TASK_RUNNING);
+					sleep_helper->done = 0;
+					if(current->wakeup_time != 0 )
+						current->wakeup_time = temp_wakeup_time;						
+					now_new = get_dilated_time(current);
+					spin_unlock(&current->dialation_lock);
+                }
+				set_current_state(TASK_RUNNING);
 				hmap_remove(&task->sleep_process_lookup, &current->pid);
 				kfree(sleep_helper);
 
@@ -279,11 +290,12 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 				spin_unlock(&current->dialation_lock);
 
 				while(1){
-
+					set_current_state(TASK_INTERRUPTIBLE);
 					now_new = get_dilated_time(current);
 					if(now_new < wakeup_time){
 
-						wait_event(select_helper->w_queue,select_helper->done == 1);
+						if(select_helper->done == 0)
+							wait_event(select_helper->w_queue,select_helper->done == 1);
 						set_current_state(TASK_RUNNING);
 						
 						spin_lock(&current->dialation_lock);
@@ -365,7 +377,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	s64 nsecs_to_sleep;
 
 	
-	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs >= 0){
+	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs > 0){
 	
 
 		list_for_each_safe(pos, n, &exp_list)

@@ -247,7 +247,7 @@ int __init my_module_init(void)
 	//sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
 
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
-	//sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
+	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
 	write_cr0(original_cr0);
 	
 	//Wait to stop loop_task

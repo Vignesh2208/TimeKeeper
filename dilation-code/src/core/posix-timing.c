@@ -34,6 +34,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	s64 real_running_time;
 	s64 dilated_running_time;
 	current_task = current;
+	struct sleep_helper_struct * sleep_helper;
 
 	spin_lock(&current->dialation_lock);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
@@ -44,25 +45,48 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 			if (find_children_info(task->linux_task, current->pid) == 1) { // I think it checks if the curret task belongs to the list of tasks in the experiment (or their children)
 
 				spin_lock(&current->dialation_lock);				
-                	        now_new = get_dilated_time(current);
+                now_new = get_dilated_time(current);
+				dilTask = container_of(&current_task, struct dilation_task_struct, linux_task);
 
 				if (flags & TIMER_ABSTIME)
 					current->wakeup_time = timespec_to_ns(rqtp);
 				else
 					current->wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale; 
+
+                sleep_helper = hmap_get(&task->sleep_process_lookup, &current->pid);
+				if(sleep_helper == NULL){
+					sleep_helper = kmalloc(sizeof(struct sleep_helper_struct), GFP_KERNEL);
+					if(sleep_helper == NULL){
+						printk(KERN_INFO "TimeKeeper : Sleep Process NOMEM");
+						return -ENOMEM;
+					}	
+				}
+				//set_current_state(TASK_INTERRUPTIBLE);
+				init_waitqueue_head(&sleep_helper->w_queue);
+				sleep_helper->done = 0;
+				hmap_put(&task->sleep_process_lookup,&current->pid,sleep_helper);
+				//current->freeze_time = now_new;
+
+				//current->wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale;
+				s64 temp_wakeup_time = current->wakeup_time;
+				printk(KERN_INFO "TimeKeeper : PID : %d, New wake up time : %lld\n",current->pid, current->wakeup_time); 
 				spin_unlock(&current->dialation_lock);
 
-				printk(KERN_INFO "TimeKeeper : PID : %d, New wake up time : %lld\n",current->pid, current->wakeup_time);
+				if(sleep_helper->done == 0)
+					wait_event(sleep_helper->w_queue,sleep_helper->done != 0);
+				set_current_state(TASK_RUNNING);
+				hmap_remove(&task->sleep_process_lookup, &current->pid);
+				kfree(sleep_helper);
+				
 
-				dilTask = container_of(&current_task, struct dilation_task_struct, linux_task);
-				kill(current, SIGSTOP, dilTask); // I think the dilation Task of the container (which was running the current task) will wake up the task using some timer.
+				//kill(current, SIGSTOP, dilTask); 
 				return 0;
 			} //end if
         	} //end for loop
 	} //end if
 	spin_unlock(&current->dialation_lock);
 
-        return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
+    return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
 
 }
 

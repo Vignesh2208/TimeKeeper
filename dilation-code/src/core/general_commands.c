@@ -224,7 +224,7 @@ void change_dilation(int pid, int new_dilation) {
         s64 real_running_time, dilated_running_time, now;
         s32 rem;
         aTask = find_task_by_pid(pid);
-	if (aTask != NULL) {
+		if (aTask != NULL) {
         	do_gettimeofday(&now_timeval);
         	now = timeval_to_ns(&now_timeval);
         	//if has not been dilated before
@@ -244,7 +244,7 @@ void change_dilation(int pid, int new_dilation) {
 	        aTask->past_physical_time = real_running_time;
 	        aTask->past_virtual_time = dilated_running_time;
 	        aTask->dilation_factor = new_dilation;
-   		printk(KERN_INFO "TimeKeeper: Dilating new process %d %d %lld %lld\n", pid, new_dilation, real_running_time, dilated_running_time);
+   			printk(KERN_INFO "TimeKeeper: Dilating new process %d %d %lld %lld\n", pid, new_dilation, real_running_time, dilated_running_time);
 	}
 }
 // set dilation factor of all tasks in experiment list starting with the main task whose pid is given. If the exp is not running, recursilvely change the dilation factor of all children of the given pid.
@@ -252,16 +252,16 @@ void dilate_recurse(int pid, int new_dilation) {
 	struct task_struct *aTask;
 	struct dilation_task_struct* list_node;
 	struct list_head *pos;
-        struct list_head *n;
+    struct list_head *n;
 	aTask = find_task_by_pid(pid);
-        if (aTask != NULL)
+    if (aTask != NULL)
 	{
 		//see if the main task is a part of the experiment.
 		//TODO: does not handle case where dilation changes of a container BEFORE the experiment starts but after it was
 			//added to the experiment - should not really happen ever right?
 		if (experiment_stopped == RUNNING)
 		{ //if the experiment is running
-		mutex_lock(&exp_mutex);
+			mutex_lock(&exp_mutex);
 			list_for_each_safe(pos, n, &exp_list)
         		{
                 		list_node = list_entry(pos, struct dilation_task_struct, list);
@@ -271,7 +271,7 @@ void dilate_recurse(int pid, int new_dilation) {
 					dilation_change = 1;
 				}
 			}
-		mutex_unlock(&exp_mutex);
+			mutex_unlock(&exp_mutex);
 		}
 		else {
         		change_dilation(pid, new_dilation);
@@ -292,7 +292,7 @@ void dilate_proc_recurse(char *write_buffer) {
                 value += get_next_value(write_buffer + value);
                 new_dilation = atoi(write_buffer + value) * -1;
         }
-	dilate_recurse(pid, new_dilation);
+		dilate_recurse(pid, new_dilation);
 }
 
 /***
