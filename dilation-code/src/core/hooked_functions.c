@@ -4,19 +4,18 @@
 /*
 Contains the code for acquiring the syscall table, as well as the 4 system calls Timekeeper currently hooks.
 */
-
 unsigned long **aquire_sys_call_table(void);
+
+
 asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp);
 asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
-
 asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
 asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
 asmlinkage int (*ref_sys_poll_dialated)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
-
-
 asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+
 
 extern struct list_head exp_list;
 //struct poll_list;
@@ -51,9 +50,11 @@ s64 get_dilated_time(struct task_struct * task)
 	s64 now = timeval_to_ns(&tv);
 
 	if(task->virt_start_time != 0){
-		if (task->group_leader != task) { //use virtual time of the leader thread
-                       	task = task->group_leader;
-               	}
+
+		/* use virtual time of the leader thread */
+		if (task->group_leader != task) { 
+           	task = task->group_leader;
+        }
 	
 		s32 rem;
 		s64 real_running_time;
@@ -83,10 +84,10 @@ s64 get_dilated_time(struct task_struct * task)
 
 }
 
-/*
+/***
 Hooks the sleep system call, so the process will wake up when it reaches the experiment virtual time,
 not the system time
-*/
+***/
 asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp) {
 	struct list_head *pos;
 	struct list_head *n;
@@ -108,8 +109,8 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
         	list_for_each_safe(pos, n, &exp_list)
         	{
                 	task = list_entry(pos, struct dilation_task_struct, list);
-			if (find_children_info(task->linux_task, current->pid) == 1) { // I think it checks if the curret task belongs to the list of tasks in the experiment (or their children)
-	        	        do_gettimeofday(&ktv);
+			if (find_children_info(task->linux_task, current->pid) == 1) { 
+	        	do_gettimeofday(&ktv);
 				now = timeval_to_ns(&ktv);
 
 				spin_lock(&current->dialation_lock);				
@@ -118,23 +119,23 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 				dilTask = container_of(&current_task, struct dilation_task_struct, linux_task);
 
 				
-				sleep_helper = hmap_get(&task->sleep_process_lookup, &current->pid);
+				sleep_helper = hmap_get(&sleep_process_lookup, &current->pid);
 				if(sleep_helper == NULL){
 					sleep_helper = kmalloc(sizeof(struct sleep_helper_struct), GFP_KERNEL);
 					if(sleep_helper == NULL){
-						printk(KERN_INFO "TimeKeeper : Sleep Process NOMEM");
+						printk(KERN_INFO "TimeKeeper: Sleep New: Sleep Process NOMEM");
 						return -ENOMEM;
 					}	
 				}
 				//set_current_state(TASK_INTERRUPTIBLE);
 				init_waitqueue_head(&sleep_helper->w_queue);
 				sleep_helper->done = 0;
-				hmap_put(&task->sleep_process_lookup,&current->pid,sleep_helper);
-				//current->freeze_time = now_new;
+				hmap_put(&sleep_process_lookup,&current->pid,sleep_helper);
+				
 
 				current->wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale;
 				s64 temp_wakeup_time = current->wakeup_time;
-				printk(KERN_INFO "TimeKeeper : PID : %d, New wake up time : %lld\n",current->pid, current->wakeup_time); 
+				printk(KERN_INFO "TimeKeeper: Sleep New: PID : %d, New wake up time : %lld\n",current->pid, current->wakeup_time); 
 				spin_unlock(&current->dialation_lock);
 
 				while(now_new < temp_wakeup_time) {
@@ -151,27 +152,25 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 					spin_unlock(&current->dialation_lock);
                 }
 				set_current_state(TASK_RUNNING);
-				hmap_remove(&task->sleep_process_lookup, &current->pid);
+				hmap_remove(&sleep_process_lookup, &current->pid);
 				kfree(sleep_helper);
 
-				printk(KERN_INFO "TimeKeeper : PID : %d, Woke up at : %lld\n",current->pid, get_dilated_time(current)); 
+				printk(KERN_INFO "TimeKeeper: Sleep New: PID : %d, Woke up at : %lld\n",current->pid, get_dilated_time(current)); 
 				
-
-				//kill(current, SIGSTOP, dilTask); 
 				return 0;
-			} //end if
-        	} //end for loop
-	} //end if
+			} 
+        	} 
+	} 
 	spin_unlock(&current->dialation_lock);
 
-        return ref_sys_sleep(rqtp,rmtp);
+    return ref_sys_sleep(rqtp,rmtp);
 }
 
 
 
 asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp){
 
-	printk(KERN_INFO "TimeKeeper : Calling Ref select PID : %d\n",current->pid);
+	printk(KERN_INFO "TimeKeeper: Sys Select: PID : %d\n",current->pid);
 
 	struct list_head *pos;
 	struct list_head *n;
@@ -201,9 +200,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	
 
 	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && tvp != NULL){	
-		//list_for_each_safe(pos, n, &exp_list){
-	        //        task = list_entry(pos, struct dilation_task_struct, list);
-		//	if (find_children_info(task->linux_task, current->pid) == 1) {
+		
 				if (copy_from_user(&tv, tvp, sizeof(tv)))
 					return -EFAULT;
 
@@ -280,12 +277,11 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 				spin_lock(&current->dialation_lock);
 				now_new = get_dilated_time(current);
 				current->freeze_time = 0;
+
 				s64 wakeup_time;
 				wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
-				printk(KERN_INFO "TimeKeeper : Select Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
-				printk(KERN_INFO "TimeKeeper : Select Process Waiting %d. Curr time %lld, Wakeup time %lld",current->pid,now_new,current->wakeup_time);				
-				select_helper->n = k;	
-				printk(KERN_INFO "TimeKeeper : Select nfds = %lu\n",select_helper->n);
+				printk(KERN_INFO "TimeKeeper: Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
+
 				hmap_put(&select_process_lookup, &current->pid, select_helper);
 				spin_unlock(&current->dialation_lock);
 
@@ -321,7 +317,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 				}
 				
 				
-				printk(KERN_INFO "TimeKeeper : Resumed Select Process %d\n",current->pid);
+				printk(KERN_INFO "TimeKeeper: Sys Select: Resumed Select Process %d\n",current->pid);
 
 				ret = select_helper->ret;
 				memset(&rtv, 0, sizeof(rtv));
@@ -341,12 +337,8 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 			out_nofds:
 				kfree(select_helper);
-				printk(KERN_INFO "TimeKeeper : Select finished PID %d\n",current->pid);
+				printk(KERN_INFO "TimeKeeper: Sys Select: Select finished PID %d\n",current->pid);
 				return ret;
-
-
-		//	}
-		//}
 	}
 
 	return ref_sys_select(k,inp,outp,exp,tvp);
@@ -381,15 +373,17 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	
 
 		list_for_each_safe(pos, n, &exp_list)
-        	{
-            		task = list_entry(pos, struct dilation_task_struct, list);
+        {
+            task = list_entry(pos, struct dilation_task_struct, list);
 			if (find_children_info(task->linux_task, current->pid) == 1) {
-				printk(KERN_INFO "TimeKeeper : Processing Poll Process %d\n",current->pid);
+				
+				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+					printk(KERN_INFO "TimeKeeper: Sys Poll: Processing Poll Process %d\n",current->pid);
+
 				secs_to_sleep = timeout_msecs / MSEC_PER_SEC;
 				nsecs_to_sleep = (timeout_msecs % MSEC_PER_SEC) * NSEC_PER_MSEC;
-
 				if (nfds > RLIMIT_NOFILE){
-					printk(KERN_INFO "TimeKeeper : Poll Process Invalid");
+					printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Invalid");
 					return -EINVAL;
 				}
 
@@ -398,7 +392,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 				if(poll_helper == NULL){
 					poll_helper = kmalloc(sizeof(struct poll_helper_struct), GFP_KERNEL);
 					if(poll_helper == NULL){
-						printk(KERN_INFO "TimeKeeper : Poll Process NOMEM");
+						printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
 						return -ENOMEM;
 					}
 					
@@ -406,15 +400,15 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 				}
 
 				
-				printk(KERN_INFO "TimeKeeper : Poll Process Allocated Poll Helper %d",current->pid);
+				
 				poll_helper->head = (struct poll_list *) kmalloc(POLL_STACK_ALLOC/sizeof(long), GFP_KERNEL);
 				poll_helper->table = (struct poll_wqueues *) kmalloc(sizeof(struct poll_wqueues), GFP_KERNEL);
 
 				if(poll_helper->head == NULL || poll_helper->table == NULL){
-					printk(KERN_INFO "TimeKeeper : Poll Process NOMEM Here");
+					printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
 					return -ENOMEM;
 				}
-				printk(KERN_INFO "TimeKeeper : Poll Process Allocated Poll Head and Table %d",current->pid);
+				
 
 
 				
@@ -450,7 +444,6 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 						goto out_fds;
 					}
 				}
-				printk(KERN_INFO "TimeKeeper : Poll Process Completed Loop %d",current->pid);	
 				poll_initwait(poll_helper->table);
 
 				do_gettimeofday(&ktv);
@@ -459,12 +452,10 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 				spin_lock(&current->dialation_lock);
 				now_new = get_dilated_time(current);
 				current->freeze_time = 0;
-				//current->wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
+
 				s64 wakeup_time;
 				wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
-
-				printk(KERN_INFO "TimeKeeper : Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
-				printk(KERN_INFO "TimeKeeper : Poll Process Waiting %d. Curr time %lld, Wakeup time %lld",current->pid,now_new,current->wakeup_time);
+				printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
 
 				hmap_put(&poll_process_lookup,&current->pid,poll_helper);			
 				spin_unlock(&current->dialation_lock);
@@ -502,7 +493,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 
 				}
 				
-				printk(KERN_INFO "TimeKeeper : Resumed Poll Process %d\n",current->pid);
+				printk(KERN_INFO "TimeKeeper: Sys Poll: Resumed Poll Process %d\n",current->pid);
 				poll_freewait(poll_helper->table);
 	
 				for (walk = head; walk; walk = walk->next) {
@@ -529,7 +520,9 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 				hmap_remove(&poll_process_lookup, &current->pid);
 				spin_unlock(&current->dialation_lock);
 				kfree(poll_helper);
-				printk(KERN_INFO "TimeKeeper : Poll Process Finished %d",current->pid);
+
+				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+					printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Finished %d",current->pid);
 
 				return err;
 
@@ -538,6 +531,8 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		}
 	}
 	
+    
+
 	return ref_sys_poll(ufds,nfds,timeout_msecs);
 	
 

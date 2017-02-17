@@ -3,7 +3,7 @@
 
 #include "linkedlist.h"
 
-#define DEFAULT_MAP_SIZE 10000
+#define DEFAULT_MAP_SIZE 100
 
 typedef int (*hashFn)(void * item);
 typedef int (*equality_checker_fn)(void * key1, void * key2);

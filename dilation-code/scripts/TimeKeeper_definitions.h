@@ -24,5 +24,7 @@
 #define DEBUG_THREAD_INFO 'R'
 #define DEBUG_SEND_MESSAGE 'S'
 
+#define SET_NETDEVICE_OWNER 'U'
+
 
 #endif

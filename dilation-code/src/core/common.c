@@ -34,21 +34,23 @@ extern struct poll_list {
 };
 extern struct poll_helper_struct;
 extern hashmap poll_process_lookup;
-/*
+
+
+/***
 Wrapper for sending a message to userspace
-*/
+***/
 void send_a_message_proc(char * write_buffer) {
         int pid;
         pid = atoi(write_buffer);
-        printk(KERN_INFO "TimeKeeper : Send a message called from send_a_msg_proc\n");
+        printk(KERN_INFO "TimeKeeper : Send a message proc: called from send_a_msg_proc\n");
         send_a_message(pid);
 }
 
-/*
+/***
 Send a message from the Kernel to Userspace (to let the process know all LXCs have advanced to a
 certain point.
-*/
-    void send_a_message(int pid) {
+***/
+void send_a_message(int pid) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb_out;
     int msg_size;
@@ -62,7 +64,7 @@ certain point.
     if (!skb_out)
     {
 
-        printk(KERN_ERR "Failed to allocate new skb\n");
+        printk(KERN_ERR "Send a message: Failed to allocate new skb\n");
         return;
 
     }
@@ -72,7 +74,7 @@ certain point.
 
     res = nlmsg_unicast(nl_sk, skb_out, pid);
     if (res < 0) {
-        printk(KERN_INFO "TimeKeeper: Error while sending bak to user %d, pid = %d\n", res, pid);
+        printk(KERN_INFO "TimeKeeper: Send a message: Error while sending bak to user %d, pid = %d\n", res, pid);
     }
 }
 
@@ -128,15 +130,15 @@ int kill(struct task_struct *killTask, int sig, struct dilation_task_struct* dil
                 if (dilation_task != NULL)
                 {
                         dilation_task->stopped = -1;
-			printk(KERN_INFO "TimeKeeper: Error sending kill msg for pid %d\n", dilation_task->linux_task->pid);
+						printk(KERN_INFO "TimeKeeper: Kill: Error sending kill msg for pid %d\n", dilation_task->linux_task->pid);
                 }
         }
         return returnVal;
 }
 
-/*
+/***
 Wrapper for printing all children of a process - for debugging
-*/
+***/
 void print_children_info_proc(char *write_buffer) {
 	int pid;
 	struct task_struct* aTask;
@@ -144,7 +146,7 @@ void print_children_info_proc(char *write_buffer) {
 	pid = atoi(write_buffer);
 	aTask = find_task_by_pid(pid);
 	if (aTask != NULL) {
-		printk(KERN_INFO "TimeKeeper: Finding children pids for %d\n", aTask->pid);
+		printk(KERN_INFO "TimeKeeper: Print Children Info Proc: Finding children pids for %d\n", aTask->pid);
 		print_children_info(aTask);
 	}
 }
@@ -157,7 +159,7 @@ void print_children_info_pid(int pid) {
 
         aTask = find_task_by_pid(pid);
         if (aTask != NULL) {
-                printk(KERN_INFO "TimeKeeper: Finding children pids for %d\n", aTask->pid);
+                printk(KERN_INFO "TimeKeeper: Print Children Info PID: Finding children pids for %d\n", aTask->pid);
                 print_children_info(aTask);
         }
 }
@@ -169,7 +171,7 @@ void print_children_info(struct task_struct *aTask) {
         struct list_head *list;
         struct task_struct *taskRecurse;
         if (aTask == NULL) {
-                printk(KERN_INFO "TimeKeeper: Task does not exist\n");
+                printk(KERN_INFO "TimeKeeper: Print Children Info: Task does not exist\n");
                 return;
         }
         if (aTask->pid == 0) {
@@ -182,33 +184,32 @@ void print_children_info(struct task_struct *aTask) {
                 if (taskRecurse == NULL || taskRecurse->pid == 0) {
                         return;
                 }
-		printk("Had child: %d\n",taskRecurse->pid);
                 print_children_info(taskRecurse);
         }
 }
 
 /***
 Given a starting task and pid, searches all children of that task, looking for a matching PID. If we return 1,
-	then there exists a child in this container with that pid, else -1
+then there exists a child in this container with that pid, else -1
 ***/
 int find_children_info(struct task_struct *aTask, int pid) {
-        struct list_head *list;
-        struct task_struct *taskRecurse;
+    struct list_head *list;
+    struct task_struct *taskRecurse;
 	struct task_struct *me;
 	struct task_struct *t;
 
-        if (aTask == NULL) {
-                printk(KERN_INFO "TimeKeeper: Task does not exist\n");
-                return -1;
-        }
-        if (pid == aTask->pid) {
-                printk(KERN_INFO "TimeKeeper: Task exists for this pid : %d in the experiment \n", pid);
-                return 1;
-        }
+    if (aTask == NULL) {
+            printk(KERN_INFO "TimeKeeper: Find Children Info: Task does not exist\n");
+            return -1;
+    }
+    if (pid == aTask->pid) {
+            printk(KERN_INFO "TimeKeeper: Find Children Info: Task exists for this pid : %d in the experiment \n", pid);
+            return 1;
+    }
 
-        if (aTask->pid == 0) {
-                return -1;
-        }
+    if (aTask->pid == 0) {
+            return -1;
+    }
 
 
 	me = aTask;
@@ -221,26 +222,26 @@ int find_children_info(struct task_struct *aTask, int pid) {
 	} while_each_thread(me, t);
 
 
-        list_for_each(list, &aTask->children)
-        {
-                taskRecurse = list_entry(list, struct task_struct, sibling);
-                if (taskRecurse == NULL) {
-                        return -1;
-                }
-		if (taskRecurse->pid == 0) {
-			return -1;
-		}
-    //            printk("Had child: %d\n",taskRecurse->pid);
-               if (find_children_info(taskRecurse, pid) == 1) {
-			return 1;
-		}
-        }
+    list_for_each(list, &aTask->children)
+    {
+            taskRecurse = list_entry(list, struct task_struct, sibling);
+            if (taskRecurse == NULL) {
+                    return -1;
+            }
+			if (taskRecurse->pid == 0) {
+				return -1;
+			}
+			
+           	if (find_children_info(taskRecurse, pid) == 1) {
+				return 1;
+			}
+    }
 	return -1;
 }
 
 
 /***
-Comapres 2 task_structs, outputs things such as the TDF, virt_start_time and so forth
+Compares 2 task_structs, outputs things such as the TDF, virt_start_time and so forth
 ***/
 void print_proc_info(char *write_buffer) {
         int pid,pid2, value;
@@ -266,7 +267,7 @@ void print_proc_info(char *write_buffer) {
         	printk(KERN_INFO "TimeKeeper: ---------------STARTING COMPARE--------------\n");
                 real_running_time = now - aTask->virt_start_time;
                 if (aTask->dilation_factor > 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - aTask->past_physical_time)*1000 ,aTask->dilation_factor,&rem) + aTask->past_virtual_time;
+						dilated_running_time = div_s64_rem( (real_running_time - aTask->past_physical_time)*1000 ,aTask->dilation_factor,&rem) + aTask->past_virtual_time;
                         tempTime = dilated_running_time + aTask->virt_start_time;
                 }
                 else {
@@ -301,9 +302,9 @@ void print_proc_info(char *write_buffer) {
         return;
 }
 
-/*
+/***
 Prints all threads of a process - for debugging
-*/
+***/
 void print_threads_proc(char *write_buffer) {
 	struct task_struct *me;
 	struct task_struct *t;
@@ -311,15 +312,17 @@ void print_threads_proc(char *write_buffer) {
 	pid = atoi(write_buffer);
 	me = find_task_by_pid(pid);
 	t = me;
-	printk(KERN_INFO "TimeKeeper: Finding threads for pid: %d\n", me->pid);
+	printk(KERN_INFO "TimeKeeper: Print Threads Proc: Finding threads for pid: %d\n", me->pid);
 	do {
-    		printk(KERN_INFO "TimeKeeper: Pid: %d %d\n",t->pid, t->tgid);
+    		printk(KERN_INFO "TimeKeeper: Print Threads Proc: Pid: %d %d\n",t->pid, t->tgid);
 	} while_each_thread(me, t);
 	return;
 	}
 
 
-/* Add to tail of schedule queue */
+/*** 
+Add to tail of schedule queue 
+***/
 int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *new_task, s64 FREEZE_QUANTUM, s64 highest_dilation){
 
 
@@ -337,13 +340,15 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	s64 expected_increase;
 	int n_threads = 0;
 	s64 base_time_quanta;
+	unsigned long flags;
 
 
 
 	if(new_task == NULL || lxc == NULL)
 		return -1;
 
-	if(hmap_get(&lxc->valid_children, &new_task->pid) != NULL) // child already exists. don't add
+	/* child already exists. don't add */
+	if(hmap_get(&lxc->valid_children, &new_task->pid) != NULL) 
 	{	return 0;
 	}
 
@@ -357,60 +362,49 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 
 
 	/** TODO Handle lower priority processes **/
-
-	if(new_element->static_priority  < 120)
-		linux_time_quanta = 20*(140 - new_element->static_priority); // in ms
+	if(new_element->static_priority  < 120) {
+		/* In ms */
+		linux_time_quanta = 20*(140 - new_element->static_priority); 
+	}
 	else{
-
-		linux_time_quanta = 5*(20); // 100 ms for now
+		/* 100 ms for now */
+		linux_time_quanta = 5*(20); 
 	}
 	
 	
 
-        // temp_proc and temp_high are temporary dilations for the container and leader respectively.
-        // this is done just to make sure the Math works (no divide by 0 errors if the TDF is 0, by making the temp TDF 1)
-        temp_proc = 0;
-        temp_high = 0;
+    /* temp_proc and temp_high are temporary dilations for the container and leader respectively.
+    this is done just to make sure the Math works (no divide by 0 errors if the TDF is 0, by making the temp TDF 1) */
+    temp_proc = 0;
+    temp_high = 0;
 
-        if (highest_dilation == 0)
-                temp_high = 1;
-        else if (highest_dilation < 0)
-                temp_high = highest_dilation*-1;
-
-	//new_task->freeze_time = lxc->linux_task->freeze_time;
-	//new_task->wakeup_time = 0;
-	//new_task->past_virtual_time = 0;
-	//new_task->past_physical_time = 0;
-
-	spin_lock(&new_task->dialation_lock);
+    if (highest_dilation == 0)
+            temp_high = 1;
+    else if (highest_dilation < 0)
+            temp_high = highest_dilation*-1;
 
 
-	//new_task->freeze_time = 0;
-	//new_task->past_physical_time = lxc->linux_task->past_physical_time;
-	//new_task->past_virtual_time = lxc->linux_task->past_virtual_time;
-	//new_task->wakeup_time = 0;
-	
+	spin_lock_irqsave(&new_task->dialation_lock,flags);
 
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
 	new_task->virt_start_time = lxc->linux_task->virt_start_time;
 	
 
-        dil = new_task->dilation_factor;
+    dil = new_task->dilation_factor;
 
-        if (dil == 0)
-                temp_proc = 1;
-        else if (dil < 0)
-                temp_proc = dil*-1;
+    if (dil == 0)
+       temp_proc = 1;
+    else if (dil < 0)
+       temp_proc = dil*-1;
 
 
 	me = new_task;
 	t = me;
 	n_threads = 0;
+
 	do {
-
 		bitmap_zero((&t->cpus_allowed)->bits, 8);
-       		cpumask_set_cpu(lxc->cpu_assignment,&t->cpus_allowed);
-
+   		cpumask_set_cpu(lxc->cpu_assignment,&t->cpus_allowed);
 		n_threads++;
 	} while_each_thread(me, t);
 
@@ -426,49 +420,53 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	
 	if(new_element->static_priority  < 120){
 
-		linux_time_quanta = 20*(140 - new_element->static_priority); // in ms
-		base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; // 200000 = 1000000/5
+		/* In ms */
+		linux_time_quanta = 20*(140 - new_element->static_priority); 
+
+		/* 200000 = 1000000/5 */
+		base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; 
 		lxc->rr_run_time += (int)(140 - new_element->static_priority)/5;
 	}
 	else{
 
-		linux_time_quanta = 5*(20); // 100 ms for now
+		/* 100 ms for now */
+		linux_time_quanta = 5*(20); 
 		base_time_quanta = base_time_quanta*1000000;
 		lxc->rr_run_time += 1;
 	}
 	
 	
-	printk(KERN_INFO "TimeKeeper : PID : %d, Base Quanta : %lld. N_threads : %d. expected_increase : %lld\n", new_task->pid, base_time_quanta, n_threads, expected_increase);
-	new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	printk(KERN_INFO "TimeKeeper: Add To Schedule List: PID : %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, base_time_quanta, n_threads, expected_increase);
 
-	spin_unlock(&new_task->dialation_lock);
+	new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	spin_unlock_irqrestore(&new_task->dialation_lock,flags);
 
 	new_element->share_factor = base_time_quanta;
 	new_element->curr_task = new_task;
 	new_element->pid = new_task->pid;
 	new_element->duration_left = base_time_quanta;
 
-	llist_append(&lxc->schedule_queue, new_element); // append to tail of schedule queue.
+	/* append to tail of schedule queue */
+	llist_append(&lxc->schedule_queue, new_element); 
 
 
 	bitmap_zero((&new_task->cpus_allowed)->bits, 8);
-       	cpumask_set_cpu(lxc->cpu_assignment,&new_task->cpus_allowed);
+    cpumask_set_cpu(lxc->cpu_assignment,&new_task->cpus_allowed);
 
 	struct sched_param sp;
 	sp.sched_priority = 1;
 	sched_setscheduler(new_task, SCHED_RR, &sp);
-
-
 	hmap_put(&lxc->valid_children, &new_element->pid, new_element);
 	
-
 
 	return 0;
 
 
 }
 
-/* Remove head of schedule queue and return the task_struct of the head element */
+/*** 
+Remove head of schedule queue and return the task_struct of the head element 
+***/
 struct task_struct * pop_schedule_list(struct dilation_task_struct * lxc){
 
 	if(lxc == NULL)
@@ -490,7 +488,9 @@ struct task_struct * pop_schedule_list(struct dilation_task_struct * lxc){
 
 }
 
-/* Get pointer to task_Struct of head but don't remove the element from the schedule list */
+/***
+Get pointer to task_Struct of head but don't remove the element from the schedule list 
+***/
 lxc_schedule_elem * schedule_list_get_head(struct dilation_task_struct * lxc){
 
 	if(lxc == NULL)
@@ -505,7 +505,9 @@ lxc_schedule_elem * schedule_list_get_head(struct dilation_task_struct * lxc){
 
 
 
-/* requeue schedule queue, i.e pop from head and add to tail */
+/***
+Requeue schedule queue, i.e pop from head and add to tail 
+***/
 void requeue_schedule_list(struct dilation_task_struct * lxc){
 
 	if(lxc == NULL)
@@ -541,9 +543,9 @@ int schedule_list_size(struct dilation_task_struct * lxc){
 
 }
 
-static inline unsigned int do_dialated_pollfd(struct pollfd *pollfd, poll_table *pwait,
-				     bool *can_busy_poll,
-				     unsigned int busy_flag,struct task_struct * tsk)
+/*** Wrappers for performing dialated poll and select system calls ***/
+
+static inline unsigned int do_dialated_pollfd(struct pollfd *pollfd, poll_table *pwait, bool *can_busy_poll, unsigned int busy_flag,struct task_struct * tsk)
 {
 	unsigned int mask;
 	int fd;
@@ -572,8 +574,7 @@ static inline unsigned int do_dialated_pollfd(struct pollfd *pollfd, poll_table 
 	return mask;
 }
 
-int do_dialated_poll(unsigned int nfds,  struct poll_list *list,
-		   struct poll_wqueues *wait,struct task_struct * tsk)
+int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk)
 {
 	poll_table* pt = &wait->pt;
 	int count = 0;
@@ -629,12 +630,11 @@ int max_sel_fd(unsigned long n, fd_set_bits *fds,struct task_struct * tsk)
 	n /= BITS_PER_LONG;
 	fdt = files_fdtable(current->files);
 	open_fds = fdt->open_fds + n;
-	printk(KERN_INFO "TimeKeeper : max_sel_fd : n = %lu\n",n);
+	printk(KERN_INFO "TimeKeeper: max_sel_fd : n = %lu\n",n);
 
 	max = 0;
 	if (set) {
 		set &= BITS(fds, n);
-		printk(KERN_INFO "TimeKeeper : max_sel_fd : finished this\n");
 		if (set) {
 			if (!(set & ~*open_fds))
 				goto get_max;
@@ -686,7 +686,8 @@ int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk)
 	retval = max_sel_fd(n, fds,tsk);
 	rcu_read_unlock();
 
-	printk(KERN_INFO "TimeKeeper : Returned from max_Sel_fd");
+	
+	printk(KERN_INFO "TimeKeeper: Do dialated Select: Returned from Max_Sel_fd\n");
 
 	if (retval < 0)
 		return retval;
