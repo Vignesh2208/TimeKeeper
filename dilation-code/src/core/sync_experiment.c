@@ -747,10 +747,11 @@ int calculate_sync_drift(void *data)
 
 		/* when the first task has started running, signal you are done working, and sleep */
 		round++;
+		set_current_state(TASK_INTERRUPTIBLE);
 		atomic_dec(&worker_count);
 		atomic_set(&wake_up_signal_sync_drift[cpuID],0);
 		run_cpu = get_cpu();
-		set_current_state(TASK_INTERRUPTIBLE);
+		
 
 		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 			printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxc on %d on run cpu %d\n",cpuID,run_cpu);
@@ -1762,22 +1763,22 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 	struct dilation_task_struct *dilTask;
 	struct task_struct *me;
 	struct task_struct *t;
-	struct poll_helper_struct * task_poll_helper;
-	struct select_helper_struct * task_select_helper;
+	struct poll_helper_struct * task_poll_helper = NULL;
+	struct select_helper_struct * task_select_helper = NULL;
+	struct sleep_helper_struct * task_sleep_helper = NULL;
 	unsigned long flags;
 
 	if (aTask == NULL) {
 
-	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-		printk(KERN_INFO "TimeKeeper: Unfreeze Children: Task does not exist\n");
-	return 0;
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Unfreeze Children: Task does not exist\n");
+		return 0;
 	}
 	if (aTask->pid == 0) {
 
-	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Unfreeze Children: Pid is 0 in unfreeze\n");
-
-	return 0;
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+				printk(KERN_INFO "TimeKeeper: Unfreeze Children: Pid is 0 in unfreeze\n");
+		return 0;
 	}
 
 	me = aTask;
@@ -1789,7 +1790,10 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 			t->virt_start_time = 0;
 		}
 		
-		if (t->pid != aTask->pid) {
+		if (t->pid == aTask->pid) {
+			spin_unlock_irqrestore(&t->dialation_lock,flags);
+		}
+		else {
 			if (t->freeze_time > 0)
 			{
 				t->past_physical_time = t->past_physical_time + (time - t->freeze_time);
@@ -1803,9 +1807,52 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 					printk(KERN_INFO "TimeKeeper: Unfreeze Children: Thread not Frozen. Pid: %d Dilation %d\n", t->pid, t->dilation_factor);
 			}
+			
+			task_poll_helper = hmap_get(&poll_process_lookup,&t->pid);
+			task_select_helper = hmap_get(&select_process_lookup,&t->pid);
+			task_sleep_helper = hmap_get(&sleep_process_lookup,&t->pid);
+
+			
+			if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
+				
+				spin_unlock_irqrestore(&t->dialation_lock,flags);
+				kill(t, SIGCONT, dilTask);
+
+            }
+            else {
+				
+				if(task_poll_helper != NULL){				
+					spin_unlock_irqrestore(&t->dialation_lock,flags);
+
+					task_poll_helper->done = 1;
+					wake_up(&task_poll_helper->w_queue);
+					kill(t, SIGCONT, NULL);
+
+				}
+				else if(task_select_helper != NULL){					
+					spin_unlock_irqrestore(&t->dialation_lock,flags);
+
+					task_select_helper->done = 1;
+					wake_up(&task_select_helper->w_queue);
+					kill(t, SIGCONT, NULL);
+				}
+				else if( task_sleep_helper != NULL) {				
+					spin_unlock_irqrestore(&t->dialation_lock,flags);
+
+					task_sleep_helper->done = 1;
+					wake_up(&task_sleep_helper->w_queue);
+					kill(t, SIGCONT, NULL);
+
+				}
+				else
+					spin_unlock_irqrestore(&t->dialation_lock,flags);
+                
+ 			}
+
+
 		}
 		
-		spin_unlock_irqrestore(&t->dialation_lock,flags);
+		
 
 	} while_each_thread(me, t);
 
@@ -1833,10 +1880,10 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 			taskRecurse->wakeup_time = 0;
 			spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
 
-			struct sleep_helper_struct * sleep_helper = hmap_get(&sleep_process_lookup,&taskRecurse->pid);
-			if(sleep_helper != NULL) {
-				sleep_helper->done = 1;
-				wake_up(&sleep_helper->w_queue);
+			task_sleep_helper = hmap_get(&sleep_process_lookup,&taskRecurse->pid);
+			if(task_sleep_helper != NULL) {
+				task_sleep_helper->done = 1;
+				wake_up(&task_sleep_helper->w_queue);
 			}
 			
 			/* just in case - to continue all threads */
@@ -1852,23 +1899,53 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 		{
 			task_poll_helper = hmap_get(&poll_process_lookup,&taskRecurse->pid);
 			task_select_helper = hmap_get(&select_process_lookup,&taskRecurse->pid);
+			task_sleep_helper = hmap_get(&sleep_process_lookup,&taskRecurse->pid);
+
 			taskRecurse->past_physical_time = taskRecurse->past_physical_time + (time - taskRecurse->freeze_time);
 			taskRecurse->freeze_time = 0;
-			if(task_poll_helper == NULL && task_select_helper == NULL){
+			if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
 				
 				spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
 				kill(taskRecurse, SIGCONT, dilTask);
 
             }
             else {
-                		spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+				
+				if(task_poll_helper != NULL){				
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+					task_poll_helper->done = 1;
+					wake_up(&task_poll_helper->w_queue);
+					kill(taskRecurse, SIGCONT, NULL);
+
+				}
+				else if(task_select_helper != NULL){					
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+					task_select_helper->done = 1;
+					wake_up(&task_select_helper->w_queue);
+					kill(taskRecurse, SIGCONT, NULL);
+				}
+				else if( task_sleep_helper != NULL) {				
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+					task_sleep_helper->done = 1;
+					wake_up(&task_sleep_helper->w_queue);
+					kill(taskRecurse, SIGCONT, NULL);
+
+				}
+				else
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);	
+                
  			}
                 
         }
 		else {
 			task_poll_helper = hmap_get(&poll_process_lookup,&taskRecurse->pid);
 			task_select_helper = hmap_get(&select_process_lookup,&taskRecurse->pid);
-			if(task_poll_helper == NULL && task_select_helper == NULL){
+			task_sleep_helper = hmap_get(&sleep_process_lookup,&taskRecurse->pid);
+
+			if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
 
 				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
         			printk(KERN_INFO "TimeKeeper: Unfreeze Children: Process not frozen. Pid: %d Dilation %d\n", taskRecurse->pid, taskRecurse->dilation_factor);
@@ -1876,7 +1953,33 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 				kill(taskRecurse, SIGCONT, dilTask);		
 			}
 			else {
-				spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+				if(task_poll_helper != NULL){				
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+					task_poll_helper->done = 1;
+					wake_up(&task_poll_helper->w_queue);
+					kill(taskRecurse, SIGCONT, NULL);
+
+				}
+				else if(task_select_helper != NULL){					
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+					task_select_helper->done = 1;
+					wake_up(&task_select_helper->w_queue);
+					kill(taskRecurse, SIGCONT, NULL);
+				}
+				else if( task_sleep_helper != NULL) {				
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
+					task_sleep_helper->done = 1;
+					wake_up(&task_sleep_helper->w_queue);
+					kill(taskRecurse, SIGCONT, NULL);
+
+				}
+				else
+					spin_unlock_irqrestore(&taskRecurse->dialation_lock,flags);
+
 			}
 			
 			/* no need to unfreeze its children	*/	
@@ -2137,6 +2240,8 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	struct select_helper_struct * select_helper = NULL;
 	struct poll_helper_struct * task_poll_helper = NULL;
 	struct select_helper_struct * task_select_helper = NULL;
+	struct sleep_helper_struct * task_sleep_helper = NULL;
+
 	unsigned long flags;
 
 	if(head->duration_left <= 0 || remaining_run_time <= 0){
@@ -2167,6 +2272,7 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	t = me;	
 	task_poll_helper = hmap_get(&poll_process_lookup,&t->pid);
 	task_select_helper = hmap_get(&select_process_lookup,&t->pid);
+	task_sleep_helper = hmap_get(&sleep_process_lookup, &t->pid);
 
 	spin_lock_irqsave(&t->dialation_lock,flags);
 	if(task_poll_helper != NULL){
@@ -2187,6 +2293,17 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		task_select_helper->done = 1;
 		wake_up(&task_select_helper->w_queue);
 		kill(t, SIGCONT, NULL);
+	}
+	else if( task_sleep_helper != NULL) {
+		t->freeze_time = 0;
+		spin_unlock_irqrestore(&t->dialation_lock,flags);
+
+		task_sleep_helper->done = 1;
+		wake_up(&task_sleep_helper->w_queue);
+
+		/* Sending a Continue signal here will wake all threads up. We dont want that */
+		//kill(t, SIGCONT, NULL);
+
 	}
 	else if (t->freeze_time > 0 && t->wakeup_time == 0)
    	{	
@@ -2270,11 +2387,13 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 					if(sleep_helper != NULL){
 						sleep_helper->done = 1;
 						wake_up(&sleep_helper->w_queue);
-
+						
 					}
-
-					if(kill(t, SIGCONT, NULL) < 0){
-						return remaining_run_time;				
+					else{
+						/* We dont want to wake all threads up if only one of them was sleeping */
+						if(kill(t, SIGCONT, NULL) < 0){
+							return remaining_run_time;				
+						}
 					}						
 
 		

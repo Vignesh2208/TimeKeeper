@@ -41,54 +41,63 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	s64 dilated_running_time;
 	current_task = current;
 	struct sleep_helper_struct * sleep_helper;
+	s64 temp_wakeup_time;
+	unsigned long flag;
 
-	spin_lock(&current->dialation_lock);
+	spin_lock_irqsave(&current->dialation_lock,flag);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
-	{	spin_unlock(&current->dialation_lock);
-        	list_for_each_safe(pos, n, &exp_list)
-        	{
-                	task = list_entry(pos, struct dilation_task_struct, list);
-			if (find_children_info(task->linux_task, current->pid) == 1) { 
+	{						
+		now_new = get_dilated_time(current);
+		spin_unlock_irqrestore(&current->dialation_lock,flag);
 
-				spin_lock(&current->dialation_lock);				
-                now_new = get_dilated_time(current);
-				dilTask = container_of(&current_task, struct dilation_task_struct, linux_task);
 
-				if (flags & TIMER_ABSTIME)
-					current->wakeup_time = timespec_to_ns(rqtp);
-				else
-					current->wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale; 
+		if (flags & TIMER_ABSTIME)
+			temp_wakeup_time = timespec_to_ns(rqtp);
+		else
+			temp_wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale; 
 
-                sleep_helper = hmap_get(&sleep_process_lookup, &current->pid);
-				if(sleep_helper == NULL){
-					sleep_helper = kmalloc(sizeof(struct sleep_helper_struct), GFP_KERNEL);
-					if(sleep_helper == NULL){
-						printk(KERN_INFO "TimeKeeper: Sys Nanosleep: Sleep Process NOMEM");
-						return -ENOMEM;
-					}	
-				}
+		sleep_helper = hmap_get(&sleep_process_lookup, &current->pid);
+		if(sleep_helper == NULL){
+			sleep_helper = kmalloc(sizeof(struct sleep_helper_struct), GFP_KERNEL);
+			if(sleep_helper == NULL){
+				printk(KERN_INFO "TimeKeeper: Sys Nanosleep: Sleep Process NOMEM");
+				return -ENOMEM;
+			}	
+		}
 
-				//set_current_state(TASK_INTERRUPTIBLE);
-				init_waitqueue_head(&sleep_helper->w_queue);
+		set_current_state(TASK_INTERRUPTIBLE);
+		init_waitqueue_head(&sleep_helper->w_queue);
+		sleep_helper->done = 0;
+		hmap_put(&sleep_process_lookup,&current->pid,sleep_helper);
+
+		printk(KERN_INFO "TimeKeeper: Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, current->wakeup_time); 
+
+		while(now_new < temp_wakeup_time) {
+			set_current_state(TASK_INTERRUPTIBLE);
+
+			if(sleep_helper->done == 0)
+				wait_event(sleep_helper->w_queue,sleep_helper->done != 0);
+			
+			set_current_state(TASK_RUNNING);
+			if(sleep_helper->done > 0)
 				sleep_helper->done = 0;
-				hmap_put(&sleep_process_lookup,&current->pid,sleep_helper);
-	
-				s64 temp_wakeup_time = current->wakeup_time;
-				printk(KERN_INFO "TimeKeeper: Sys Nanosleep: PID : %d, New wake up time : %lld\n",current->pid, current->wakeup_time); 
-				spin_unlock(&current->dialation_lock);
+			
+			spin_lock_irqsave(&current->dialation_lock,flag);			
+			now_new = get_dilated_time(current);
+			spin_unlock_irqrestore(&current->dialation_lock,flag);
+        }
 
-				if(sleep_helper->done == 0)
-					wait_event(sleep_helper->w_queue,sleep_helper->done != 0);
-				set_current_state(TASK_RUNNING);
-				hmap_remove(&sleep_process_lookup, &current->pid);
-				kfree(sleep_helper);
-				
 
-				return 0;
-			} 
-        	} 
+
+		set_current_state(TASK_RUNNING);
+		hmap_remove(&sleep_process_lookup, &current->pid);
+		kfree(sleep_helper);
+
+
+		return 0;
+			
 	} 
-	spin_unlock(&current->dialation_lock);
+	spin_unlock_irqrestore(&current->dialation_lock,flag);
 
     return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
 
@@ -114,6 +123,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 	int ret;
 	struct timespec temp;
 	s64 mono_time;
+	unsigned long flags;
 
 	struct timeval curr_tv;
 
@@ -133,11 +143,11 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 	mono_time = timespec_to_ns(&temp);
 	boottime = undialated_time_ns - mono_time;
 
-	spin_lock(&current->dialation_lock);
+	spin_lock_irqsave(&current->dialation_lock,flags);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
 	{	
 
-		spin_unlock(&current->dialation_lock);
+		spin_unlock_irqrestore(&current->dialation_lock,flags);
         list_for_each_safe(pos, n, &exp_list)
         {
             task = list_entry(pos, struct dilation_task_struct, list);
@@ -152,7 +162,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 			}
 		}
 	}
-	spin_unlock(&current->dialation_lock);
+	spin_unlock_irqrestore(&current->dialation_lock,flags);
 
 	return ref_sys_clock_gettime(which_clock,tp);
 
