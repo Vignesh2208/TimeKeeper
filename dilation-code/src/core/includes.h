@@ -79,5 +79,31 @@
 #define GOT_RESULT -1
 #define IFNAMESIZ 16
 
+#ifdef ENABLE_LOCKING
+
+#define acquire_irq_lock(lock,flags) \
+do {															 \
+	spin_lock_irqsave(lock,flags);								 \
+} while(0)														 \
+
+
+#define release_irq_lock(lock, flags) \
+do {															 \
+	spin_unlock_irqrestore(lock,flags);								 \
+} while(0)	
+
+#else
+
+#define acquire_irq_lock(lock,flags) \
+do {															 \
+} while(0)														 \
+
+
+#define release_irq_lock(lock, flags) \
+do {															 \
+} while(0)	
+
+#endif
+
 
 #endif

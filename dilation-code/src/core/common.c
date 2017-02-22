@@ -35,6 +35,11 @@ extern struct poll_list {
 extern struct poll_helper_struct;
 extern hashmap poll_process_lookup;
 
+												
+	
+
+
+
 
 /***
 Wrapper for sending a message to userspace
@@ -384,7 +389,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
             temp_high = highest_dilation*-1;
 
 
-	spin_lock_irqsave(&new_task->dialation_lock,flags);
+	acquire_irq_lock(&new_task->dialation_lock,flags);
 
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
 	new_task->virt_start_time = lxc->linux_task->virt_start_time;
@@ -424,8 +429,11 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 		linux_time_quanta = 20*(140 - new_element->static_priority); 
 
 		/* 200000 = 1000000/5 */
-		base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; 
-		lxc->rr_run_time += (int)(140 - new_element->static_priority)/5;
+		//base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; 
+		//lxc->rr_run_time += (int)(140 - new_element->static_priority)/5;
+
+		base_time_quanta = base_time_quanta*1000000;
+		lxc->rr_run_time += 1;
 	}
 	else{
 
@@ -439,7 +447,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	printk(KERN_INFO "TimeKeeper: Add To Schedule List: PID : %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, base_time_quanta, n_threads, expected_increase);
 
 	new_task->virt_start_time = lxc->linux_task->virt_start_time;
-	spin_unlock_irqrestore(&new_task->dialation_lock,flags);
+	release_irq_lock(&new_task->dialation_lock,flags);
 
 	new_element->share_factor = base_time_quanta;
 	new_element->curr_task = new_task;
@@ -454,7 +462,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
     cpumask_set_cpu(lxc->cpu_assignment,&new_task->cpus_allowed);
 
 	struct sched_param sp;
-	sp.sched_priority = 1;
+	sp.sched_priority = 99;
 	sched_setscheduler(new_task, SCHED_RR, &sp);
 	hmap_put(&lxc->valid_children, &new_element->pid, new_element);
 	

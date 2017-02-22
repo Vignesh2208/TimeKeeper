@@ -35,6 +35,7 @@ void set_netdevice_owner(char * write_buffer) {
     char dev_name[IFNAMSIZ];
     int pid;
     int i = 0;
+	struct net * net;
 
 	for(i = 0; i < IFNAMSIZ; i++)
 		dev_name[i] = '\0';
@@ -49,10 +50,29 @@ void set_netdevice_owner(char * write_buffer) {
     printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Received Pid: %d, Dev Name: %s\n", pid, dev_name);
 
 	struct net_device * dev;
+	int found = 0;
    
 
     write_lock_bh(&dev_base_lock);
-    dev = first_net_device(&init_net);
+	for_each_net(net) {
+		for_each_netdev(net,dev) {
+			if(dev != NULL) {
+				if(strcmp(dev->name,dev_name) == 0) {
+					printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Found Specified Net Device: %s\n", dev_name);
+					dev->owner_pid = pid;
+					found = 1;
+		    	}
+			
+			 	printk(KERN_INFO "TimeKeeper: Found New Net Device: %s\n", dev->name);
+			}
+		}
+	}	
+		
+	
+
+
+
+    /*dev = first_net_device(&init_net);
     while(dev) {
 		if(strcmp(dev->name,dev_name) == 0) {
 			printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Found Specified Net Device: %s\n", dev_name);
@@ -63,7 +83,7 @@ void set_netdevice_owner(char * write_buffer) {
 			dev = next_net_device(dev);
         }
 
-    }
+    }*/
 	write_unlock_bh(&dev_base_lock);
 
 }
@@ -96,20 +116,31 @@ void perform_on_children(struct task_struct *aTask, void(*action)(int,int), int 
 /***
 Returns the current virtual time given a task struct, and the current system time. Similar function defined in hooked_functions.c
 ***/
-s64 get_virtual_time_task(struct task_struct* task, s64 now)
+s64 get_virtual_time_task(struct task_struct* task_arg, s64 now)
 {
         s64 real_running_time;
         s64 temp_past_physical_time;
         s64 dilated_running_time;
         s32 rem;
         s64 virt_time;
+		struct task_struct * task = task_arg;
+
+		/* get current virtual time of a task */
+
+		if (task->group_leader != task) { 
+           	task = task->group_leader;
+        }
+        
+		
+        real_running_time = now - task->virt_start_time;
+        //temp_past_physical_time = task->past_physical_time + (now - task->freeze_time); 
+
+		if (task->freeze_time != 0)
+			temp_past_physical_time = task->past_physical_time + (now - task->freeze_time);
+		else
+			temp_past_physical_time = task->past_physical_time;
 
         
-
-        real_running_time = now - task->virt_start_time;
-        temp_past_physical_time = task->past_physical_time + (now - task->freeze_time); 
-
-        /* get current virtual time of a task */
         if (task->dilation_factor > 0)
         {
 		      dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*PRECISION ,task->dilation_factor,&rem) + task->past_virtual_time;
@@ -279,7 +310,7 @@ void change_dilation(int pid, int new_dilation) {
 		if (aTask != NULL) {
         	do_gettimeofday(&now_timeval);
         	now = timeval_to_ns(&now_timeval);
-			spin_lock_irqsave(&aTask->dialation_lock,flags);
+			acquire_irq_lock(&aTask->dialation_lock,flags);
 
         	/* if has not been dilated before */
         	if (aTask->virt_start_time == 0) {
@@ -299,7 +330,7 @@ void change_dilation(int pid, int new_dilation) {
 	        aTask->past_physical_time = real_running_time;
 	        aTask->past_virtual_time = dilated_running_time;
 	        aTask->dilation_factor = new_dilation;
-			spin_unlock_irqrestore(&aTask->dialation_lock,flags);
+			release_irq_lock(&aTask->dialation_lock,flags);
 
    			printk(KERN_INFO "TimeKeeper: Change Dilation Cmd: Dilating new process %d %d %lld %lld\n", pid, new_dilation, real_running_time, dilated_running_time);
 	}

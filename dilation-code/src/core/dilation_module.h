@@ -52,6 +52,8 @@ struct dilation_task_struct
 	hashmap valid_children;
 	lxc_schedule_elem * last_run;
 	int rr_run_time;
+	s64 last_timer_fire_time;
+	s64 last_timer_duration;
 
 	s64 increment; 						// CS: the increment it should advance in the next round
 	struct timeline* tl; 				// the timeline it is associated with

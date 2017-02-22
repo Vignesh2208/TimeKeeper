@@ -44,11 +44,11 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	s64 temp_wakeup_time;
 	unsigned long flag;
 
-	spin_lock_irqsave(&current->dialation_lock,flag);
+	acquire_irq_lock(&current->dialation_lock,flag);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
 	{						
 		now_new = get_dilated_time(current);
-		spin_unlock_irqrestore(&current->dialation_lock,flag);
+		release_irq_lock(&current->dialation_lock,flag);
 
 
 		if (flags & TIMER_ABSTIME)
@@ -82,9 +82,9 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 			if(sleep_helper->done > 0)
 				sleep_helper->done = 0;
 			
-			spin_lock_irqsave(&current->dialation_lock,flag);			
+			acquire_irq_lock(&current->dialation_lock,flag);			
 			now_new = get_dilated_time(current);
-			spin_unlock_irqrestore(&current->dialation_lock,flag);
+			release_irq_lock(&current->dialation_lock,flag);
         }
 
 
@@ -97,7 +97,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 		return 0;
 			
 	} 
-	spin_unlock_irqrestore(&current->dialation_lock,flag);
+	release_irq_lock(&current->dialation_lock,flag);
 
     return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
 
@@ -143,11 +143,11 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 	mono_time = timespec_to_ns(&temp);
 	boottime = undialated_time_ns - mono_time;
 
-	spin_lock_irqsave(&current->dialation_lock,flags);
+	acquire_irq_lock(&current->dialation_lock,flags);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
 	{	
 
-		spin_unlock_irqrestore(&current->dialation_lock,flags);
+		release_irq_lock(&current->dialation_lock,flags);
         list_for_each_safe(pos, n, &exp_list)
         {
             task = list_entry(pos, struct dilation_task_struct, list);
@@ -162,7 +162,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 			}
 		}
 	}
-	spin_unlock_irqrestore(&current->dialation_lock,flags);
+	release_irq_lock(&current->dialation_lock,flags);
 
 	return ref_sys_clock_gettime(which_clock,tp);
 

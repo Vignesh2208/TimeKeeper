@@ -105,14 +105,14 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&current->dialation_lock,flags);
+	acquire_irq_lock(&current->dialation_lock,flags);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
 	{		
 
     	do_gettimeofday(&ktv);
 		now = timeval_to_ns(&ktv);			
 		now_new = get_dilated_time(current);
-		spin_unlock_irqrestore(&current->dialation_lock,flags);
+		release_irq_lock(&current->dialation_lock,flags);
 
 		sleep_helper = hmap_get(&sleep_process_lookup, &current->pid);
 		if(sleep_helper == NULL){
@@ -143,9 +143,9 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			if(sleep_helper->done > 0)
 				sleep_helper->done = 0;
 			
-			spin_lock_irqsave(&current->dialation_lock,flags);			
+			acquire_irq_lock(&current->dialation_lock,flags);			
 			now_new = get_dilated_time(current);
-			spin_unlock_irqrestore(&current->dialation_lock,flags);
+			release_irq_lock(&current->dialation_lock,flags);
         }
 		set_current_state(TASK_RUNNING);
 		hmap_remove(&sleep_process_lookup, &current->pid);
@@ -155,7 +155,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 		
 		return 0; 
 	} 
-	spin_unlock_irqrestore(&current->dialation_lock,flags);
+	release_irq_lock(&current->dialation_lock,flags);
 
     return ref_sys_sleep(rqtp,rmtp);
 }
