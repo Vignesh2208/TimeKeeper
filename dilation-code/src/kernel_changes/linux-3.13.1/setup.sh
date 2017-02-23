@@ -1,5 +1,6 @@
 curr_dir=$(pwd)
 base=$(pwd)/../../..
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 sudo echo "Starting Kernel Setup. Continuing with sudo permissions."
 
@@ -59,40 +60,40 @@ echo "Copying modfied Kernel source files"
 
 
 
-SRC_DIR=/home/user/Desktop/TimeKeeper/dilation-code/src/kernel_changes/linux-3.13.1
+SRC_DIR=$script_dir
 DST_DIR=/src/linux-3.13.1
 
 #arch
-sudo cp -r $SRC_DIR/arch/syscall_32.tbl $DST_DIR/arch/x86/syscalls/
-sudo cp -r $SRC_DIR/arch/syscall_64.tbl $DST_DIR/arch/x86/syscalls/
-sudo cp -r $SRC_DIR/arch/vclock_gettime.c $DST_DIR/arch/x86/vdso/
-sudo cp -r $SRC_DIR/arch/vdso.lds.S $DST_DIR/arch/x86/vdso/
-sudo cp -r $SRC_DIR/arch/vdsox32.lds.S $DST_DIR/arch/x86/vdso/
+sudo cp -v $SRC_DIR/arch/syscall_32.tbl $DST_DIR/arch/x86/syscalls/
+sudo cp -v $SRC_DIR/arch/syscall_64.tbl $DST_DIR/arch/x86/syscalls/
+sudo cp -v $SRC_DIR/arch/vclock_gettime.c $DST_DIR/arch/x86/vdso/
+sudo cp -v $SRC_DIR/arch/vdso.lds.S $DST_DIR/arch/x86/vdso/
+sudo cp -v $SRC_DIR/arch/vdsox32.lds.S $DST_DIR/arch/x86/vdso/
 
 #drivers
-sudo cp -r $SRC_DIR/drivers/loopback.c $DST_DIR/drivers/net/
+sudo cp -v $SRC_DIR/drivers/loopback.c $DST_DIR/drivers/net/
 
 #fs
-sudo cp -r $SRC_DIR/fs/select.c $DST_DIR/fs
-sudo cp -r $SRC_DIR/fs/timerfd.c $DST_DIR/fs
+sudo cp -v $SRC_DIR/fs/select.c $DST_DIR/fs
+sudo cp -v $SRC_DIR/fs/timerfd.c $DST_DIR/fs
 
 #include
-sudo cp -r $SRC_DIR/include/init_task.h $DST_DIR/include/linux/
-sudo cp -r $SRC_DIR/include/netdevice.h $DST_DIR/include/linux/
-sudo cp -r $SRC_DIR/include/sched.h $DST_DIR/include/linux/
-sudo cp -r $SRC_DIR/include/syscalls.h $DST_DIR/include/linux/
-sudo cp -r $SRC_DIR/include/pkt_sched.h $DST_DIR/include/net/
+sudo cp -v $SRC_DIR/include/init_task.h $DST_DIR/include/linux/
+sudo cp -v $SRC_DIR/include/netdevice.h $DST_DIR/include/linux/
+sudo cp -v $SRC_DIR/include/sched.h $DST_DIR/include/linux/
+sudo cp -v $SRC_DIR/include/syscalls.h $DST_DIR/include/linux/
+sudo cp -v $SRC_DIR/include/pkt_sched.h $DST_DIR/include/net/
 
 #kernel
-sudo cp -r $SRC_DIR/kernel/hrtimer.c $DST_DIR/kernel
-sudo cp -r $SRC_DIR/kernel/signal.c $DST_DIR/kernel
-sudo cp -r $SRC_DIR/kernel/time.c $DST_DIR/kernel
+sudo cp -v $SRC_DIR/kernel/hrtimer.c $DST_DIR/kernel
+sudo cp -v $SRC_DIR/kernel/signal.c $DST_DIR/kernel
+sudo cp -v $SRC_DIR/kernel/time.c $DST_DIR/kernel
 
 #net
-sudo cp -r $SRC_DIR/net/dev.c $DST_DIR/net/core/
-sudo cp -r $SRC_DIR/net/af_packet.c $DST_DIR/net/packet/
-sudo cp -r $SRC_DIR/net/sch_api.c $DST_DIR/net/sched/
-sudo cp -r $SRC_DIR/net/sch_netem.c $DST_DIR/net/sched/
-sudo cp -r $SRC_DIR/net/socket.c $DST_DIR/net
+sudo cp -v $SRC_DIR/net/dev.c $DST_DIR/net/core/
+sudo cp -v $SRC_DIR/net/af_packet.c $DST_DIR/net/packet/
+sudo cp -v $SRC_DIR/net/sch_api.c $DST_DIR/net/sched/
+sudo cp -v $SRC_DIR/net/sch_netem.c $DST_DIR/net/sched/
+sudo cp -v $SRC_DIR/net/socket.c $DST_DIR/net
 
 echo "Done. Kernel source ready for compilation."
