@@ -109,7 +109,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
 	{		
 
-    	do_gettimeofday(&ktv);
+    		do_gettimeofday(&ktv);
 		now = timeval_to_ns(&ktv);			
 		now_new = get_dilated_time(current);
 		release_irq_lock(&current->dialation_lock,flags);
@@ -146,7 +146,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			acquire_irq_lock(&current->dialation_lock,flags);			
 			now_new = get_dilated_time(current);
 			release_irq_lock(&current->dialation_lock,flags);
-        }
+        	}
 		set_current_state(TASK_RUNNING);
 		hmap_remove(&sleep_process_lookup, &current->pid);
 		kfree(sleep_helper);
@@ -164,7 +164,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp){
 
-	printk(KERN_INFO "TimeKeeper: Sys Select: PID : %d\n",current->pid);
+	//printk(KERN_INFO "TimeKeeper: Sys Select: PID : %d\n",current->pid);
 
 	struct list_head *pos;
 	struct list_head *n;
@@ -192,148 +192,183 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	void * bits;
 	unsigned long flags;
 
+
+	if(experiment_stopped == RUNNING && tvp != NULL){	
+		list_for_each_safe(pos, n, &exp_list)
+		{
+			task = list_entry(pos, struct dilation_task_struct, list);
+
+			if(task != NULL) {
+				if (find_children_info(task->linux_task, current->pid) == 1) {
+					current->virt_start_time = task->linux_task->virt_start_time;
+					current->dilation_factor = task->linux_task->dilation_factor;
+					current->past_physical_time = task->linux_task->past_physical_time;
+					current->past_virtual_time = task->linux_task->past_virtual_time;
+				
+
+				}
+			}
+		}
+	}
 	
 
 	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && tvp != NULL){	
-		
-				if (copy_from_user(&tv, tvp, sizeof(tv)))
-					return -EFAULT;
 
-				secs_to_sleep = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
-				nsecs_to_sleep = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
+		printk(KERN_INFO "TimeKeeper: Sys Select: PID : %d\n",current->pid);
 
-				ret = -EINVAL;
-				if (k < 0)
-					goto out_nofds;
+		if (copy_from_user(&tv, tvp, sizeof(tv)))
+			return -EFAULT;
 
-				select_helper = hmap_get(&select_process_lookup, &current->pid);
-				if(select_helper == NULL){
-					select_helper = kmalloc(sizeof(struct select_helper_struct), GFP_KERNEL);
-					if(select_helper == NULL){
-						printk(KERN_INFO "TimeKeeper : Select Process NOMEM");
-						return -ENOMEM;
-					}
-					
-					
-				}
+		secs_to_sleep = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
+		nsecs_to_sleep = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
 
-				select_helper->bits = (long *) kmalloc(SELECT_STACK_ALLOC/sizeof(long), GFP_KERNEL);
-				init_waitqueue_head(&select_helper->w_queue);
-				select_helper->done = 0;
-				select_helper->ret = -EFAULT;
+		ret = -EINVAL;
+		if (k < 0)
+			goto out_nofds;
 
-				if(select_helper->bits == NULL){
-					kfree(select_helper);
-					return -ENOMEM;
-				}
+		select_helper = hmap_get(&select_process_lookup, &current->pid);
+		if(select_helper == NULL){
+			select_helper = kmalloc(sizeof(struct select_helper_struct), GFP_KERNEL);
+			if(select_helper == NULL){
+				printk(KERN_INFO "TimeKeeper: Sys Select: Select Process NOMEM");
+				return -ENOMEM;
+			}
 
 
-				/* max_fds can increase, so grab it once to avoid race */
-				rcu_read_lock();
-				fdt = files_fdtable(current->files);
-				max_fds = fdt->max_fds;
-				rcu_read_unlock();
-				if (k > max_fds)
-					k = max_fds;
-				/*
-				 * We need 6 bitmaps (in/out/ex for both incoming and outgoing),
-				 * since we used fdset we need to allocate memory in units of
-				 * long-words. 
-				 */
-				size = FDS_BYTES(k);
-				if (size > sizeof(stack_fds) / 6) {
-					/* Not enough space in on-stack array; must use kmalloc */
-					ret = -ENOMEM;
-					kfree(select_helper->bits);
-					select_helper->bits = kmalloc(6 * size, GFP_KERNEL);
-					if (!select_helper->bits)
-						goto out_nofds;
-				}
-				bits = select_helper->bits;
-				select_helper->fds.in      = bits;
-				select_helper->fds.out     = bits +   size;
-				select_helper->fds.ex      = bits + 2*size;
-				select_helper->fds.res_in  = bits + 3*size;
-				select_helper->fds.res_out = bits + 4*size;
-				select_helper->fds.res_ex  = bits + 5*size;
+		}
 
-				if ((ret = get_fd_set(k, inp, select_helper->fds.in)) ||
-				    (ret = get_fd_set(k, outp, select_helper->fds.out)) ||
-				    (ret = get_fd_set(k, exp, select_helper->fds.ex)))
-					goto out;
+		select_helper->bits = (long *) kmalloc(SELECT_STACK_ALLOC/sizeof(long), GFP_KERNEL);
+		init_waitqueue_head(&select_helper->w_queue);
+		select_helper->done = 0;
+		select_helper->ret = -EFAULT;
 
-				zero_fd_set(k, select_helper->fds.res_in);
-				zero_fd_set(k, select_helper->fds.res_out);
-				zero_fd_set(k, select_helper->fds.res_ex);
+		if(select_helper->bits == NULL){
+			kfree(select_helper);
+			printk(KERN_INFO "TimeKeeper: Sys Select: Select Process NOMEM");
+			return -ENOMEM;
+		}
 
-				do_gettimeofday(&ktv);
-				now = timeval_to_ns(&ktv);
-				
-				//spin_lock(&current->dialation_lock);
-				now_new = get_dilated_time(current);
-				current->freeze_time = 0;
 
-				s64 wakeup_time;
-				wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
-				printk(KERN_INFO "TimeKeeper: Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
+		/* max_fds can increase, so grab it once to avoid race */
+		rcu_read_lock();
+		fdt = files_fdtable(current->files);
+		max_fds = fdt->max_fds;
+		rcu_read_unlock();
+		if (k > max_fds)
+			k = max_fds;
 
-				hmap_put(&select_process_lookup, &current->pid, select_helper);
-				//spin_unlock(&current->dialation_lock);
+		select_helper->n = k;
+		/*
+		 * We need 6 bitmaps (in/out/ex for both incoming and outgoing),
+		 * since we used fdset we need to allocate memory in units of
+		 * long-words. 
+		 */
+		size = FDS_BYTES(k);
+		if (size > sizeof(stack_fds) / 6) {
+			/* Not enough space in on-stack array; must use kmalloc */
+			ret = -ENOMEM;
+			kfree(select_helper->bits);
+			select_helper->bits = kmalloc(6 * size, GFP_KERNEL);
+			if (!select_helper->bits)
+				goto out_nofds;
+		}
+		bits = select_helper->bits;
+		select_helper->fds.in      = bits;
+		select_helper->fds.out     = bits +   size;
+		select_helper->fds.ex      = bits + 2*size;
+		select_helper->fds.res_in  = bits + 3*size;
+		select_helper->fds.res_out = bits + 4*size;
+		select_helper->fds.res_ex  = bits + 5*size;
 
-				while(1){
-					set_current_state(TASK_INTERRUPTIBLE);
-					now_new = get_dilated_time(current);
-					if(now_new < wakeup_time){
+		if ((ret = get_fd_set(k, inp, select_helper->fds.in)) ||
+		    (ret = get_fd_set(k, outp, select_helper->fds.out)) ||
+		    (ret = get_fd_set(k, exp, select_helper->fds.ex)))
+			goto out;
 
-						if(select_helper->done == 0)
-							wait_event(select_helper->w_queue,select_helper->done == 1);
-						set_current_state(TASK_RUNNING);
-						
-						//spin_lock(&current->dialation_lock);
-						ret = do_dialated_select(select_helper->n,&select_helper->fds,current);
-						if(ret || select_helper->ret == FINISHED){
-							
-							select_helper->ret = ret;
-							//spin_unlock(&current->dialation_lock);
-							break;
-						}
-						select_helper->done = 0;
-						//spin_unlock(&current->dialation_lock);
-						
+		zero_fd_set(k, select_helper->fds.res_in);
+		zero_fd_set(k, select_helper->fds.res_out);
+		zero_fd_set(k, select_helper->fds.res_ex);
 
-					}
-					else{
-						//spin_lock(&current->dialation_lock);
-						select_helper->ret = 0;
-						//spin_unlock(&current->dialation_lock);
+		do_gettimeofday(&ktv);
+		now = timeval_to_ns(&ktv);
+
+		acquire_irq_lock(&current->dialation_lock,flags);
+		now_new = get_dilated_time(current);
+		//current->freeze_time = 0;
+
+		s64 wakeup_time;
+		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
+		printk(KERN_INFO "TimeKeeper: Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
+
+		hmap_put(&select_process_lookup, &current->pid, select_helper);
+		release_irq_lock(&current->dialation_lock,flags);
+
+		while(1){
+			set_current_state(TASK_INTERRUPTIBLE);
+			now_new = get_dilated_time(current);
+			if(now_new < wakeup_time){
+
+				if(select_helper->done == 0)
+					wait_event(select_helper->w_queue,select_helper->done == 1);
+				set_current_state(TASK_RUNNING);
+
+				if(select_helper->done > 0) {
+					select_helper->done = 0;
+					acquire_irq_lock(&current->dialation_lock,flags);
+					ret = do_dialated_select(select_helper->n,&select_helper->fds,current);
+					if(ret || select_helper->ret == FINISHED){
+	
+						select_helper->ret = ret;
+						release_irq_lock(&current->dialation_lock,flags);
 						break;
 					}
-
+					
+					release_irq_lock(&current->dialation_lock,flags);
 				}
-				
-				
-				printk(KERN_INFO "TimeKeeper: Sys Select: Resumed Select Process %d\n",current->pid);
 
-				ret = select_helper->ret;
-				memset(&rtv, 0, sizeof(rtv));
-				copy_to_user(tvp, &rtv, sizeof(rtv));
-				
-				if (set_fd_set(k, inp, select_helper->fds.res_in) ||
-				    set_fd_set(k, outp, select_helper->fds.res_out) ||
-				    set_fd_set(k, exp, select_helper->fds.res_ex))
-					ret = -EFAULT;
 
-				//spin_lock(&current->dialation_lock);
-				hmap_remove(&select_process_lookup, &current->pid);
-				//spin_unlock(&current->dialation_lock);
+			}
+			else{
+				acquire_irq_lock(&current->dialation_lock,flags);
+				select_helper->ret = 0;
+				release_irq_lock(&current->dialation_lock,flags);
+				break;
+			}
 
-			out:
-				kfree(select_helper->bits);
+		}
+		set_current_state(TASK_RUNNING);
+		s64 diff = 0;
+		if(wakeup_time >  get_dilated_time(current)){
+			diff = wakeup_time - get_dilated_time(current); 
+			printk(KERN_INFO "TimeKeeper: Sys Select: Resumed Select Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, get_dilated_time(current),diff );
 
-			out_nofds:
-				kfree(select_helper);
-				printk(KERN_INFO "TimeKeeper: Sys Select: Select finished PID %d\n",current->pid);
-				return ret;
+		}
+		else{
+			diff = get_dilated_time(current) - wakeup_time;
+			printk(KERN_INFO "TimeKeeper: Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, get_dilated_time(current),diff );
+
+		}
+
+		 
+
+		
+		ret = select_helper->ret;
+		memset(&rtv, 0, sizeof(rtv));
+		copy_to_user(tvp, &rtv, sizeof(rtv));
+
+		if (set_fd_set(k, inp, select_helper->fds.res_in) ||
+		    set_fd_set(k, outp, select_helper->fds.res_out) ||
+		    set_fd_set(k, exp, select_helper->fds.res_ex))
+			ret = -EFAULT;
+
+		hmap_remove(&select_process_lookup, &current->pid);
+		out:
+		kfree(select_helper->bits);
+
+		out_nofds:
+		kfree(select_helper);
+		printk(KERN_INFO "TimeKeeper: Sys Select: Select finished PID %d\n",current->pid);
+		return ret;
 	}
 
 	return ref_sys_select(k,inp,outp,exp,tvp);
@@ -367,169 +402,157 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	
 	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs > 0){
 	
-
-		list_for_each_safe(pos, n, &exp_list)
-        {
-            task = list_entry(pos, struct dilation_task_struct, list);
-			if (find_children_info(task->linux_task, current->pid) == 1) {
 				
-				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-					printk(KERN_INFO "TimeKeeper: Sys Poll: Processing Poll Process %d\n",current->pid);
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Sys Poll: Processing Poll Process %d\n",current->pid);
 
-				secs_to_sleep = timeout_msecs / MSEC_PER_SEC;
-				nsecs_to_sleep = (timeout_msecs % MSEC_PER_SEC) * NSEC_PER_MSEC;
-				if (nfds > RLIMIT_NOFILE){
-					printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Invalid");
-					return -EINVAL;
-				}
-
-
-				poll_helper = hmap_get(&poll_process_lookup, &current->pid);
-				if(poll_helper == NULL){
-					poll_helper = kmalloc(sizeof(struct poll_helper_struct), GFP_KERNEL);
-					if(poll_helper == NULL){
-						printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
-						return -ENOMEM;
-					}
-					
-					
-				}
-
-				
-				
-				poll_helper->head = (struct poll_list *) kmalloc(POLL_STACK_ALLOC/sizeof(long), GFP_KERNEL);
-				poll_helper->table = (struct poll_wqueues *) kmalloc(sizeof(struct poll_wqueues), GFP_KERNEL);
-
-				if(poll_helper->head == NULL || poll_helper->table == NULL){
-					printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
-					return -ENOMEM;
-				}
-				
+		secs_to_sleep = timeout_msecs / MSEC_PER_SEC;
+		nsecs_to_sleep = (timeout_msecs % MSEC_PER_SEC) * NSEC_PER_MSEC;
+		if (nfds > RLIMIT_NOFILE){
+			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Invalid");
+			return -EINVAL;
+		}
 
 
-				
-				head = poll_helper->head;	
-				poll_helper->err = -EFAULT;
-				poll_helper->done = 0;
-				poll_helper->walk = head;
-				walk = head;
-				init_waitqueue_head(&poll_helper->w_queue);
-
-				
-				len = (nfds < N_STACK_PPS ? nfds: N_STACK_PPS);
-				todo = nfds;
-				for (;;) {
-					walk->next = NULL;
-					walk->len = len;
-					if (!len)
-						break;
-
-					if (copy_from_user(walk->entries, ufds + nfds-todo,
-							sizeof(struct pollfd) * walk->len))
-						goto out_fds;
-
-					todo -= walk->len;
-					if (!todo)
-						break;
-
-					len = (todo < POLLFD_PER_PAGE ? todo : POLLFD_PER_PAGE );
-					size = sizeof(struct poll_list) + sizeof(struct pollfd) * len;
-					walk = walk->next = kmalloc(size, GFP_KERNEL);
-					if (!walk) {
-						err = -ENOMEM;
-						goto out_fds;
-					}
-				}
-				poll_initwait(poll_helper->table);
-
-				do_gettimeofday(&ktv);
-				now = timeval_to_ns(&ktv);
-				
-				//spin_lock(&current->dialation_lock);
-				now_new = get_dilated_time(current);
-				current->freeze_time = 0;
-
-				s64 wakeup_time;
-				wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
-				printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
-
-				hmap_put(&poll_process_lookup,&current->pid,poll_helper);			
-				//spin_unlock(&current->dialation_lock);
-
-				while(1){
-
-					now_new = get_dilated_time(current);
-					if(now_new < wakeup_time){
-
-						wait_event(poll_helper->w_queue,poll_helper->done == 1);
-						set_current_state(TASK_RUNNING);
-
-						if(experiment_stopped == NOTRUNNING || experiment_stopped == STOPPING)
-							return -EFAULT;
-						
-						//spin_lock(&current->dialation_lock);
-						err = do_dialated_poll(poll_helper->nfds, poll_helper->head,poll_helper->table,current);
-						if(err || poll_helper->err == FINISHED){
-							
-							poll_helper->err = err;
-							//spin_unlock(&current->dialation_lock);
-							break;
-						}
-						poll_helper->done = 0;
-						//spin_unlock(&current->dialation_lock);
-						
-
-					}
-					else{
-						//spin_lock(&current->dialation_lock);
-						poll_helper->err = 0;
-						//spin_unlock(&current->dialation_lock);
-						break;
-					}
-
-				}
-				
-				printk(KERN_INFO "TimeKeeper: Sys Poll: Resumed Poll Process %d\n",current->pid);
-				poll_freewait(poll_helper->table);
+		poll_helper = hmap_get(&poll_process_lookup, &current->pid);
+		if(poll_helper == NULL){
+			poll_helper = kmalloc(sizeof(struct poll_helper_struct), GFP_KERNEL);
+			if(poll_helper == NULL){
+				printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
+				return -ENOMEM;
+			}
 	
-				for (walk = head; walk; walk = walk->next) {
-					struct pollfd *fds = walk->entries;
-					int j;
+	
+		}
 
-					for (j = 0; j < walk->len; j++, ufds++)
-						if (__put_user(fds[j].revents, &ufds->revents))
-							goto out_fds;
-			  	}
 
-				err = poll_helper->err;
 
-				out_fds:
-				walk = head->next;
-				while (walk) {
-					struct poll_list *pos = walk;
-					walk = walk->next;
-					kfree(pos);
-				}
-				kfree(head);
-				kfree(poll_helper->table);
-				//spin_lock(&current->dialation_lock);
-				hmap_remove(&poll_process_lookup, &current->pid);
-				//spin_unlock(&current->dialation_lock);
-				kfree(poll_helper);
+		poll_helper->head = (struct poll_list *) kmalloc(POLL_STACK_ALLOC/sizeof(long), GFP_KERNEL);
+		poll_helper->table = (struct poll_wqueues *) kmalloc(sizeof(struct poll_wqueues), GFP_KERNEL);
 
-				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-					printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Finished %d",current->pid);
+		if(poll_helper->head == NULL || poll_helper->table == NULL){
+			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
+			return -ENOMEM;
+		}
 
-				return err;
 
-				
+
+
+		head = poll_helper->head;	
+		poll_helper->err = -EFAULT;
+		poll_helper->done = 0;
+		poll_helper->walk = head;
+		walk = head;
+		init_waitqueue_head(&poll_helper->w_queue);
+
+
+		len = (nfds < N_STACK_PPS ? nfds: N_STACK_PPS);
+		todo = nfds;
+		for (;;) {
+			walk->next = NULL;
+			walk->len = len;
+			if (!len)
+				break;
+
+			if (copy_from_user(walk->entries, ufds + nfds-todo,
+					sizeof(struct pollfd) * walk->len))
+				goto out_fds;
+
+			todo -= walk->len;
+			if (!todo)
+				break;
+
+			len = (todo < POLLFD_PER_PAGE ? todo : POLLFD_PER_PAGE );
+			size = sizeof(struct poll_list) + sizeof(struct pollfd) * len;
+			walk = walk->next = kmalloc(size, GFP_KERNEL);
+			if (!walk) {
+				err = -ENOMEM;
+				goto out_fds;
 			}
 		}
+		poll_initwait(poll_helper->table);
+
+		do_gettimeofday(&ktv);
+		now = timeval_to_ns(&ktv);
+
+		acquire_irq_lock(&current->dialation_lock,flags);
+		now_new = get_dilated_time(current);
+		//current->freeze_time = 0;
+
+		s64 wakeup_time;
+		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
+		printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
+
+		hmap_put(&poll_process_lookup,&current->pid,poll_helper);			
+		release_irq_lock(&current->dialation_lock,flags);
+
+		while(1){
+
+			now_new = get_dilated_time(current);
+			if(now_new < wakeup_time){
+
+				wait_event(poll_helper->w_queue,poll_helper->done == 1);
+				set_current_state(TASK_RUNNING);
+
+				if(experiment_stopped == NOTRUNNING || experiment_stopped == STOPPING)
+					return -EFAULT;
+		
+				acquire_irq_lock(&current->dialation_lock,flags);
+				err = do_dialated_poll(poll_helper->nfds, poll_helper->head,poll_helper->table,current);
+				if(err || poll_helper->err == FINISHED){
+			
+					poll_helper->err = err;
+					release_irq_lock(&current->dialation_lock,flags);
+					break;
+				}
+				poll_helper->done = 0;
+				release_irq_lock(&current->dialation_lock,flags);
+		
+
+			}
+			else{
+				poll_helper->err = 0;
+				break;
+			}
+
+		}
+
+		printk(KERN_INFO "TimeKeeper: Sys Poll: Resumed Poll Process %d\n",current->pid);
+		poll_freewait(poll_helper->table);
+
+		for (walk = head; walk; walk = walk->next) {
+			struct pollfd *fds = walk->entries;
+			int j;
+
+			for (j = 0; j < walk->len; j++, ufds++)
+				if (__put_user(fds[j].revents, &ufds->revents))
+					goto out_fds;
+		}
+
+		err = poll_helper->err;
+
+		out_fds:
+		walk = head->next;
+		while (walk) {
+			struct poll_list *pos = walk;
+			walk = walk->next;
+			kfree(pos);
+		}
+		kfree(head);
+		kfree(poll_helper->table);
+		hmap_remove(&poll_process_lookup, &current->pid);
+		kfree(poll_helper);
+
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Finished %d",current->pid);
+
+		return err;
+
 	}
 	
-    */
+    	*/
 
-	return ref_sys_poll(ufds,nfds,timeout_msecs);
+        return ref_sys_poll(ufds,nfds,timeout_msecs);
 	
 
 

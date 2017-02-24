@@ -160,7 +160,7 @@ struct dilation_task_struct* initialize_node(struct task_struct* aTask) {
 	list_node->last_run = NULL;
 	llist_init(&list_node->schedule_queue);
 	hmap_init(&list_node->valid_children,"int",0);
-	hrtimer_init( &list_node->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS );
+	hrtimer_init( &list_node->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
 	hrtimer_init( &list_node->schedule_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
 	return list_node;
 }
@@ -262,10 +262,9 @@ void sync_and_freeze() {
 
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
-	sys_call_table[__NR_select_dialated] = (unsigned long *)sys_select_new;	
-	//sys_call_table[__NR_select] = (unsigned long *)sys_select_new;	
+	sys_call_table[NR_select] = (unsigned long *)sys_select_new;	
 	sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
-	write_cr0(orig_cr0);
+	write_cr0(orig_cr0 | 0x00010000 );
 
 
 	for (j = 0; j < number_of_heads; j++) {
@@ -1099,7 +1098,7 @@ enum hrtimer_restart exp_hrtimer_callback( struct hrtimer *timer )
 	if(task->last_timer_fire_time != 0){
 		s64 actual_fire_duration = now - task->last_timer_fire_time;
 
-		if(actual_fire_duration - task->last_timer_duration > 10000000){
+		if(actual_fire_duration - task->last_timer_duration > 2000000){
 			printk(KERN_INFO "TimeKeeper: HRTIMER Error large. Error = %llu. Pid = %d. Fire duration = %llu\n", actual_fire_duration - task->last_timer_duration,task->linux_task->pid,task->last_timer_duration);
 
 		}
@@ -1475,9 +1474,8 @@ void clean_exp() {
 		orig_cr0 = read_cr0();
 		write_cr0(orig_cr0 & ~0x00010000);
 		sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
-		sys_call_table[__NR_select_dialated] = (unsigned long *)ref_sys_select;
-		//sys_call_table[__NR_select] = (unsigned long *)ref_sys_select;	
-		write_cr0(orig_cr0);
+		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
+		write_cr0(orig_cr0 | 0x00010000);
 	}
 
 	experiment_type = NOTSET;
@@ -2474,7 +2472,7 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 
 	set_current_state(TASK_INTERRUPTIBLE);
 	if(experiment_type != CS){
-		hrtimer_start(&lxc->timer,ns_to_ktime(ktime_to_ns(ktime_get()) + timer_fire_time) ,HRTIMER_MODE_ABS);
+		hrtimer_start(&lxc->timer,ns_to_ktime(timer_fire_time) ,HRTIMER_MODE_REL);
 		schedule();
 	}
 	else{
@@ -2596,7 +2594,7 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		if(experiment_type != CS){
-			hrtimer_start(&aTask->timer,ns_to_ktime(ktime_to_ns(ktime_get()) + aTask->running_time) ,HRTIMER_MODE_ABS);
+			hrtimer_start(&aTask->timer,ns_to_ktime(aTask->running_time) ,HRTIMER_MODE_REL);
 			schedule();
 		}
 		else{

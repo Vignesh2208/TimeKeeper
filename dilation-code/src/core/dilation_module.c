@@ -239,7 +239,7 @@ int __init my_module_init(void)
 	catchup_task = kthread_run(&catchup_func, NULL, "catchup_task");
 
 	/* Acquire sys_call_table, hook system calls */
-    if(!(sys_call_table = aquire_sys_call_table()))
+    	if(!(sys_call_table = aquire_sys_call_table()))
           return -1;
 
 
@@ -247,19 +247,20 @@ int __init my_module_init(void)
 	write_cr0(original_cr0 & ~0x00010000);
 	ref_sys_sleep = (void *)sys_call_table[__NR_nanosleep];        
 	ref_sys_poll = (void *)sys_call_table[__NR_poll];
-	ref_sys_select = (void *) sys_call_table[__NR_select_dialated];
+	ref_sys_select = (void *) sys_call_table[NR_select];
 	ref_sys_clock_gettime = (void *)sys_call_table[__NR_clock_gettime];
 	ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
 
+
 	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
-	sys_call_table[__NR_select_dialated] = (unsigned long *) sys_select_new;
+	sys_call_table[NR_select] = (unsigned long *) sys_select_new;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
-
 	/* TODO: Poll cannot be acquired here for some reason */
 	//sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
-	
-	write_cr0(original_cr0);
+	write_cr0(original_cr0 | 0x00010000);
+
+
 	
 	/* Wait to stop loop_task */
 	#ifdef __x86_64
@@ -278,7 +279,7 @@ the system call table.
 ***/
 void __exit my_module_exit(void)
 {
-	int i;
+	s64 i;
 
 	set_clean_exp();
 	netlink_kernel_release(nl_sk);
@@ -294,27 +295,28 @@ void __exit my_module_exit(void)
 
 
 	/* Fix sys_call_table */
-    if(!sys_call_table)
+       if(!sys_call_table)
                 return;
 
 	/* Busy wait briefly for tasks to finish -Not the best approach */
-	for (i = 0; i < 1000000000; i++) {}
+	for (i = 0; i < 10000000000; i++) {}
 
 	if ( kthread_stop(catchup_task) )
         {
                 printk(KERN_INFO "TimeKeeper: Stopping catchup_task error\n");
         }
 	
-
+	original_cr0 = read_cr0();
 	write_cr0(original_cr0 & ~0x00010000);
 	sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
-	sys_call_table[__NR_select_dialated] = (unsigned long *)ref_sys_select;
+	//sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
+	write_cr0(original_cr0 | 0x00010000);
 
-	/* TODO: Poll could not be acquired here for some reason */ 
-	//sys_call_table[__NR_poll] = (unsigned long *) ref_sys_poll;	
-	write_cr0(original_cr0);
+
+	/* Busy wait briefly for tasks to finish -Not the best approach */
+	for (i = 0; i < 10000000000; i++) {}
 
 
 	/* Kill the looping task */
@@ -322,7 +324,7 @@ void __exit my_module_exit(void)
 		if (loop_task != NULL)
 			kill(loop_task, SIGKILL, NULL);
 	#endif
-   		printk(KERN_INFO "TimeKeeper: MP2 MODULE UNLOADED\n");
+   	printk(KERN_INFO "TimeKeeper: MP2 MODULE UNLOADED\n");
 }
 
 /* needs to be defined, but we do not read from /proc/dilation/status so we do not do anything here */

@@ -79,6 +79,9 @@
 #define GOT_RESULT -1
 #define IFNAMESIZ 16
 
+#define NR_select __NR_select_dialated
+
+
 #ifdef ENABLE_LOCKING
 
 #define acquire_irq_lock(lock,flags) \
