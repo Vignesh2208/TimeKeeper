@@ -417,40 +417,37 @@ s64 get_curr_dilated_time_pid(void)
                        	task = task->group_leader;
                	}
 
-		spin_lock_irqsave(&task->dialation_lock,flags);
+		s64 ppp = task->past_physical_time;
+		s64 past_virtual_time = task->past_virtual_time;
+		s64 freeze_time = task->freeze_time;
 
-		if(task->freeze_time == 0){
+		//spin_lock_irqsave(&task->dialation_lock,flags);
+		if(freeze_time == 0){
 			real_running_time = now - task->virt_start_time;
+			temp_past_physical_time = ppp;
 		}
 		else{
-			real_running_time = task->freeze_time - task->virt_start_time;
+			real_running_time = freeze_time - task->virt_start_time;	
+			temp_past_physical_time = ppp + (now - freeze_time);
 		}
-		
 
-		//real_running_time = now - task->virt_start_time;
-		if (task->freeze_time != 0)
-			temp_past_physical_time = task->past_physical_time + (now - task->freeze_time);
-		else
-			temp_past_physical_time = task->past_physical_time;
+		//overriding
+		real_running_time = now - task->virt_start_time;
 
 		if (task->dilation_factor > 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - task->past_physical_time)*1000 ,task->dilation_factor,&rem) + task->past_virtual_time;
+			dilated_running_time = div_s64_rem((real_running_time - temp_past_physical_time)*1000 ,task->dilation_factor,&rem) + past_virtual_time;
 			now = dilated_running_time + task->virt_start_time;
 		}
 		else if (task->dilation_factor < 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - task->past_physical_time)*(task->dilation_factor*-1),1000,&rem) + task->past_virtual_time;
+			dilated_running_time = div_s64_rem((real_running_time - temp_past_physical_time)*(task->dilation_factor*-1),1000,&rem) + past_virtual_time;
 			now =  dilated_running_time + task->virt_start_time;
 		}
 		else {
-			dilated_running_time = (real_running_time - task->past_physical_time) + task->past_virtual_time;
+			dilated_running_time = (real_running_time - temp_past_physical_time) + past_virtual_time;
 			now = dilated_running_time + task->virt_start_time;
 		}
-		if(task->freeze_time == 0){
-			task->past_physical_time = real_running_time;
-			task->past_virtual_time = dilated_running_time;
-		}
 
-		spin_unlock_irqrestore(&task->dialation_lock,flags);
+		//spin_unlock_irqrestore(&task->dialation_lock,flags);
 	
 	}
 	return now;	
@@ -527,9 +524,9 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 		slack = select_estimate_accuracy(end_time);
 
 	
-	spin_lock_irqsave(&current->dialation_lock,flags);
+	//spin_lock_irqsave(&current->dialation_lock,flags);
 	if(current->virt_start_time != 0 && end_time != NULL){
-		spin_unlock_irqrestore(&current->dialation_lock,flags);
+		//spin_unlock_irqrestore(&current->dialation_lock,flags);
 
 		is_dilated = 1;
 		secs_to_sleep = (unsigned int) end_time->tv_sec;
@@ -544,14 +541,11 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 			timeout_time = curr_dilated_time + ((secs_to_sleep*1000000000) + nsecs_to_sleep);
 
 		}
-		//spin_lock_irqsave(&current->dialation_lock,flags);
-		//printk(KERN_INFO "Select@@@@@@@@@@@@@@@@@@ Initialized start time : %lld, timeout time to %lld. PID %d ", curr_dilated_time, timeout_time,current->pid);
-		//printk(KERN_INFO "Select@@@@@@@@@@@@@@@@@@ Initialized secs_to_sleep %d, nsecs_To_sleep %d. Dialation factor : %d, PID %d ", secs_to_sleep,nsecs_to_sleep,current->dilation_factor, current->pid);
 
 	}
-	else
-		spin_unlock_irqrestore(&current->dialation_lock,flags);
-	
+	else {
+		//spin_unlock_irqrestore(&current->dialation_lock,flags);
+	}
 
 	retval = 0;
 	for (;;) {
@@ -633,8 +627,6 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 		}
 		else{
 			if (retval || timed_out){
-				//printk(KERN_INFO "Select@@@@@@@@@@@@@@@@@@ Breaking out. retval = %d, timed_out = %d. PID %d",retval,timed_out,current->pid);
-			
 				break;
 			}
 
@@ -683,15 +675,14 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 
 			curr_dilated_time = get_curr_dilated_time_pid();
 			if(curr_dilated_time > timeout_time){
-				//printk(KERN_INFO "Select@@@@@@@@@@@@@@@@@@@ : Timed out %lld, %lld ", curr_dilated_time, timeout_time);
 				timed_out = 1;
 			}
 			else{
 				
 				if (!to) {
 
-					sleep_time.tv_sec = 1;
-					sleep_time.tv_nsec = 0;
+					sleep_time.tv_sec = 0;
+					sleep_time.tv_nsec = 100000000;
 					expire = timespec_to_ktime(sleep_time);
 					to = &expire;
 				}
@@ -699,7 +690,6 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 				if (!poll_relative_schedule_timeout(&table, TASK_INTERRUPTIBLE,to, 0)){
 					curr_dilated_time = get_curr_dilated_time_pid();
 					if(curr_dilated_time > timeout_time){
-						//printk(KERN_INFO "Select@@@@@@@@@@@@@@@@@@@ : Timed out completely %lld, %lld ", curr_dilated_time, timeout_time);
 						timed_out = 1;
 					}	
 	
@@ -825,7 +815,6 @@ SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 		}
 		else{
 			spin_unlock_irqrestore(&current->dialation_lock,flags);
-
 			end_time.tv_sec = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
 			end_time.tv_nsec = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
 			ret = core_sys_select(n, inp, outp, exp, to);
@@ -855,14 +844,6 @@ SYSCALL_DEFINE5(select_dialated, int, n, fd_set __user *, inp, fd_set __user *, 
 	// should never get called if TimeKeeper is running. It behaves like normal
 	// select if it is called when TimeKeeper is not running.
 	
-
-	/*spin_lock(&current->dialation_lock);
-	if(current->virt_start_time == 0){
-		spin_unlock(&current->dialation_lock);
-		return -EFAULT; // process is not dialated. cannot call select_dialated
-	}
-	spin_unlock(&current->dialation_lock);
-	*/
 
 	return sys_select(n,inp,outp,exp,tvp);
 	
