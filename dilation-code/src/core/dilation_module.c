@@ -256,6 +256,7 @@ int __init my_module_init(void)
 	sys_call_table[NR_select] = (unsigned long *) sys_select_new;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
+
 	/* TODO: Poll cannot be acquired here for some reason */
 	//sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
 	write_cr0(original_cr0 | 0x00010000);

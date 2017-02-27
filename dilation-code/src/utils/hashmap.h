@@ -2,6 +2,7 @@
 #define __HASHMAP_H
 
 #include "linkedlist.h"
+#include <linux/spinlock_types.h>
 
 #define DEFAULT_MAP_SIZE 100
 

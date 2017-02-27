@@ -109,11 +109,10 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
 	{		
 
-    		do_gettimeofday(&ktv);
+    	do_gettimeofday(&ktv);
 		now = timeval_to_ns(&ktv);			
 		now_new = get_dilated_time(current);
 		release_irq_lock(&current->dialation_lock,flags);
-
 		sleep_helper = hmap_get(&sleep_process_lookup, &current->pid);
 		if(sleep_helper == NULL){
 			sleep_helper = kmalloc(sizeof(struct sleep_helper_struct), GFP_KERNEL);
@@ -126,7 +125,10 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 		set_current_state(TASK_INTERRUPTIBLE);
 		init_waitqueue_head(&sleep_helper->w_queue);
 		sleep_helper->done = 0;
+
+		acquire_irq_lock(&current->dialation_lock,flags);
 		hmap_put(&sleep_process_lookup,&current->pid,sleep_helper);
+		release_irq_lock(&current->dialation_lock,flags);
 		
 		s64 temp_wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale;;
 		printk(KERN_INFO "TimeKeeper: Sleep New: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, temp_wakeup_time); 
@@ -148,7 +150,11 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			release_irq_lock(&current->dialation_lock,flags);
         	}
 		set_current_state(TASK_RUNNING);
+
+		acquire_irq_lock(&current->dialation_lock,flags);
 		hmap_remove(&sleep_process_lookup, &current->pid);
+		release_irq_lock(&current->dialation_lock,flags);		
+
 		kfree(sleep_helper);
 
 		printk(KERN_INFO "TimeKeeper: Sleep New: PID : %d, Woke up at : %lld\n",current->pid, get_dilated_time(current)); 
@@ -200,10 +206,13 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 			if(task != NULL) {
 				if (find_children_info(task->linux_task, current->pid) == 1) {
+
+					if(current->virt_start_time == 0){
 					current->virt_start_time = task->linux_task->virt_start_time;
 					current->dilation_factor = task->linux_task->dilation_factor;
 					current->past_physical_time = task->linux_task->past_physical_time;
 					current->past_virtual_time = task->linux_task->past_virtual_time;
+					}
 				
 
 				}
@@ -294,12 +303,13 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 		acquire_irq_lock(&current->dialation_lock,flags);
 		now_new = get_dilated_time(current);
-		//current->freeze_time = 0;
 
 		s64 wakeup_time;
 		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
 		printk(KERN_INFO "TimeKeeper: Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
 
+
+		
 		hmap_put(&select_process_lookup, &current->pid, select_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 
@@ -322,8 +332,9 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 						release_irq_lock(&current->dialation_lock,flags);
 						break;
 					}
-					
-					release_irq_lock(&current->dialation_lock,flags);
+					else {
+						release_irq_lock(&current->dialation_lock,flags);
+					}
 				}
 
 
@@ -361,7 +372,10 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		    set_fd_set(k, exp, select_helper->fds.res_ex))
 			ret = -EFAULT;
 
+		acquire_irq_lock(&current->dialation_lock,flags);
 		hmap_remove(&select_process_lookup, &current->pid);
+		release_irq_lock(&current->dialation_lock,flags);
+
 		out:
 		kfree(select_helper->bits);
 
@@ -532,6 +546,10 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		err = poll_helper->err;
 
 		out_fds:
+		acquire_irq_lock(&current->dialation_lock,flags);
+		hmap_remove(&poll_process_lookup, &current->pid);
+		release_irq_lock(&current->dialation_lock,flags);
+
 		walk = head->next;
 		while (walk) {
 			struct poll_list *pos = walk;
@@ -539,8 +557,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 			kfree(pos);
 		}
 		kfree(head);
-		kfree(poll_helper->table);
-		hmap_remove(&poll_process_lookup, &current->pid);
+		kfree(poll_helper->table);		
 		kfree(poll_helper);
 
 		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)

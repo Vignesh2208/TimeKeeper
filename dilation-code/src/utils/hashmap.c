@@ -117,6 +117,7 @@ void hmap_init(hashmap * h, char * type , int m_size){
 			h->key_comparer = default_key_comparer;
 		}
 	}
+
 }
 
 void hmap_set_hash(hashmap * h, int (*hashfn) (void * item)){
@@ -131,6 +132,11 @@ void hmap_put(hashmap * h, void * key, void * value){
 	int index;
 	hashmap_elem * new_elem;
 	hashmap_elem * temp;
+
+	if(h == NULL)
+		return;
+
+	
 	
 	index = (abs(h->hash(key)) % h->size);
 	
@@ -165,6 +171,10 @@ void* hmap_get(hashmap * h, void * key){
 	int index;
 	hashmap_elem * new_elem;	
 	hashmap_elem * temp;
+
+	if(h == NULL || key == NULL)
+		return NULL;
+
 	index = (abs(h->hash(key)) % h->size);
 	
 	llist * list;	
@@ -180,7 +190,8 @@ void* hmap_get(hashmap * h, void * key){
 		if(list->equals(head->item,new_elem) == 0){
 			kfree(new_elem);
 			temp = (hashmap_elem *) head->item;
-			return temp->value;
+			void * val = temp;
+			return val;
 		}
 		head = head->next;
 	}

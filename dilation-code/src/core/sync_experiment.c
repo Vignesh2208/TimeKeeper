@@ -1871,30 +1871,32 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
             else {
 				
 				if(task_poll_helper != NULL){				
-					release_irq_lock(&t->dialation_lock,flags);
-
+					
 					task_poll_helper->done = 1;
 					wake_up(&task_poll_helper->w_queue);
+					release_irq_lock(&t->dialation_lock,flags);
 					kill(t, SIGCONT, NULL);
 
 				}
 				else if(task_select_helper != NULL){					
-					release_irq_lock(&t->dialation_lock,flags);
 
 					task_select_helper->done = 1;
 					wake_up(&task_select_helper->w_queue);
+					release_irq_lock(&t->dialation_lock,flags);
 					kill(t, SIGCONT, NULL);
 				}
 				else if( task_sleep_helper != NULL) {				
-					release_irq_lock(&t->dialation_lock,flags);
 
 					task_sleep_helper->done = 1;
 					wake_up(&task_sleep_helper->w_queue);
+					release_irq_lock(&t->dialation_lock,flags);
 					kill(t, SIGCONT, NULL);
 
 				}
-				else
+				else {
 					release_irq_lock(&t->dialation_lock,flags);
+
+				}
                 
  			}
 
@@ -1927,7 +1929,7 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 			taskRecurse->past_physical_time = aTask->past_physical_time;
 			taskRecurse->past_virtual_time = aTask->past_virtual_time;
 			taskRecurse->wakeup_time = 0;
-			release_irq_lock(&taskRecurse->dialation_lock,flags);
+			
 
 			task_sleep_helper = hmap_get(&sleep_process_lookup,&taskRecurse->pid);
 			if(task_sleep_helper != NULL) {
@@ -1935,6 +1937,7 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 				wake_up(&task_sleep_helper->w_queue);
 			}
 			
+			release_irq_lock(&taskRecurse->dialation_lock,flags);
 			/* just in case - to continue all threads */
 			kill(taskRecurse, SIGCONT, dilTask); 
 			
@@ -1964,30 +1967,34 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
             else {
 				
 				if(task_poll_helper != NULL){				
-					release_irq_lock(&taskRecurse->dialation_lock,flags);
+					
 
 					task_poll_helper->done = 1;
 					wake_up(&task_poll_helper->w_queue);
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
 					kill(taskRecurse, SIGCONT, NULL);
 
 				}
 				else if(task_select_helper != NULL){					
-					release_irq_lock(&taskRecurse->dialation_lock,flags);
+					
 
 					task_select_helper->done = 1;
 					wake_up(&task_select_helper->w_queue);
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
 					kill(taskRecurse, SIGCONT, NULL);
 				}
 				else if( task_sleep_helper != NULL) {				
-					release_irq_lock(&taskRecurse->dialation_lock,flags);
-
+					
 					task_sleep_helper->done = 1;
 					wake_up(&task_sleep_helper->w_queue);
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
 					kill(taskRecurse, SIGCONT, NULL);
 
 				}
-				else
-					release_irq_lock(&taskRecurse->dialation_lock,flags);	
+				else{
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
+
+				}	
                 
  			}
                 
@@ -2009,30 +2016,33 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 			else {
 
 				if(task_poll_helper != NULL){				
-					release_irq_lock(&taskRecurse->dialation_lock,flags);
+					
 
 					task_poll_helper->done = 1;
 					wake_up(&task_poll_helper->w_queue);
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
 					kill(taskRecurse, SIGCONT, NULL);
 
 				}
 				else if(task_select_helper != NULL){					
-					release_irq_lock(&taskRecurse->dialation_lock,flags);
+					
 
 					task_select_helper->done = 1;
 					wake_up(&task_select_helper->w_queue);
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
 					kill(taskRecurse, SIGCONT, NULL);
 				}
 				else if( task_sleep_helper != NULL) {				
-					release_irq_lock(&taskRecurse->dialation_lock,flags);
 
 					task_sleep_helper->done = 1;
 					wake_up(&task_sleep_helper->w_queue);
+					release_irq_lock(&taskRecurse->dialation_lock,flags);
 					kill(taskRecurse, SIGCONT, NULL);
 
 				}
-				else
+				else{
 					release_irq_lock(&taskRecurse->dialation_lock,flags);
+				}
 
 			}
 			
@@ -2085,9 +2095,9 @@ int resume_all(struct task_struct *aTask,struct dilation_task_struct * lxc) {
 			t->wakeup_time = 0;
 			t->freeze_time = 0;
 			helper->err = FINISHED;
-			helper->done = 1;
-			release_irq_lock(&t->dialation_lock,flags);
+			helper->done = 1;			
 			wake_up(&helper->w_queue);
+			release_irq_lock(&t->dialation_lock,flags);
 
 		}
 		else if(sel_helper != NULL){
@@ -2096,15 +2106,15 @@ int resume_all(struct task_struct *aTask,struct dilation_task_struct * lxc) {
 			t->freeze_time = 0;
 			sel_helper->ret = FINISHED;
 			sel_helper->done = 1;
-			release_irq_lock(&t->dialation_lock,flags);
 			wake_up(&sel_helper->w_queue);
+			release_irq_lock(&t->dialation_lock,flags);
 		}
 		else if (sleep_helper != NULL) {
 			t->wakeup_time = 0;
 			t->freeze_time = 0;
 			sleep_helper->done = 1;
-			release_irq_lock(&t->dialation_lock,flags);
 			wake_up(&sleep_helper->w_queue);
+			release_irq_lock(&t->dialation_lock,flags);
 		}
 		else {
 			release_irq_lock(&t->dialation_lock,flags);
@@ -2327,36 +2337,35 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	curr_task = head->curr_task;
 	me = curr_task;
 	t = me;	
+
+	acquire_irq_lock(&t->dialation_lock,flags);
 	task_poll_helper = hmap_get(&poll_process_lookup,&t->pid);
 	task_select_helper = hmap_get(&select_process_lookup,&t->pid);
 	task_sleep_helper = hmap_get(&sleep_process_lookup, &t->pid);
 
-	acquire_irq_lock(&t->dialation_lock,flags);
+	
 	if(task_poll_helper != NULL){
 		
 		t->freeze_time = 0;
-		release_irq_lock(&t->dialation_lock,flags);
-
 		task_poll_helper->done = 1;
 		wake_up(&task_poll_helper->w_queue);
+		release_irq_lock(&t->dialation_lock,flags);
 		kill(t, SIGCONT, NULL);
 
 	}
 	else if(task_select_helper != NULL){
 
 		t->freeze_time = 0;
-		release_irq_lock(&t->dialation_lock,flags);
-
 		task_select_helper->done = 1;
 		wake_up(&task_select_helper->w_queue);
+		release_irq_lock(&t->dialation_lock,flags);
 		kill(t, SIGCONT, NULL);
 	}
 	else if( task_sleep_helper != NULL) {
 		t->freeze_time = 0;
-		release_irq_lock(&t->dialation_lock,flags);
-
 		task_sleep_helper->done = 1;
 		wake_up(&task_sleep_helper->w_queue);
+		release_irq_lock(&t->dialation_lock,flags);
 
 		/* Sending a Continue signal here will wake all threads up. We dont want that */
 		//kill(t, SIGCONT, NULL);

@@ -79,32 +79,46 @@
 #define GOT_RESULT -1
 #define IFNAMESIZ 16
 
-#define NR_select __NR_select_dialated
+#define NR_select __NR_select
 
 
-#ifdef ENABLE_LOCKING
+#ifdef ENABLE_IRQ_LOCKING
 
 #define acquire_irq_lock(lock,flags) \
 do {															 \
 	spin_lock_irqsave(lock,flags);								 \
-} while(0)														 \
+} while(0)														 
 
 
 #define release_irq_lock(lock, flags) \
 do {															 \
 	spin_unlock_irqrestore(lock,flags);								 \
-} while(0)	
+} while(0)									
 
-#else
+#elif ENABLE_LOCKING
 
 #define acquire_irq_lock(lock,flags) \
-do {															 \
-} while(0)														 \
+do {							\
+	spin_lock(lock);				\
+} while(0)							
 
 
 #define release_irq_lock(lock, flags) \
 do {															 \
-} while(0)	
+spin_unlock(lock);				\
+} while(0)														
+
+#else 
+
+#define acquire_irq_lock(lock,flags) \
+do {							\
+} while(0)							
+
+
+#define release_irq_lock(lock, flags) \
+do {															 \
+} while(0)														
+
 
 #endif
 
