@@ -105,8 +105,15 @@ extern struct timeline* timelineHead[EXP_CPUS];
 extern void perform_on_children(struct task_struct *aTask, void(*action)(int,int), int val);
 extern void change_dilation(int pid, int new_dilation);
 extern s64 get_virtual_time_task(struct task_struct* task, s64 now);
+
+// system call orig function pointers
 extern asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
 extern asmlinkage long (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
+extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
+
+
 extern unsigned long **sys_call_table; //address of the sys_call_table, so we can hijack certain system calls
 unsigned long orig_cr0;
 
@@ -259,11 +266,17 @@ void sync_and_freeze() {
 	hmap_init( &select_process_lookup,"int",0);
 	hmap_init( &sleep_process_lookup,"int",0);
 
+	printk(KERN_INFO "TimeKeeper: Sync and Freeze: Hooking system calls\n");
 
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
+
 	sys_call_table[NR_select] = (unsigned long *)sys_select_new;	
 	sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
+	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
+	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
+	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
+
 	write_cr0(orig_cr0 | 0x00010000 );
 
 
@@ -1386,6 +1399,20 @@ void clean_exp() {
 	do_gettimeofday(&now);
 	now_ns = timeval_to_ns(&now);
 
+	if(experiment_type != NOTSET){
+
+		printk(KERN_INFO "TimeKeeper: Clean Exp: Resetting Sys Call table\n");
+		orig_cr0 = read_cr0();
+		write_cr0(orig_cr0 & ~0x00010000);
+		sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
+		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
+		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
+		sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
+		sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
+		write_cr0(orig_cr0 | 0x00010000);
+		printk(KERN_INFO "TimeKeeper: Clean Exp: Sys Call table Updated\n");
+	}
+
 	/* free any heap memory associated with each container, cancel corresponding timers */
     list_for_each_safe(pos, n, &exp_list)
     {
@@ -1459,25 +1486,13 @@ void clean_exp() {
 				atomic_set(&tmp->stop_thread,2);
 				wake_up_interruptible_sync(&tmp->pthread_queue);	
 				wake_up_interruptible_sync(&tmp->progress_thread_queue);				
-				printk(KERN_INFO "TimeKeeper : Clean Exp: Stopped all kernel threads for timeline : %d\n",tmp->number);
+				printk(KERN_INFO "TimeKeeper: Clean Exp: Stopped all kernel threads for timeline : %d\n",tmp->number);
 			}
 		}
 	}
 
-	#ifdef __x86_64
-		kill(loop_task, SIGSTOP, NULL);
-	#endif
-
+	
 	experiment_stopped = NOTRUNNING;
-	if(experiment_type != NOTSET){
-
-		orig_cr0 = read_cr0();
-		write_cr0(orig_cr0 & ~0x00010000);
-		sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
-		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
-		write_cr0(orig_cr0 | 0x00010000);
-	}
-
 	experiment_type = NOTSET;
 	proc_num = 0;
 
@@ -1487,6 +1502,11 @@ void clean_exp() {
 	atomic_set(&running_done, 0);
 	number_of_heads = 0;
 	stopped_change = 0;
+
+	//#ifdef __x86_64
+	//	kill(loop_task, SIGSTOP, NULL);
+	//#endif
+
 
 	printk(KERN_INFO "TimeKeeper: Clean Exp: Exited Clean Experiment");
 

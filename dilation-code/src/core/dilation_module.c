@@ -250,15 +250,6 @@ int __init my_module_init(void)
 	ref_sys_select = (void *) sys_call_table[NR_select];
 	ref_sys_clock_gettime = (void *)sys_call_table[__NR_clock_gettime];
 	ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
-
-
-	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
-	sys_call_table[NR_select] = (unsigned long *) sys_select_new;
-	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
-	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
-
-	/* TODO: Poll cannot be acquired here for some reason */
-	//sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
 	write_cr0(original_cr0 | 0x00010000);
 
 
@@ -300,24 +291,25 @@ void __exit my_module_exit(void)
                 return;
 
 	/* Busy wait briefly for tasks to finish -Not the best approach */
-	for (i = 0; i < 10000000000; i++) {}
+	for (i = 0; i < 1000000000; i++) {}
 
 	if ( kthread_stop(catchup_task) )
         {
                 printk(KERN_INFO "TimeKeeper: Stopping catchup_task error\n");
         }
 	
+
+	/* Resetting just in case experiment does not finish properly */
 	original_cr0 = read_cr0();
 	write_cr0(original_cr0 & ~0x00010000);
 	sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
-	//sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
 	write_cr0(original_cr0 | 0x00010000);
 
 
 	/* Busy wait briefly for tasks to finish -Not the best approach */
-	for (i = 0; i < 10000000000; i++) {}
+	for (i = 0; i < 1000000000; i++) {}
 
 
 	/* Kill the looping task */

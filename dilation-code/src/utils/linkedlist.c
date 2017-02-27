@@ -40,6 +40,8 @@ int llist_append(llist *l, void * item){
 		l->tail = new_elem;
 		l->head->next = NULL;
 		l->head->prev = NULL;
+		l->tail->next = NULL;
+		l->tail->prev = NULL;
 		return SUCCESS;
 	}
 	
@@ -86,6 +88,9 @@ void llist_set_equality_checker(llist * l, int (*equality_checker)(void * elem1,
 
 void * llist_remove_at(llist * l, int index){
 
+	if(l == NULL)
+		return NULL;
+
 	int i = 0;
 	llist_elem * head = l->head;
 	void * result;
@@ -101,7 +106,9 @@ void * llist_remove_at(llist * l, int index){
 					return result;
 				}
 				
-				head->next->prev = NULL;
+				if(head->next != NULL)
+					head->next->prev = NULL;
+
 				l->head = head->next;
 				kfree(head);
 				return result;
@@ -111,13 +118,18 @@ void * llist_remove_at(llist * l, int index){
 				
 				l->tail = l->tail->prev;
 				if(l->tail != NULL)
-				l->tail->next = NULL;
+					l->tail->next = NULL;
+
 				kfree(head);
 				return result;
 			}			
 
-			head->prev->next = head->next;
-			head->next->prev = head->prev;
+			if(head->prev != NULL)
+				head->prev->next = head->next;
+
+			if(head->next != NULL)
+				head->next->prev = head->prev;
+
 			kfree(head);
 			return result;
 		}
@@ -133,8 +145,10 @@ int llist_size(llist * l){
 }
 
 void * llist_pop(llist * l){
-
-	return llist_remove_at(l,0);
+	if(l != NULL)
+		return llist_remove_at(l,0);
+	else
+		return NULL;
 }
 
 int llist_remove(llist *l, void * item){

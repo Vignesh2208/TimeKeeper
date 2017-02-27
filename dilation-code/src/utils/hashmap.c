@@ -24,6 +24,8 @@ int default_key_comparer(void * key1, void * key2){
 
 int int_key_comparer(int * key1, int * key2){
 	
+	if(key1 == NULL || key2 == NULL)
+		return 1;
 	
 	if(*key1 == *key2)
 		return 0;
@@ -75,7 +77,12 @@ int int_hash(int * val){
 
 int hmap_elem_comparer(hashmap_elem * elem1, hashmap_elem * elem2){
 
-	return elem1->equals(elem1->key, elem2->key);
+	if(elem1 != NULL && elem2 != NULL) {
+		return elem1->equals(elem1->key, elem2->key);
+	}
+	else {
+		return 1;
+	}
 
 }
 
@@ -133,7 +140,7 @@ void hmap_put(hashmap * h, void * key, void * value){
 	hashmap_elem * new_elem;
 	hashmap_elem * temp;
 
-	if(h == NULL)
+	if(h == NULL || key == NULL)
 		return;
 
 	
@@ -190,8 +197,7 @@ void* hmap_get(hashmap * h, void * key){
 		if(list->equals(head->item,new_elem) == 0){
 			kfree(new_elem);
 			temp = (hashmap_elem *) head->item;
-			void * val = temp;
-			return val;
+			return temp->value;
 		}
 		head = head->next;
 	}
