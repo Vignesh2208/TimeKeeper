@@ -80,45 +80,50 @@
 #define IFNAMESIZ 16
 
 #define NR_select __NR_select
+#define ENABLE_LOCKING
 
 
 #ifdef ENABLE_IRQ_LOCKING
 
-#define acquire_irq_lock(lock,flags) \
-do {															 \
-	spin_lock_irqsave(lock,flags);								 \
-} while(0)														 
+	#define acquire_irq_lock(lock,flags) \
+	do {															 \
+		spin_lock_irqsave(lock,flags);								 \
+	} while(0)														 
 
 
-#define release_irq_lock(lock, flags) \
-do {															 \
-	spin_unlock_irqrestore(lock,flags);								 \
-} while(0)									
-
-#elif ENABLE_LOCKING
-
-#define acquire_irq_lock(lock,flags) \
-do {							\
-	spin_lock(lock);				\
-} while(0)							
-
-
-#define release_irq_lock(lock, flags) \
-do {															 \
-spin_unlock(lock);				\
-} while(0)														
+	#define release_irq_lock(lock, flags) \
+	do {															 \
+		spin_unlock_irqrestore(lock,flags);								 \
+	} while(0)									
 
 #else 
 
-#define acquire_irq_lock(lock,flags) \
-do {							\
-} while(0)							
+	#ifdef ENABLE_LOCKING
+
+		#define acquire_irq_lock(lock,flags) \
+		do {							\
+			spin_lock(lock);				\
+		} while(0)							
 
 
-#define release_irq_lock(lock, flags) \
-do {															 \
-} while(0)														
+		#define release_irq_lock(lock, flags) \
+		do {															 \
+		spin_unlock(lock);				\
+		} while(0)														
 
+	#else 
+
+		#define acquire_irq_lock(lock,flags) \
+		do {							\
+		} while(0)							
+
+
+		#define release_irq_lock(lock, flags) \
+		do {															 \
+		} while(0)														
+
+
+	#endif
 
 #endif
 

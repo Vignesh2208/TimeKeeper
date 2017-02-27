@@ -160,7 +160,7 @@ struct dilation_task_struct* initialize_node(struct task_struct* aTask) {
 	list_node->last_run = NULL;
 	llist_init(&list_node->schedule_queue);
 	hmap_init(&list_node->valid_children,"int",0);
-	hrtimer_init( &list_node->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
+	hrtimer_init( &list_node->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS );
 	hrtimer_init( &list_node->schedule_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
 	return list_node;
 }
@@ -2481,7 +2481,7 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 
 	set_current_state(TASK_INTERRUPTIBLE);
 	if(experiment_type != CS){
-		hrtimer_start(&lxc->timer,ns_to_ktime(timer_fire_time) ,HRTIMER_MODE_REL);
+		hrtimer_start(&lxc->timer,ns_to_ktime(ktime_to_ns(ktime_get()) + timer_fire_time) ,HRTIMER_MODE_ABS);
 		schedule();
 	}
 	else{
@@ -2603,7 +2603,7 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		if(experiment_type != CS){
-			hrtimer_start(&aTask->timer,ns_to_ktime(aTask->running_time) ,HRTIMER_MODE_REL);
+			hrtimer_start(&aTask->timer,ns_to_ktime(ktime_to_ns(ktime_get()) + aTask->running_time) ,HRTIMER_MODE_ABS);
 			schedule();
 		}
 		else{
