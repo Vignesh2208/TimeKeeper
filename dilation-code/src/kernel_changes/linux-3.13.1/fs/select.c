@@ -803,9 +803,9 @@ SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 			return -EFAULT;
 
 		to = &end_time;
-		spin_lock_irqsave(&current->dialation_lock,flags);
+		//spin_lock_irqsave(&current->dialation_lock,flags);
 		if(current->virt_start_time == 0){
-			spin_unlock_irqrestore(&current->dialation_lock,flags);
+			//spin_unlock_irqrestore(&current->dialation_lock,flags);
 			if (poll_select_set_timeout(to,
 					tv.tv_sec + (tv.tv_usec / USEC_PER_SEC),
 					(tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC))
@@ -814,7 +814,7 @@ SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 
 		}
 		else{
-			spin_unlock_irqrestore(&current->dialation_lock,flags);
+			//spin_unlock_irqrestore(&current->dialation_lock,flags);
 			end_time.tv_sec = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
 			end_time.tv_nsec = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
 			ret = core_sys_select(n, inp, outp, exp, to);
