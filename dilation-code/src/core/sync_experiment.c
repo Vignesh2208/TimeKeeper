@@ -318,7 +318,7 @@ void sync_and_freeze() {
     do_gettimeofday(&now_timeval);
     now = timeval_to_ns(&now_timeval);
     actual_time = now;
-	printk(KERN_INFO "TimeKeeper: Sync And Freeze: Setting the virtual start time of all tasks to be: %lld\n", actual_time);
+    printk(KERN_INFO "TimeKeeper: Sync And Freeze: Setting the virtual start time of all tasks to be: %lld\n", actual_time);
 
     /* for every container in the experiment, set the virtual_start_time (so it starts at the same time), calculate
     how long each task should be allowed to run in each round, and freeze the container */
@@ -337,7 +337,7 @@ void sync_and_freeze() {
 
 	
 	acquire_irq_lock(&list_node->linux_task->dialation_lock,flags);
-    list_node->linux_task->past_physical_time = 0;
+    	list_node->linux_task->past_physical_time = 0;
 	list_node->linux_task->past_virtual_time = 0;
 	list_node->linux_task->wakeup_time = 0;
 	release_irq_lock(&list_node->linux_task->dialation_lock,flags);
@@ -712,11 +712,12 @@ int calculate_sync_drift(void *data)
 	ktime_t ktime;
 	int run_cpu;
 
-	//printk(KERN_INFO "TimeKeeper: Calculate Sync Drift: Value passed to worker thread: %d\n", cpuID);
+	set_current_state(TASK_INTERRUPTIBLE);
+
 	if(atomic_read(&wake_up_signal_sync_drift[cpuID]) != 1)
 		atomic_set(&wake_up_signal_sync_drift[cpuID],0);
 
-	set_current_state(TASK_INTERRUPTIBLE);
+	
 	/* if it is the very first round, don't try to do any work, just rest */
 	if (round == 0)
 		goto startWork;
@@ -728,17 +729,17 @@ int calculate_sync_drift(void *data)
         	return 0;
 
 		task = chainhead[cpuID];
-	    do_gettimeofday(&ktv);
+	    	do_gettimeofday(&ktv);
 
 		/* for every task it is responsible for, determine how long it should run */
 		while (task != NULL) {
-    	    now = timeval_to_ns(&ktv);
+    	    		now = timeval_to_ns(&ktv);
 			calculate_virtual_time_difference(task, now, actual_time);
 			task = task->next;
 		}
 
 		/* find the first task to run, then run it */
-        task = chainhead[cpuID];
+        	task = chainhead[cpuID];
 
 		if (task == NULL) {
 
@@ -784,7 +785,7 @@ int calculate_sync_drift(void *data)
 		
 
 		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxc on %d on run cpu %d\n",cpuID,run_cpu);
+			printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
 
 		wake_up_interruptible(&wq);
 		
@@ -795,7 +796,7 @@ int calculate_sync_drift(void *data)
 		run_cpu = get_cpu();
 
 		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: ~~~~ Calculate Sync Drift: I am woken up for lxc on %d. run cpu = %d\n",cpuID,run_cpu);
+			printk(KERN_INFO "TimeKeeper: ~~~~ Calculate Sync Drift: I am woken up for lxcs on CPU =  %d. My Run cpu = %d\n",cpuID,run_cpu);
 		
 	}
 	return 0;
@@ -873,7 +874,7 @@ int catchup_func(void *data)
 				run_cpu = get_cpu();
 
 				if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-					printk(KERN_INFO "TimeKeeper: Catchup Func: Waiting for sync drift threads to finish on run_cpu %d\n",run_cpu);
+					printk(KERN_INFO "TimeKeeper: Catchup Func: Waiting for sync drift threads to finish. Run_cpu %d\n",run_cpu);
 
 				wait_event_interruptible(wq, atomic_read(&worker_count) == 0);
 				set_current_state(TASK_INTERRUPTIBLE);
@@ -2370,7 +2371,7 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		task_poll_helper->done = 1;
 		wake_up(&task_poll_helper->w_queue);
 		release_irq_lock(&t->dialation_lock,flags);
-		kill(t, SIGCONT, NULL);
+		//kill(t, SIGCONT, NULL);
 
 	}
 	else if(task_select_helper != NULL){
@@ -2379,7 +2380,7 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		task_select_helper->done = 1;
 		wake_up(&task_select_helper->w_queue);
 		release_irq_lock(&t->dialation_lock,flags);
-		kill(t, SIGCONT, NULL);
+		//kill(t, SIGCONT, NULL);
 	}
 	else if( task_sleep_helper != NULL) {
 		t->freeze_time = 0;
