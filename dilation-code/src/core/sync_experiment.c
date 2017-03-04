@@ -2577,6 +2577,9 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 	int CPUID = aTask->cpu_assignment - (TOTAL_CPUS - EXP_CPUS);
 	int i = 0;
 	unsigned long flags;
+	struct poll_helper_struct * task_poll_helper = NULL;
+	struct select_helper_struct * task_select_helper = NULL;
+	struct sleep_helper_struct * task_sleep_helper = NULL;
 
 	if (aTask->linux_task->freeze_time == 0)
 	{
@@ -2608,12 +2611,57 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
         if(aTask->linux_task->freeze_time > 0) { 
 			aTask->linux_task->past_physical_time = aTask->linux_task->past_physical_time + (now_ns - aTask->linux_task->freeze_time);
 			aTask->linux_task->freeze_time = 0;
+			
+			task_poll_helper = hmap_get(&poll_process_lookup,&aTask->linux_task->pid);
+			task_select_helper = hmap_get(&select_process_lookup,&aTask->linux_task->pid);
+			task_sleep_helper = hmap_get(&sleep_process_lookup,&aTask->linux_task->pid);
+			
+			if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
+				
+				release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+				kill(aTask->linux_task, SIGCONT, NULL);
+
+            }
+            else {
+				
+				if(task_poll_helper != NULL){				
+					
+					task_poll_helper->done = 1;
+					wake_up(&task_poll_helper->w_queue);
+					release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+					
+
+				}
+				else if(task_select_helper != NULL){					
+
+					task_select_helper->done = 1;
+					wake_up(&task_select_helper->w_queue);
+					release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+					
+				}
+				else if( task_sleep_helper != NULL) {				
+
+					task_sleep_helper->done = 1;
+					wake_up(&task_sleep_helper->w_queue);
+					release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+				
+
+				}
+				else {
+					release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+					kill(aTask->linux_task,SIGCONT,NULL);
+
+				}
+                
+ 			}
         }
-  		release_irq_lock(&aTask->linux_task->dialation_lock,flags);
-
-		kill(aTask->linux_task,SIGCONT,NULL);
+        else{
+            release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+            kill(aTask->linux_task,SIGCONT,NULL);
+        }
+  		
+		// incase new children are spawned since last refresh
 		unfreeze_children(aTask->linux_task,now_ns,expected_time,aTask);
-
 		ktime_t ktime;
 		ktime = ktime_set(0,aTask->running_time);
 		aTask->last_timer_fire_time = now_ns;
