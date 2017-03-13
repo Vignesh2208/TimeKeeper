@@ -295,7 +295,13 @@ void sync_and_freeze() {
 		if (experiment_type == CBE){
 			init_waitqueue_head(&per_cpu_sync_task_queue[i]);
 			curr_sync_task_finished_flag[i] = 0;
-			chaintask[i] = kthread_run(&calculate_sync_drift, &values[i], "worker");
+			//chaintask[i] = kthread_run(&calculate_sync_drift, &values[i], "worker");
+			chaintask[i] = kthread_create(&calculate_sync_drift, &values[i], "worker");
+			if(!IS_ERR(chaintask[i])) {
+	            kthread_bind(chaintask[i],i % (TOTAL_CPUS - EXP_CPUS));
+	            wake_up_process(chaintask[i]);
+	        }
+
 
 		}
 	}
@@ -337,18 +343,14 @@ void sync_and_freeze() {
 
 	
 	acquire_irq_lock(&list_node->linux_task->dialation_lock,flags);
-    	list_node->linux_task->past_physical_time = 0;
+    list_node->linux_task->past_physical_time = 0;
 	list_node->linux_task->past_virtual_time = 0;
 	list_node->linux_task->wakeup_time = 0;
-	release_irq_lock(&list_node->linux_task->dialation_lock,flags);
-    
-
-	/* freeze all children */
-	freeze_proc_exp_recurse(list_node); 
-
-	acquire_irq_lock(&list_node->linux_task->dialation_lock,flags);
 	list_node->linux_task->freeze_time = now;
 	release_irq_lock(&list_node->linux_task->dialation_lock,flags);
+	
+	/* freeze all children */
+	freeze_proc_exp_recurse(list_node); 
 
 		/* set priority and scheduling policy */
         if (list_node->stopped == -1) {
@@ -644,6 +646,54 @@ s64 calculate_change(struct dilation_task_struct* task, s64 virt_time, s64 expec
 	return change;
 }
 
+
+/* Forces the virtual time of a task. This is a user specified option */
+void force_vt(struct task_struct* aTask, s64 time) {
+    struct list_head *list;
+    struct task_struct *taskRecurse;
+    struct task_struct *me;
+    struct task_struct *t;
+
+    if (aTask == NULL) {
+            printk(KERN_INFO "TimeKeeper: Force VT: Task does not exist\n");
+            return;
+    }
+    if (aTask->pid == 0) {
+            return;
+    }
+
+    me = aTask;
+    t = me;
+
+    /* set it for all threads */
+    do {
+		spin_lock(&t->dialation_lock);
+        if (t->pid != aTask->pid) {
+            t->virt_start_time = time;
+            t->freeze_time = time;
+            t->past_physical_time = 0;
+            t->past_virtual_time = 0;
+        }
+		spin_unlock(&t->dialation_lock);
+    } while_each_thread(me, t);
+
+	spin_lock(&aTask->dialation_lock);
+	aTask->virt_start_time = time;
+	aTask->freeze_time = time;
+	aTask->past_physical_time = 0;
+	aTask->past_virtual_time = 0;
+	spin_unlock(&aTask->dialation_lock);
+
+    list_for_each(list, &aTask->children)
+    {
+            taskRecurse = list_entry(list, struct task_struct, sibling);
+            if (taskRecurse->pid == 0) {
+                    return;
+            }
+            set_children_time(taskRecurse, time);
+    }
+}
+
 /***
 Find the difference between the tasks virtual time and the virtual time it SHOULD be at. Then it
 will modify the tasks running_time, to allow it to run either more or less in the next round
@@ -653,9 +703,31 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
 	s64 change;
 	ktime_t ktime;
 	s64 virt_time;
+	s64 change_vt = 0;
+	s32 rem;
+	s64 diff;
 
-
+    start_change:
+    
 	virt_time = get_virtual_time(task, now);
+	
+	if(virt_time > expected_time) {
+	    change_vt = virt_time - expected_time;
+	    if(change_vt > expected_increase) {
+	        //force_vt(task->linux_task,expected_time - expected_increase);
+		    printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the future: Pid = %d, Virtual time Error = %llu. \n",task->linux_task->pid,change_vt);
+		}
+	
+	}
+	else{
+	    change_vt = expected_time - virt_time;
+		if(change_vt > 2*expected_increase) {
+			printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the past: Pid = %d, Virtual time Error = %llu\n",task->linux_task->pid, change_vt);
+
+		}
+	
+	}
+	
 	change = 0;
 	change = calculate_change(task, virt_time, expected_time);
 
@@ -670,24 +742,37 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
 	        }
 	}
 	if (experiment_type == CBE) {
+	
+	        if(virt_time > expected_time){
+	        
+	            ktime = ktime_set(0,0);
+	        }
+	        else{
+	        
+	           
+	           if(task->linux_task->dilation_factor > 0)
+    	            diff = div_s64_rem( (expected_time - virt_time)*task->linux_task->dilation_factor, PRECISION, &rem);
+	           else
+	                diff = expected_time - virt_time;
+	                    
+	           ktime = ktime_set(0,diff);
+	           
+	        }
+	        
+	        /*
         	if (change > task->running_time)
         	{
                 	ktime = ktime_set(0, 0);
-					if(change > 0 && change > 50000000){
-						printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the future: Pid = %d, Error = %llu. \n",task->linux_task->pid,change);
-					}
+                	
         	}
         	else
         	{
                 	ktime = ktime_set(0, task->running_time - change);
 					if(change < 0) {
-						s64 temp = change*-1;
-						if(temp > 50000000) {
-							printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the past: Pid = %d, Error = %llu. Pi\n",task->linux_task->pid, temp);
-						}
+						s64 temp = change*-1;			
 					}
         	}
-	
+	        */
 			
 			
 
@@ -725,15 +810,29 @@ int calculate_sync_drift(void *data)
 	while (!kthread_should_stop())
 	{
 		
-        if(experiment_stopped == STOPPING)
+        if(experiment_stopped == STOPPING) {
+        
+            set_current_state(TASK_INTERRUPTIBLE);
+		    atomic_dec(&worker_count);
+		    atomic_set(&wake_up_signal_sync_drift[cpuID],0);
+		    run_cpu = get_cpu();
+		
+
+		    if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			    printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
+
+		    wake_up_interruptible(&wq);
+        
         	return 0;
+        }
 
 		task = chainhead[cpuID];
-	    	do_gettimeofday(&ktv);
+	    
 
 		/* for every task it is responsible for, determine how long it should run */
 		while (task != NULL) {
-    	    		now = timeval_to_ns(&ktv);
+		    do_gettimeofday(&ktv);
+    	    now = timeval_to_ns(&ktv);
 			calculate_virtual_time_difference(task, now, actual_time);
 			task = task->next;
 		}
@@ -815,6 +914,8 @@ int catchup_func(void *data)
         int redo_count;
         round_count = 0;
         set_current_state(TASK_INTERRUPTIBLE);
+        
+        
 
 		while (!kthread_should_stop())
         {
@@ -863,6 +964,7 @@ int catchup_func(void *data)
 							printk(KERN_INFO "TimeKeeper: Catchup Func: Sync thread %d wake up\n",i);
 						}
 						else{
+						    while(wake_up_process(chaintask[i]) != 1);
 							printk(KERN_INFO "TimeKeeper: Catchup Func: Sync thread %d already running\n",i);
 						}
 					}
@@ -1105,10 +1207,13 @@ enum hrtimer_restart exp_hrtimer_callback( struct hrtimer *timer )
 	if(task->last_run != NULL){
 		struct task_struct * last_task = task->last_run->curr_task;
 		if(last_task != NULL && find_task_by_pid(task->last_run->pid) != NULL) {
-			last_task->freeze_time = now;
+			//last_task->freeze_time = now;
+			last_task->freeze_time = task->last_timer_fire_time + task->last_timer_duration;
 		}	
 	}
+	
 
+    /*
 	if(task->last_timer_fire_time != 0){
 		s64 actual_fire_duration = now - task->last_timer_fire_time;
 
@@ -1118,7 +1223,7 @@ enum hrtimer_restart exp_hrtimer_callback( struct hrtimer *timer )
 		}
 
 
-	}
+	}*/
 
 	if (catchup_task == NULL) {
 
@@ -1164,63 +1269,40 @@ void set_all_freeze_times_recurse(struct task_struct * aTask, s64 freeze_time,s6
 	if(max_no_recursions >= 100)
 		return;
 
-        if (aTask == NULL) {
+    if (aTask == NULL) {
 
-        	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-            	printk(KERN_INFO "TimeKeeper: Set all freeze times: Task does not exist\n");
-            return;
-        }
-        if (aTask->pid == 0) {
+    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+        	printk(KERN_INFO "TimeKeeper: Set all freeze times: Task does not exist\n");
+        return;
+    }
+    if (aTask->pid == 0) {
 
-        	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Set all freeze times: pid 0 error\n");
-            return;
-        }
+    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Set all freeze times: pid 0 error\n");
+        return;
+    }
 
 	me = aTask;
 	t = me;
 	do {
 
 		acquire_irq_lock(&t->dialation_lock,flags);
-		if (t->freeze_time == 0 && t->wakeup_time ==  0)
-       	{
-	        t->freeze_time = freeze_time;
-			if(last_ppp != -1){
-				t->past_physical_time = t->past_physical_time + last_ppp;
-				if(aTask->dilation_factor > 0)
-					t->past_virtual_time = t->past_virtual_time + div_s64_rem(last_ppp*PRECISION,aTask->dilation_factor,&rem);
-				else
-					t->past_virtual_time = t->past_virtual_time + last_ppp;	
+		/* freeze_time > 0 and wakeup_time == 0 */
+		
+		/*
+		if(t->freeze_time > 0){ 
+
+			if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+	       		printk(KERN_INFO "TimeKeeper: Set all freeze times: Warning. Thread already frozen. pid: %d dilation %d\n", t->pid, t->dilation_factor);
+			
+			if(aTask->dilation_factor > 0) {
+				t->past_virtual_time = t->past_virtual_time + div_s64_rem((freeze_time - t->freeze_time)*PRECISION,aTask->dilation_factor,&rem);
 			}
-       	}
-		else {
-
-			/* doesn't enter this as freeze time being set to -1 is disabled */
-			if(t->freeze_time == -1 && t->wakeup_time == 0){ 
-				t->freeze_time = freeze_time;
-				if(last_ppp != -1)
-					t->past_physical_time = t->past_physical_time + last_ppp;
-
+			else {
+				t->past_virtual_time = t->past_virtual_time + freeze_time - t->freeze_time;
 			}
-			else{
-
-				/* freeze_time > 0 and wakeup_time == 0 */
-				if(t->wakeup_time == 0){ 
-					if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        	       		printk(KERN_INFO "TimeKeeper: Set all freeze times: Warning. Thread already frozen. pid: %d dilation %d\n", t->pid, t->dilation_factor);
-					
-					if(aTask->dilation_factor > 0) {
-						t->past_virtual_time = t->past_virtual_time + div_s64_rem((freeze_time - t->freeze_time)*PRECISION,aTask->dilation_factor,&rem);
-
-						t->freeze_time = freeze_time; // *** trying
-					}
-					else {
-						t->past_virtual_time = t->past_virtual_time + freeze_time - t->freeze_time;
-						t->freeze_time = freeze_time; // *** trying
-					}
-				}
-			}
-		}
+		}*/
+		t->freeze_time = freeze_time; 
 		release_irq_lock(&t->dialation_lock,flags);
 
 	} while_each_thread(me, t);
@@ -1245,7 +1327,7 @@ void set_all_freeze_times_recurse(struct task_struct * aTask, s64 freeze_time,s6
 /***
 Set's the past physical times of the process and all it's children to the specified argument 
 ***/
-void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, int max_no_of_recursions){
+void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, int max_no_of_recursions, struct dilation_task_struct * lxc){
 
 	struct list_head *list;
 	struct task_struct *taskRecurse;
@@ -1268,34 +1350,26 @@ void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, i
 				printk(KERN_INFO "TimeKeeper: Set all past physical times: pid 0 error\n");
 		return;
 	}
+	
+	if(lxc->linux_task->freeze_time > 0){
+	    lxc->linux_task->past_physical_time = lxc->linux_task->past_physical_time + (time - lxc->linux_task->freeze_time);
+	    lxc->linux_task->freeze_time = 0;
+	}
 
 	me = aTask;
 	t = me;
 	do {
 		acquire_irq_lock(&t->dialation_lock,flags);
-		if (t->freeze_time > 0 && t->wakeup_time ==  0)
+		if (t->freeze_time > 0)
        	{
-			t->past_physical_time = t->past_physical_time + (time - t->freeze_time);
+			//t->past_physical_time = t->past_physical_time + (time - t->freeze_time);
+			t->past_physical_time = lxc->linux_task->past_physical_time;
 			t->freeze_time = 0;
-			
        	}
-		else {
-
-			/* freeze_time <= 0 and wakeup_time == 0 */
-			if(t->wakeup_time == 0){ 
-				if(t != aTask){
-
-					/* force set this thread's past physical time to that of the main thread */
-					t->past_physical_time = aTask->past_physical_time; 
-				}
-				else{
-					printk(KERN_INFO "TimeKeeper: Set all past physical times: Warning. Process not frozen pid: %d dilation %d\n", t->pid, t->dilation_factor);
-				}
-			}
-			/*else{
-				t->past_physical_time = aTask->past_physical_time;  // *** trying
-			}*/
-		}
+       	else{
+       	    printk(KERN_INFO "TimeKeeper: Set all past physical times: freeze_time not set pid = %d\n", t->pid);
+  	    	t->freeze_time = 0;
+       	}
 		release_irq_lock(&t->dialation_lock,flags);
 		
 	} while_each_thread(me, t);
@@ -1311,7 +1385,7 @@ void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, i
                 continue;
         }
 
-        set_all_past_physical_times_recurse(taskRecurse, time,max_no_of_recursions + 1);
+        set_all_past_physical_times_recurse(taskRecurse, time,max_no_of_recursions + 1,lxc);
 		i++;
 
     }
@@ -1737,6 +1811,7 @@ int freeze_children(struct task_struct *aTask, s64 time) {
            		}
 			else {
 
+                t->freeze_time = time;
 				/* to stop any threads */
 				kill(t, SIGSTOP, NULL); 
 				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
@@ -1763,30 +1838,30 @@ int freeze_children(struct task_struct *aTask, s64 time) {
 				/* task already has a wakeup_time set, so its already frozen, dont need to do anything */
 				taskRecurse->freeze_time = time; 
 				release_irq_lock(&taskRecurse->dialation_lock,flags);
-				kill(taskRecurse, SIGSTOP, dilTask);
+				kill(taskRecurse, SIGSTOP, NULL);
 			}
 			else if (taskRecurse->freeze_time == 0) 
 			{
 						/* if task is not frozen yet */
 						taskRecurse->freeze_time = time;
 						release_irq_lock(&taskRecurse->dialation_lock,flags);
-				    	kill(taskRecurse, SIGSTOP, dilTask);
+				    	kill(taskRecurse, SIGSTOP, NULL);
 			}
 			else {
+			
+			    taskRecurse->freeze_time = time;
 				release_irq_lock(&taskRecurse->dialation_lock,flags);
 
 				/* just in case - to stop all threads */
-				kill(taskRecurse, SIGSTOP, dilTask); 
+				kill(taskRecurse, SIGSTOP, NULL); 
 		
 				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 					printk(KERN_INFO "TimeKeeper: Freeze Children: Process already frozen %d wakeuptime %lld\n", taskRecurse->pid, taskRecurse->wakeup_time);
 				return -1;
 			}
 		
-
-
-   if (freeze_children(taskRecurse, time) == -1)
-		return 0;
+            if (freeze_children(taskRecurse, time) == -1)
+		         return 0;
     }
 	return 0;
 }
@@ -1799,13 +1874,6 @@ int freeze_proc_exp_recurse(struct dilation_task_struct *aTask) {
 	s64 now;
 	unsigned long flags;
 
-
-    if (aTask->linux_task->freeze_time > 0)
-    {
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-            printk(KERN_INFO "TimeKeeper: Freeze Proc Exp Recurse: Process already frozen %d\n", aTask->linux_task->pid);
-        return -1;
-    }
 	do_gettimeofday(&ktv);
 	now = (timeval_to_ns(&ktv));
 
@@ -1817,7 +1885,7 @@ int freeze_proc_exp_recurse(struct dilation_task_struct *aTask) {
 	kill(aTask->linux_task, SIGSTOP, aTask);
 
 
-    freeze_children(aTask->linux_task, now);
+    freeze_children(aTask->linux_task, aTask->linux_task->freeze_time);
     return 0;
 }
 
@@ -2199,7 +2267,7 @@ lxc_schedule_elem * get_next_valid_task(struct dilation_task_struct * lxc, s64 e
 			count ++; 
 			head->curr_task= task;
 			acquire_irq_lock(&head->curr_task->dialation_lock,flags);
-			head->curr_task->virt_start_time = lxc->linux_task->virt_start_time;
+			//head->curr_task->virt_start_time = lxc->linux_task->virt_start_time;
 
 			/* This task cannot run now. need to look for another task */
 			if(task->wakeup_time != 0 && task->wakeup_time > expected_time) 
@@ -2305,6 +2373,61 @@ void refresh_lxc_schedule_queue(struct dilation_task_struct *aTask,s64 window_du
 }
 
 
+/***
+Increment the past physical times of the process and all it's children to the specified argument 
+***/
+void increment_all_past_physical_times_recurse(struct task_struct * aTask, s64 increment){
+
+	struct list_head *list;
+	struct task_struct *taskRecurse;
+	struct dilation_task_struct *dilTask;
+	struct task_struct *me;
+	struct task_struct *t;
+	unsigned long flags;
+
+
+	if (aTask == NULL) {
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Set all past physical times: Task does not exist\n");
+		return;
+	}
+
+	if (aTask->pid == 0) {
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+				printk(KERN_INFO "TimeKeeper: Set all past physical times: pid 0 error\n");
+		return;
+	}
+	
+	if(increment < 0)
+	    return;
+
+    acquire_irq_lock(&aTask->dialation_lock,flags);
+	aTask->past_physical_time = aTask->past_physical_time + increment;
+	release_irq_lock(&aTask->dialation_lock,flags);
+	
+	me = aTask;
+	t = me;
+	do {
+	    if(t->pid != aTask->pid){
+    		acquire_irq_lock(&t->dialation_lock,flags);
+	    	t->past_physical_time = t->past_physical_time + increment;
+	    	release_irq_lock(&t->dialation_lock,flags);
+		}
+		
+	} while_each_thread(me, t);
+
+    list_for_each(list, &aTask->children)
+    {
+
+        taskRecurse = list_entry(list, struct task_struct, sibling);
+        if (taskRecurse->pid == 0) {
+                continue;
+        }
+
+        increment_all_past_physical_times_recurse(taskRecurse, increment);
+    }
+}
+
 
 /***
 Unfreeze process at head of schedule queue of container, run it with possible switches for the run time. Returns the time left in this round.
@@ -2321,15 +2444,17 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	s64 now;
 	s64 timer_fire_time;
 	s64 rem_time;
+	s32 rem;
 	s64 now_ns;
 	s64 start_time;
+	s64 last_run_freeze_time;
 	struct poll_helper_struct * helper = NULL;
 	struct select_helper_struct * select_helper = NULL;
 	struct poll_helper_struct * task_poll_helper = NULL;
 	struct select_helper_struct * task_select_helper = NULL;
 	struct sleep_helper_struct * task_sleep_helper = NULL;
-
-	unsigned long flags;
+    unsigned long flags;
+    int CPUID = lxc->cpu_assignment - (TOTAL_CPUS - EXP_CPUS);
 
 	if(head->duration_left <= 0 || remaining_run_time <= 0){
 
@@ -2349,8 +2474,7 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		rem_time = 0;
 	}
 
-	int CPUID = lxc->cpu_assignment - (TOTAL_CPUS - EXP_CPUS);
-
+	
 
 	do_gettimeofday(&now);
 	now_ns = timeval_to_ns(&now);
@@ -2358,6 +2482,36 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	curr_task = head->curr_task;
 	me = curr_task;
 	t = me;	
+	
+	if(lxc->last_run == NULL) {
+	    last_run_freeze_time = start_time;
+	}
+	else if (find_task_by_pid(lxc->last_run->pid) != NULL) {
+	    last_run_freeze_time = lxc->last_run->curr_task->freeze_time;
+	}
+	else{
+	    last_run_freeze_time = start_time;
+	}
+	
+	if(lxc->last_timer_fire_time == 0)
+    	lxc->last_timer_fire_time = start_time;
+    else
+        lxc->last_timer_fire_time = last_run_freeze_time;
+	
+	
+	
+    // *** trying now
+    
+    /*
+    if(t->freeze_time > 0){	    
+        printk(KERN_INFO "TimeKeeper: Ran more than once in round. lxc pid = %d Nprocesses = %d. Process pid = %d\n", lxc->linux_task->pid, schedule_list_size(lxc),t->pid);
+	    if(t->dilation_factor > 0)
+	        t->past_virtual_time = t->past_virtual_time + div_s64_rem((last_run_freeze_time - t->freeze_time)*PRECISION,t->dilation_factor,&rem);
+	    else
+	        t->past_virtual_time = t->past_virtual_time + last_run_freeze_time - t->freeze_time;
+	    t->freeze_time = 0;
+	}
+    */
 
 	acquire_irq_lock(&t->dialation_lock,flags);
 	task_poll_helper = hmap_get(&poll_process_lookup,&t->pid);
@@ -2371,8 +2525,6 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		task_poll_helper->done = 1;
 		wake_up(&task_poll_helper->w_queue);
 		release_irq_lock(&t->dialation_lock,flags);
-		//kill(t, SIGCONT, NULL);
-
 	}
 	else if(task_select_helper != NULL){
 
@@ -2380,7 +2532,6 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		task_select_helper->done = 1;
 		wake_up(&task_select_helper->w_queue);
 		release_irq_lock(&t->dialation_lock,flags);
-		//kill(t, SIGCONT, NULL);
 	}
 	else if( task_sleep_helper != NULL) {
 		t->freeze_time = 0;
@@ -2389,104 +2540,22 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 		release_irq_lock(&t->dialation_lock,flags);
 
 		/* Sending a Continue signal here will wake all threads up. We dont want that */
-		//kill(t, SIGCONT, NULL);
 
 	}
-	else if (t->freeze_time > 0 && t->wakeup_time == 0)
+	else if (t->freeze_time > 0)
    	{	
 		t->freeze_time = 0;
 		release_irq_lock(&t->dialation_lock,flags);
-		if(kill(t, SIGCONT, NULL) < 0){
-			return remaining_run_time;
-		}
-		
+	    kill(t, SIGCONT, NULL);
+
     	}
 	else {
-			if(t->freeze_time <= 0 && t->wakeup_time == 0){
-				t->freeze_time = 0;
-				release_irq_lock(&t->dialation_lock,flags);
-				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-   		        	printk(KERN_INFO "TimeKeeper: Run Schedule Queue Head Process: Thread not frozen pid: %d dilation %d\n", t->pid, t->dilation_factor);
-   		        
-   		        	
-				kill(t, SIGCONT, NULL);
-
-			}
-			else{
-
-				if(t->wakeup_time > expected_time){
-					
-					if(helper == NULL && select_helper == NULL){
-
-						release_irq_lock(&t->dialation_lock,flags);
-						if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-							printk(KERN_INFO "TimeKeeper: Run Schedule Queue Head Process: ERROR. Wakeup time still high\n");
-						return remaining_run_time;			
-					}			
-
-					/* else it is a poll wakeup */
-					if(lxc->last_run == NULL || lxc->last_run->curr_task == NULL){
-						t->past_physical_time = 0;
-						t->past_virtual_time = 0;
-					
-					}
-					else{
-
-							t->past_physical_time = lxc->last_run->curr_task->past_physical_time;
-							t->past_virtual_time = lxc->last_run->curr_task->past_virtual_time;
-
-					}
-
-					if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-						printk(KERN_INFO "TimeKeeper : Run Schedule Queue Head Process: Time to Wake poll process %d\n",t->pid);
-
-					t->freeze_time = 0;
-					t->wakeup_time = 0;
-
-					release_irq_lock(&t->dialation_lock,flags);
-
-				}
-				else{
-
-					/* update past physical time and virt start time with the last run process's past physical time and virt start time respectively */
-					if(lxc->last_run == NULL || lxc->last_run->curr_task == NULL){
-						t->past_physical_time = 0;
-						t->past_virtual_time = 0;
-					
-					}
-					else{
-
-							t->past_physical_time = lxc->last_run->curr_task->past_physical_time;
-							t->past_virtual_time = lxc->last_run->curr_task->past_virtual_time;
-
-					}
-
-					
-					printk(KERN_INFO "TimeKeeper : Run Schedule Queue Head Process: Time to Wake up %d\n",t->pid);
-					t->freeze_time = 0;
-					t->wakeup_time = 0;
-
-					release_irq_lock(&t->dialation_lock,flags);
-
-
-					struct sleep_helper_struct * sleep_helper = NULL;
-					sleep_helper = hmap_get(&sleep_process_lookup,&t->pid);
-					if(sleep_helper != NULL){
-						sleep_helper->done = 1;
-						wake_up(&sleep_helper->w_queue);
-						
-					}
-					else{
-						/* We dont want to wake all threads up if only one of them was sleeping */
-						if(kill(t, SIGCONT, NULL) < 0){
-							return remaining_run_time;				
-						}
-					}						
-
-		
-				}
-
-			}
+	    t->freeze_time = 0;
+		release_irq_lock(&t->dialation_lock,flags);
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+        	printk(KERN_INFO "TimeKeeper: Run Schedule Queue Head Process: Thread not frozen pid: %d dilation %d\n", t->pid, t->dilation_factor);   	
+		kill(t, SIGCONT, NULL);
+			
 	}
 		
 
@@ -2494,8 +2563,8 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	now_ns = timeval_to_ns(&now);
 	start_time = now_ns;
 	
-	lxc->last_run = head; 
-	lxc->last_timer_fire_time = start_time;
+        
+    lxc->last_run = head; 
 	lxc->last_timer_duration = timer_fire_time;
 	ktime = ktime_set( 0, timer_fire_time );
 	int ret;
@@ -2527,8 +2596,6 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	t = me;
 	do_gettimeofday(&now);		
 	now_ns = timeval_to_ns(&now); 
-	//now_ns = start_time + timer_fire_time; // *** trying
-	//t->freeze_time = now_ns;				// *** trying
 
 	acquire_irq_lock(&t->dialation_lock,flags);
 	if (t->wakeup_time > 0 ) {
@@ -2540,12 +2607,11 @@ int run_schedule_queue_head_process(struct dilation_task_struct * lxc, lxc_sched
 	else if (t->freeze_time == 0) 
     {
 			/* if task is not frozen yet */
+			printk(KERN_INFO "TimeKeeper: run Schedule Queue Head Proces : Should not happen\n");
 			t->freeze_time = now_ns;
 			release_irq_lock(&t->dialation_lock,flags);
 
-       		if(kill(t, SIGSTOP, NULL) < 0){
-				return rem_time;
-			}
+       		kill(t, SIGSTOP, NULL);
 		
     }
 	else {
@@ -2580,11 +2646,35 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 	struct poll_helper_struct * task_poll_helper = NULL;
 	struct select_helper_struct * task_select_helper = NULL;
 	struct sleep_helper_struct * task_sleep_helper = NULL;
+	s64 virt_time;
+	s64 change_vt;
+	s64 rem_time;
+
+    aTask->last_timer_fire_time = 0;
 
 	if (aTask->linux_task->freeze_time == 0)
 	{
 		printk(KERN_INFO "TimeKeeper: Unfreeze Proc Exp Recurse: Process not frozen pid: %d dilation %d in recurse\n", aTask->linux_task->pid, aTask->linux_task->dilation_factor);
 		return -1;
+	}
+	
+	do_gettimeofday(&now);
+	virt_time = get_virtual_time(aTask,timeval_to_ns(&now) );
+	
+	if(virt_time > expected_time) {
+	    change_vt = virt_time - expected_time;
+	    if(change_vt > expected_increase) {
+		    printk(KERN_INFO "TimeKeeper: Before in the future: Pid = %d, Virtual time Error = %llu. \n",aTask->linux_task->pid,change_vt);
+		}
+	
+	}
+	else{
+	    change_vt = expected_time - virt_time;
+		if(change_vt > 2*expected_increase) {
+			printk(KERN_INFO "TimeKeeper: Before in the past: Pid = %d, Virtual time Error = %llu\n",aTask->linux_task->pid, change_vt);
+
+		}
+	
 	}
         
 	atomic_set(&wake_up_signal_sync_drift[CPUID],0);
@@ -2596,19 +2686,25 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 	/* for adding any new tasks that might have been spawned */
 	refresh_lxc_schedule_queue(aTask,aTask->running_time,expected_time); 
 	
-	do_gettimeofday(&now);
-	now_ns = timeval_to_ns(&now);
-	start_ns = now_ns;
+	
 
 	/* TODO */
 	/* Needed to handle this case separately for some wierd bug which causes a crash */
 	if(schedule_list_size(aTask) == 1){
 
+        lxc_schedule_elem * head;
+        head = get_next_valid_task(aTask,expected_time);
+        
 		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 			printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Single process LXC on CPU %d\n",CPUID);
 
 		acquire_irq_lock(&aTask->linux_task->dialation_lock,flags);
         if(aTask->linux_task->freeze_time > 0) { 
+        
+            do_gettimeofday(&now);
+	        now_ns = timeval_to_ns(&now);
+	        start_ns = now_ns;
+	        
 			aTask->linux_task->past_physical_time = aTask->linux_task->past_physical_time + (now_ns - aTask->linux_task->freeze_time);
 			aTask->linux_task->freeze_time = 0;
 			
@@ -2661,14 +2757,14 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
         }
   		
 		// incase new children are spawned since last refresh
-		unfreeze_children(aTask->linux_task,now_ns,expected_time,aTask);
+		//unfreeze_children(aTask->linux_task,now_ns,expected_time,aTask);
 		ktime_t ktime;
 		ktime = ktime_set(0,aTask->running_time);
-		aTask->last_timer_fire_time = now_ns;
+		
+		
+		aTask->last_timer_fire_time = start_ns;
 		aTask->last_timer_duration = aTask->running_time;
 
-		do_gettimeofday(&now);
-		now_ns = timeval_to_ns(&now);
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		if(experiment_type != CS){
@@ -2685,19 +2781,32 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 			printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Single process on CPU %d resumed\n",CPUID);
 		
-		freeze_proc_exp_recurse(aTask);
-	
+		aTask->last_run = head;		
+		kill(aTask->linux_task, SIGSTOP, NULL);
+			
+		acquire_irq_lock(&aTask->linux_task->dialation_lock,flags);	
+        aTask->linux_task->freeze_time = start_ns + aTask->running_time;
+        release_irq_lock(&aTask->linux_task->dialation_lock,flags);
+        
+        
+		
+		freeze_proc_exp_recurse(aTask);	
+		do_gettimeofday(&now);
+	    //increment_all_past_physical_times_recurse(aTask->linux_task,timeval_to_ns(&now) - start_ns - aTask->running_time);
 
 	}
 	else{
 		
+		do_gettimeofday(&now);
+	    now_ns = timeval_to_ns(&now);
+	    start_ns = now_ns;
 		/* Set all past physical times */
-		set_all_past_physical_times_recurse(aTask->linux_task, now_ns,0);
+		set_all_past_physical_times_recurse(aTask->linux_task, start_ns,0,aTask);
 		lxc_schedule_elem * head;
-		s64 rem_time = aTask->running_time;
+		rem_time = aTask->running_time;
 		do{
 	
-	
+	        
 			if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 				printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Getting next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
 			
@@ -2705,36 +2814,55 @@ int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_t
 			if(head == NULL){
 
 				/* need to stop container here */
-				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE || DEBUG_LEVEL == DEBUG_LEVEL_INFO)
 					printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: ERROR. Need to stop container\n");
 				return 0;
 
 			}
+			
+			
+			
 			atomic_set(&wake_up_signal_sync_drift[CPUID],0);
 			if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 				printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Running next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
 			
 			rem_time  = run_schedule_queue_head_process(aTask, head, rem_time, expected_time);
+			set_all_freeze_times_recurse(aTask->linux_task,start_ns + aTask->running_time - rem_time,aTask->running_time,0);
 			i++;	
-		}while(rem_time > 0);
+		}while(rem_time > 0 && schedule_list_size(aTask) > 1);
 
-		do_gettimeofday(&now);
-		now_ns = timeval_to_ns(&now);
-
-		
-		if(aTask->last_run != NULL){
-			struct task_struct * last_task = aTask->last_run->curr_task;
-			if(last_task != NULL && find_task_by_pid(aTask->last_run->pid) != NULL) {
-				now_ns = last_task->freeze_time;
-			}	
-		}
-		
+        do_gettimeofday(&now);
 
 		/* Set all freeze times */
-		set_all_freeze_times_recurse(aTask->linux_task, now_ns,aTask->running_time,0);
+		set_all_freeze_times_recurse(aTask->linux_task,start_ns + aTask->running_time - rem_time,aTask->running_time,0);
+		//increment_all_past_physical_times_recurse(aTask->linux_task,timeval_to_ns(&now) - (start_ns + aTask->running_time - rem_time));
+			
+	}
+	
+	do_gettimeofday(&now);
+	virt_time = get_virtual_time(aTask,timeval_to_ns(&now) );
+	
+	if(virt_time > expected_time) {
+	    change_vt = virt_time - expected_time;
+	    if(change_vt > expected_increase) {
+		    printk(KERN_INFO "TimeKeeper: Here in the future: Pid = %d, Virtual time Error = %llu. \n",aTask->linux_task->pid,change_vt);
+		}
 	
 	}
-        return 0;
+	else{
+	    change_vt = expected_time - virt_time;
+		if(change_vt > expected_increase) {
+			printk(KERN_INFO "TimeKeeper: Here in the past: Pid = %d, rem_time = %llu, Virtual time Error = %llu\n",aTask->linux_task->pid, rem_time, change_vt);
+			
+			aTask->running_time = change_vt;
+    		return unfreeze_proc_exp_recurse(aTask,expected_time);
+
+		}
+	
+	}
+	
+	
+    return 0;
 }
 
 

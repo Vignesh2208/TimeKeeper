@@ -236,7 +236,11 @@ int __init my_module_init(void)
 	mutex_init(&exp_mutex);
 
 
-	catchup_task = kthread_run(&catchup_func, NULL, "catchup_task");
+	catchup_task = kthread_create(&catchup_func, NULL, "catchup_task");
+	if(!IS_ERR(catchup_task)) {
+	    kthread_bind(catchup_task,0);
+	    wake_up_process(catchup_task);
+	}
 
 	/* Acquire sys_call_table, hook system calls */
     	if(!(sys_call_table = aquire_sys_call_table()))

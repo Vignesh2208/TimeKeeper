@@ -133,7 +133,6 @@ s64 get_virtual_time_task(struct task_struct* task_arg, s64 now)
         
 		
         real_running_time = now - task->virt_start_time;
-        //temp_past_physical_time = task->past_physical_time + (now - task->freeze_time); 
 
 		if (task->freeze_time != 0)
 			temp_past_physical_time = task->past_physical_time + (now - task->freeze_time);

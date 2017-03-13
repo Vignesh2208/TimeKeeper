@@ -392,7 +392,23 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	acquire_irq_lock(&new_task->dialation_lock,flags);
 
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
-	new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	//new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	
+	if(lxc->last_run != NULL && find_task_by_pid(lxc->last_run->pid) != NULL) {
+	    printk(KERN_INFO "TimeKeeper: Setting new task time. Pid = %d\n", new_task->pid);
+    	new_task->freeze_time = lxc->last_run->curr_task->freeze_time;
+    	new_task->past_physical_time = lxc->last_run->curr_task->past_physical_time;
+    	new_task->past_virtual_time = lxc->last_run->curr_task->past_virtual_time;
+    	//new_task->past_virtual_time = 0;
+    	new_task->virt_start_time = lxc->last_run->curr_task->virt_start_time;
+    }
+    else{
+        new_task->virt_start_time = lxc->linux_task->virt_start_time;
+    	new_task->freeze_time = lxc->linux_task->freeze_time;
+    	new_task->past_physical_time = lxc->linux_task->past_physical_time;
+    	new_task->past_virtual_time = lxc->linux_task->past_virtual_time;
+    }
+	
 	
 
     dil = new_task->dilation_factor;
@@ -432,21 +448,22 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 		//base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; 
 		//lxc->rr_run_time += (int)(140 - new_element->static_priority)/5;
 
-		base_time_quanta = base_time_quanta*1000000;
+        
+		base_time_quanta = base_time_quanta*500000;
 		lxc->rr_run_time += 1;
 	}
 	else{
 
 		/* 100 ms for now */
 		linux_time_quanta = 5*(20); 
-		base_time_quanta = base_time_quanta*1000000;
+		base_time_quanta = base_time_quanta*500000;
 		lxc->rr_run_time += 1;
 	}
 	
 	
 	printk(KERN_INFO "TimeKeeper: Add To Schedule List: PID : %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, base_time_quanta, n_threads, expected_increase);
 
-	new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	//new_task->virt_start_time = lxc->linux_task->virt_start_time;
 	release_irq_lock(&new_task->dialation_lock,flags);
 
 	new_element->share_factor = base_time_quanta;
