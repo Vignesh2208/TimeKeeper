@@ -50,6 +50,7 @@
 #include <linux/netdev_features.h>
 #include <linux/neighbour.h>
 #include <uapi/linux/netdevice.h>
+#include <linux/pid.h>
 
 struct netpoll_info;
 struct device;
@@ -1148,7 +1149,7 @@ struct net_device {
 	 * of the interface.
 	 */
 	char			name[IFNAMSIZ];
-    int             owner_pid;		// to be used with timekeeper
+    	struct pid*             owner_pid;		// to be used with timekeeper
 
 	/* device name hash chain, please keep it close to name[] */
 	struct hlist_node	name_hlist;

@@ -40,67 +40,44 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	s64 real_running_time;
 	s64 dilated_running_time;
 	current_task = current;
-	struct sleep_helper_struct * sleep_helper;
-	s64 temp_wakeup_time;
+	s64 wakeup_time;
 	unsigned long flag;
+	struct sleep_helper_struct * helper;
+	struct sleep_helper_struct * sleep_helper = &helper;
 
 	acquire_irq_lock(&current->dialation_lock,flag);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
 	{						
 		now_new = get_dilated_time(current);
-		release_irq_lock(&current->dialation_lock,flag);
-
-
 		if (flags & TIMER_ABSTIME)
-			temp_wakeup_time = timespec_to_ns(rqtp);
+			wakeup_time = timespec_to_ns(rqtp);
 		else
-			temp_wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale; 
-
-		sleep_helper = hmap_get(&sleep_process_lookup, &current->pid);
-		if(sleep_helper == NULL){
-			sleep_helper = kmalloc(sizeof(struct sleep_helper_struct), GFP_KERNEL);
-			if(sleep_helper == NULL){
-				printk(KERN_INFO "TimeKeeper: Sys Nanosleep: Sleep Process NOMEM");
-				return -ENOMEM;
-			}	
-		}
+			wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale; 
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		init_waitqueue_head(&sleep_helper->w_queue);
-		sleep_helper->done = 0;
-
-		acquire_irq_lock(&current->dialation_lock,flag);
+		atomic_set(&sleep_helper->done,0);
 		hmap_put(&sleep_process_lookup,&current->pid,sleep_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 
-		printk(KERN_INFO "TimeKeeper: Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, current->wakeup_time); 
+		printk(KERN_INFO "TimeKeeper: Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
 
-		while(now_new < temp_wakeup_time) {
+		while(now_new < wakeup_time) {
 			set_current_state(TASK_INTERRUPTIBLE);
-
-			if(sleep_helper->done == 0)
-				wait_event(sleep_helper->w_queue,sleep_helper->done != 0);
-			
+			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
-			if(sleep_helper->done > 0)
-				sleep_helper->done = 0;
-			
-			acquire_irq_lock(&current->dialation_lock,flag);			
+			atomic_set(&sleep_helper->done,0);
 			now_new = get_dilated_time(current);
-			release_irq_lock(&current->dialation_lock,flag);
+			if(now_new < wakeup_time){  			
+			    if(current->freeze_time == 0)
+			        kill(current,SIGCONT,NULL); 
+			}
+
         }
-
-
-
-		set_current_state(TASK_RUNNING);
 
 		acquire_irq_lock(&current->dialation_lock,flag);
 		hmap_remove(&sleep_process_lookup, &current->pid);
 		release_irq_lock(&current->dialation_lock,flags);
-
-		kfree(sleep_helper);
-
-
 		return 0;
 			
 	} 

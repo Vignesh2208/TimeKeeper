@@ -104,7 +104,6 @@ static void timerfd_triggered(struct timerfd_ctx *ctx)
 	unsigned long flags;
 	
 	spin_lock_irqsave(&ctx->wqh.lock, flags);
-	
 	ctx->expired = 1;
 	ctx->ticks++;
 	wake_up_locked(&ctx->wqh);
@@ -120,13 +119,13 @@ static enum hrtimer_restart timerfd_tmrproc(struct hrtimer *htmr)
 	struct task_struct * owner_task = ctx->owner_task;
 	if(owner_task->virt_start_time != 0 ){
 		dilated_running_time = get_dilated_task_time(owner_task);
-		if(ctx->wakeup_time < dilated_running_time){
+		if(ctx->wakeup_time <= dilated_running_time){
 			timerfd_triggered(ctx);
-			printk(KERN_INFO "TimerFD: Waking up dilated task. Pid = %d. Wakeup time = %lu\n", owner_task->pid, ctx->wakeup_time);
+			printk(KERN_INFO "TimerFD: Waking up dilated task. Pid = %d. Wakeup time = %lu. Interval = %lu\n", owner_task->pid, ctx->wakeup_time,ktime_to_ns(ctx->tintv));
 			return HRTIMER_NORESTART;
 		}
 		else{
-			hrtimer_forward_now(&ctx->t.tmr,ns_to_ktime(10000000));
+			hrtimer_forward_now(&ctx->t.tmr,ns_to_ktime(100000));
 			return HRTIMER_RESTART;
 		}
 
@@ -148,7 +147,7 @@ static enum alarmtimer_restart timerfd_alarmproc(struct alarm *alarm,
 	struct task_struct * owner_task = ctx->owner_task;
 	if(owner_task->virt_start_time != 0 ){
 		dilated_running_time = get_dilated_task_time(owner_task);
-		if(ctx->wakeup_time < dilated_running_time){
+		if(ctx->wakeup_time <= dilated_running_time){
 			timerfd_triggered(ctx);
 			printk(KERN_INFO "TimerFD: Waking up dilated alarm task. Pid = %d\n", owner_task->pid);
 			return ALARMTIMER_NORESTART;
@@ -251,11 +250,12 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 		HRTIMER_MODE_ABS: HRTIMER_MODE_REL;
 
 	if(ctx->owner_task->virt_start_time != 0){
+
 		if (flags & TFD_TIMER_ABSTIME){
 			ctx->wakeup_time = timespec_to_ns(&ktmr->it_value);
 			curr_dilated_time = get_dilated_task_time(ctx->owner_task);
 			if(curr_dilated_time >= ctx->wakeup_time)
-				relative_expiry_duration = 1000000;
+				relative_expiry_duration = 100000;
 			else
 				relative_expiry_duration = ctx->wakeup_time - curr_dilated_time;
 
@@ -266,6 +266,9 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 			ctx->wakeup_time = curr_dilated_time + relative_expiry_duration;
 
 		}
+
+    	        printk(KERN_INFO "TimerFD: Setting up timer fire period %llu. Curr time = %llu\n", relative_expiry_duration, curr_dilated_time);
+
 	}
 
 	texp = timespec_to_ktime(ktmr->it_value);
@@ -333,7 +336,8 @@ static unsigned int timerfd_poll(struct file *file, poll_table *wait)
 	unsigned int events = 0;
 	unsigned long flags;
 
-	poll_wait(file, &ctx->wqh, wait);
+	if(ctx->owner_task->virt_start_time != 0)
+		poll_wait(file, &ctx->wqh, wait);
 
 	spin_lock_irqsave(&ctx->wqh.lock, flags);
 	if (ctx->ticks)

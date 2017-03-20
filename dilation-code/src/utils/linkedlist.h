@@ -32,6 +32,7 @@ int llist_append(llist *l, void * item);
 void * llist_get(llist * l, int index);
 int llist_get_pos(llist *l, void * item);
 void * llist_remove_at(llist * l, int index);
+void llist_requeue(llist * l);
 void * llist_pop(llist * l);
 void * llist_remove_at(llist * l, int index);
 int llist_remove(llist * l, void *item);

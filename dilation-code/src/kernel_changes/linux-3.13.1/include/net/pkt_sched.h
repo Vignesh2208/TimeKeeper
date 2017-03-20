@@ -8,7 +8,6 @@
 #include <linux/fs.h>
 #include <linux/pid.h>
 
-
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
 #include <net/inet_ecn.h>
@@ -96,7 +95,7 @@ struct qdisc_watchdog {
 	struct hrtimer	timer_dilated;
 	struct Qdisc	*qdisc;
         struct sk_buff  *skb;
-	int owner_pid;
+	struct pid * owner_pid;
 };
 
 struct netem_sched_data {

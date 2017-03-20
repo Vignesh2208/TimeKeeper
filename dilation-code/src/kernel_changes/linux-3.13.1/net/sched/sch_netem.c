@@ -418,6 +418,8 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 				  &q->delay_cor, q->delay_dist);
 
 		now = psched_get_time();
+	        struct task_struct *ts = get_task_struct_from_qdisc(sch);
+
 
 		if (q->rate) {
 
@@ -438,13 +440,12 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 				now = netem_skb_cb(last)->time_to_send;
 			}
 
+
 			delay += packet_len_2_sched_time(skb->len, q);
+			printk(KERN_INFO "Netem: Possibly updating delay. New delay = %lu\n", delay);
 		}
 
 
-
-                //struct task_struct *ts = get_task_struct_from_skbuff(skb);
-                struct task_struct *ts = get_task_struct_from_qdisc(sch);
                 if (ts != NULL) 
                 {
 					s64 dilated_time = get_current_dilated_time(ts);
@@ -464,6 +465,8 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		 * Do re-ordering by putting one out of N packets at the front
 		 * of the queue.
 		 */
+
+		printk(KERN_INFO "Netem: Doing some re-ordering on 1 out of N packets\n");
 
 		struct task_struct *ts = get_task_struct_from_qdisc(sch);
                 if (ts != NULL)

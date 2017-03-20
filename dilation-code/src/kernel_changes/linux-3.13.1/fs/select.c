@@ -17,7 +17,6 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/syscalls.h>
-
 #include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
@@ -30,6 +29,7 @@
 #include <linux/sched/rt.h>
 #include <linux/freezer.h>
 #include <net/busy_poll.h>
+
 #include <asm/uaccess.h>
 
 
@@ -46,8 +46,6 @@
  */
 
 #define MAX_SLACK	(100 * NSEC_PER_MSEC)
-
-extern void do_gettimeofday(struct timeval *tv);
 
 static long __estimate_accuracy(struct timespec *tv)
 {
@@ -398,98 +396,8 @@ static inline void wait_key_set(poll_table *wait, unsigned long in,
 		wait->_key |= POLLOUT_SET;
 }
 
-
-s64 get_curr_dilated_time_pid(void)
-{
-	s64 temp_past_physical_time;
-	s32 rem;
-	s64 real_running_time;
-	s64 dilated_running_time;
-	s64 now;
-	struct timeval ktv;
-	do_gettimeofday(&ktv);
-	struct task_struct* task;
-	task = current;
-	unsigned long flags;
-	now = timeval_to_ns(&ktv);	
-	if(task->virt_start_time != 0){
-		if (task->group_leader != task) { //use virtual time of the leader thread
-                       	task = task->group_leader;
-               	}
-
-		s64 ppp = task->past_physical_time;
-		s64 past_virtual_time = task->past_virtual_time;
-		s64 freeze_time = task->freeze_time;
-
-		//spin_lock_irqsave(&task->dialation_lock,flags);
-		if(freeze_time == 0){
-			real_running_time = now - task->virt_start_time;
-			temp_past_physical_time = ppp;
-		}
-		else{
-			real_running_time = freeze_time - task->virt_start_time;	
-			temp_past_physical_time = ppp + (now - freeze_time);
-		}
-
-		//overriding
-		real_running_time = now - task->virt_start_time;
-
-		if (task->dilation_factor > 0) {
-			dilated_running_time = div_s64_rem((real_running_time - temp_past_physical_time)*1000 ,task->dilation_factor,&rem) + past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
-		else if (task->dilation_factor < 0) {
-			dilated_running_time = div_s64_rem((real_running_time - temp_past_physical_time)*(task->dilation_factor*-1),1000,&rem) + past_virtual_time;
-			now =  dilated_running_time + task->virt_start_time;
-		}
-		else {
-			dilated_running_time = (real_running_time - temp_past_physical_time) + past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
-
-		//spin_unlock_irqrestore(&task->dialation_lock,flags);
-	
-	}
-	return now;	
-
-
-
-}
-
-int poll_relative_schedule_timeout(struct poll_wqueues *pwq, int state,
-			  ktime_t *expires, unsigned long slack)
-{
-	int rc = -EINTR;
-
-	set_current_state(state);
-	//if (!pwq->triggered)
-		rc = schedule_hrtimeout_range(expires, slack, HRTIMER_MODE_REL);
-	__set_current_state(TASK_RUNNING);
-
-	/*
-	 * Prepare for the next iteration.
-	 *
-	 * The following set_mb() serves two purposes.  First, it's
-	 * the counterpart rmb of the wmb in pollwake() such that data
-	 * written before wake up is always visible after wake up.
-	 * Second, the full barrier guarantees that triggered clearing
-	 * doesn't pass event check of the next iteration.  Note that
-	 * this problem doesn't exist for the first iteration as
-	 * add_wait_queue() has full barrier semantics.
-	 */
-
-	//set_mb(pwq->triggered, 0);
-
-	return rc;
-}
-
 int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 {
-	s64 secs_to_sleep;
-	s64 nsecs_to_sleep;
-	s64 curr_dilated_time = 0;
-	s64 timeout_time = 0;
-	struct timespec sleep_time;
 	ktime_t expire, *to = NULL;
 	struct poll_wqueues table;
 	poll_table *wait;
@@ -497,20 +405,13 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 	unsigned long slack = 0;
 	unsigned int busy_flag = net_busy_loop_on() ? POLL_BUSY_LOOP : 0;
 	unsigned long busy_end = 0;
-	int is_dilated = 0;
-	unsigned long flags;
-
-
-
 
 	rcu_read_lock();
 	retval = max_select_fd(n, fds);
 	rcu_read_unlock();
 
-	if (retval < 0){
+	if (retval < 0)
 		return retval;
-
-	}
 	n = retval;
 
 	poll_initwait(&table);
@@ -522,30 +423,6 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 
 	if (end_time && !timed_out)
 		slack = select_estimate_accuracy(end_time);
-
-	
-	//spin_lock_irqsave(&current->dialation_lock,flags);
-	if(current->virt_start_time != 0 && end_time != NULL){
-		//spin_unlock_irqrestore(&current->dialation_lock,flags);
-
-		is_dilated = 1;
-		secs_to_sleep = (unsigned int) end_time->tv_sec;
-		nsecs_to_sleep = end_time->tv_nsec;
-		
-		if(secs_to_sleep == 0 && nsecs_to_sleep == 0){
-			wait->_qproc = NULL;
-			timed_out = 1;
-		}
-		else{
-			curr_dilated_time = get_curr_dilated_time_pid();
-			timeout_time = curr_dilated_time + ((secs_to_sleep*1000000000) + nsecs_to_sleep);
-
-		}
-
-	}
-	else {
-		//spin_unlock_irqrestore(&current->dialation_lock,flags);
-	}
 
 	retval = 0;
 	for (;;) {
@@ -621,88 +498,41 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 			cond_resched();
 		}
 		wait->_qproc = NULL;
-		if(is_dilated == 0){
-			if (retval || timed_out || signal_pending(current))
-				break;
-		}
-		else{
-			if (retval || timed_out){
-				break;
-			}
-
-		}
+		if (retval || timed_out || signal_pending(current))
+			break;
 		if (table.error) {
 			retval = table.error;
 			break;
 		}
 
 		/* only if found POLL_BUSY_LOOP sockets && not out of time */
-
-		if(is_dilated == 0){
-			if (can_busy_loop && !need_resched()) {
-				if (!busy_end) {
-					busy_end = busy_loop_end_time();
-					continue;
-				}
-				if (!busy_loop_timeout(busy_end))
-					continue;
+		if (can_busy_loop && !need_resched()) {
+			if (!busy_end) {
+				busy_end = busy_loop_end_time();
+				continue;
 			}
-			busy_flag = 0;
+			if (!busy_loop_timeout(busy_end))
+				continue;
 		}
+		busy_flag = 0;
 
 		/*
 		 * If this is the first loop and we have a timeout
 		 * given, then we convert to ktime_t and set the to
 		 * pointer to the expiry value.
 		 */
-
-		if(is_dilated == 0){
-			if (end_time && !to) {
-				expire = timespec_to_ktime(*end_time);
-				to = &expire;
-			}
-
-			if (!poll_schedule_timeout(&table, TASK_INTERRUPTIBLE,
-						   to, slack))
-				timed_out = 1;
-
+		if (end_time && !to) {
+			expire = timespec_to_ktime(*end_time);
+			to = &expire;
 		}
-		else{
-			if(secs_to_sleep == 0 && nsecs_to_sleep == 0){
-				wait->_qproc = NULL;
-				timed_out = 1;
-			}
 
-			curr_dilated_time = get_curr_dilated_time_pid();
-			if(curr_dilated_time > timeout_time){
-				timed_out = 1;
-			}
-			else{
-				
-				if (!to) {
-
-					sleep_time.tv_sec = 0;
-					sleep_time.tv_nsec = 100000000;
-					expire = timespec_to_ktime(sleep_time);
-					to = &expire;
-				}
-				// repeatedly perform interruptible sleep for 1 sec
-				if (!poll_relative_schedule_timeout(&table, TASK_INTERRUPTIBLE,to, 0)){
-					curr_dilated_time = get_curr_dilated_time_pid();
-					if(curr_dilated_time > timeout_time){
-						timed_out = 1;
-					}	
-	
-				}
-			
-			
-			}
-		}
-		
+		if (!poll_schedule_timeout(&table, TASK_INTERRUPTIBLE,
+					   to, slack))
+			timed_out = 1;
 	}
 
-	
 	poll_freewait(&table);
+
 	return retval;
 }
 
@@ -794,60 +624,37 @@ SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 {
 	struct timespec end_time, *to = NULL;
 	struct timeval tv;
-	struct timeval rtv;
 	int ret;
-	unsigned long flags;
 
 	if (tvp) {
 		if (copy_from_user(&tv, tvp, sizeof(tv)))
 			return -EFAULT;
 
 		to = &end_time;
-		//spin_lock_irqsave(&current->dialation_lock,flags);
-		if(current->virt_start_time == 0){
-			//spin_unlock_irqrestore(&current->dialation_lock,flags);
-			if (poll_select_set_timeout(to,
-					tv.tv_sec + (tv.tv_usec / USEC_PER_SEC),
-					(tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC))
-				return -EINVAL;
-			
-
-		}
-		else{
-			//spin_unlock_irqrestore(&current->dialation_lock,flags);
-			end_time.tv_sec = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
-			end_time.tv_nsec = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
-			ret = core_sys_select(n, inp, outp, exp, to);
-			memset(&rtv, 0, sizeof(rtv));
-			copy_to_user(tvp, &rtv, sizeof(rtv));
-	
-			return ret;
-
-		}
+		if (poll_select_set_timeout(to,
+				tv.tv_sec + (tv.tv_usec / USEC_PER_SEC),
+				(tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC))
+			return -EINVAL;
 	}
 
 	ret = core_sys_select(n, inp, outp, exp, to);
-
 	ret = poll_select_copy_remaining(&end_time, tvp, 1, ret);
-	
+
 	return ret;
-
-
-
 }
-
 
 SYSCALL_DEFINE5(select_dialated, int, n, fd_set __user *, inp, fd_set __user *, outp,
-		fd_set __user *, exp, struct timeval __user *, tvp)
+                fd_set __user *, exp, struct timeval __user *, tvp)
 {
-	// just replicate the functionality of select if it is called. This function
-	// should never get called if TimeKeeper is running. It behaves like normal
-	// select if it is called when TimeKeeper is not running.
-	
+        // just replicate the functionality of select if it is called. This function
+        // should never get called if TimeKeeper is running. It behaves like normal
+        // select if it is called when TimeKeeper is not running.
 
-	return sys_select(n,inp,outp,exp,tvp);
-	
+
+        return sys_select(n,inp,outp,exp,tvp);
+
 }
+
 
 static long do_pselect(int n, fd_set __user *inp, fd_set __user *outp,
 		       fd_set __user *exp, struct timespec __user *tsp,
@@ -856,9 +663,6 @@ static long do_pselect(int n, fd_set __user *inp, fd_set __user *outp,
 	sigset_t ksigmask, sigsaved;
 	struct timespec ts, end_time, *to = NULL;
 	int ret;
-	if(current->virt_start_time != 0){
-		printk(KERN_INFO "Unhandled pselect call. PID : %d",current->pid);
-	}
 
 	if (tsp) {
 		if (copy_from_user(&ts, tsp, sizeof(ts)))
@@ -996,7 +800,6 @@ static int do_poll(unsigned int nfds,  struct poll_list *list,
 	unsigned long slack = 0;
 	unsigned int busy_flag = net_busy_loop_on() ? POLL_BUSY_LOOP : 0;
 	unsigned long busy_end = 0;
-
 
 	/* Optimise the no-wait case */
 	if (end_time && !end_time->tv_sec && !end_time->tv_nsec) {
@@ -1173,7 +976,7 @@ SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 	if (timeout_msecs >= 0) {
 		to = &end_time;
 		poll_select_set_timeout(to, timeout_msecs / MSEC_PER_SEC,
-				NSEC_PER_MSEC * (timeout_msecs % MSEC_PER_SEC));
+			NSEC_PER_MSEC * (timeout_msecs % MSEC_PER_SEC));
 	}
 
 	ret = do_sys_poll(ufds, nfds, to);

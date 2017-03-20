@@ -1662,6 +1662,7 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 	s64 virt_wakeup_time = curr_virtual_time + timeout*1000000;
 	if(current->virt_start_time != 0 && timeout > 0) {
 		is_dialated = 1;
+		printk(KERN_INFO "Epoll Dialated: Pid = %d, timeout = %ld\n",current->pid, timeout);
 	}
 
 	if (timeout > 0) {
@@ -1690,10 +1691,10 @@ fetch_events:
 		 * ep_poll_callback() when events will become available.
 		 */
 
-		if(! is_dialated) {
-			init_waitqueue_entry(&wait, current);
-			__add_wait_queue_exclusive(&ep->wq, &wait);
-		}
+		
+		init_waitqueue_entry(&wait, current);
+		__add_wait_queue_exclusive(&ep->wq, &wait);
+		
 
 		for (;;) {
 
@@ -1714,9 +1715,12 @@ fetch_events:
 				sleep_time.tv_nsec = 10000000;
 				virt_time_expire = timespec_to_ktime(sleep_time);
 				to = &virt_time_expire;
-				set_current_state(TASK_INTERRUPTIBLE);				
+				set_current_state(TASK_INTERRUPTIBLE);
 				if(!schedule_hrtimeout_range(to,0,HRTIMER_MODE_REL)){
+				
+					printk(KERN_INFO "Epoll Dialated: Pid = %d, Intermediary wakeup\n", current->pid);
 					if(curr_dilated_time() > virt_wakeup_time) {
+						printk(KERN_INFO "Epoll Dialated: Pid = %d, Timeout expired\n", current->pid);
 						timed_out = 1;
 					}
 

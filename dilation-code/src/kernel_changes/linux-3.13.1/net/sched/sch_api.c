@@ -644,13 +644,13 @@ struct task_struct * get_task_struct_from_qdisc(struct Qdisc * qdisc) {
 
     struct netem_sched_data *q = qdisc_priv(qdisc);
     struct qdisc_watchdog * wd = &q->watchdog;
-    int owner_pid;
+    struct pid *owner_pid;
     struct task_struct * result;
 
     if(wd->owner_pid > 0) {
 	 
 	 owner_pid = wd->owner_pid;
-	 result = pid_task(find_vpid(owner_pid), PIDTYPE_PID);
+	 result = pid_task(owner_pid, PIDTYPE_PID);
          return result;
 
    }
@@ -662,9 +662,9 @@ struct task_struct * get_task_struct_from_qdisc(struct Qdisc * qdisc) {
             if(qdisc->dev_queue->dev->owner_pid > 0) {
 	      owner_pid = qdisc->dev_queue->dev->owner_pid;
 	      read_unlock(&dev_base_lock);
-	      result = pid_task(find_vpid(owner_pid), PIDTYPE_PID);
+	      result = pid_task(owner_pid, PIDTYPE_PID);
               if(result != NULL) {
-		wd->owner_pid = result->pid;
+		wd->owner_pid = owner_pid;
 	      }
 	      return result;
             }
@@ -697,6 +697,13 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer *timer)
 
        if (pkt_owner == NULL || cb == NULL)
        {
+
+	    if(pkt_owner == NULL)
+		printk(KERN_INFO "Netem: pkt_owner is null. Maybe sending early. Pid = %d\n", wd->owner_pid);
+
+	    if(cb == NULL)
+		printk(KERN_INFO "Netem: cb is null. Maybe sending early. Pid = %d\n", wd->owner_pid);
+
 	    qdisc_unthrottled(wd->qdisc);
 	    __netif_schedule(qdisc_root(wd->qdisc));
 	   return HRTIMER_NORESTART;
@@ -704,7 +711,7 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer *timer)
   
        current_dilated_time = get_current_dilated_time(pkt_owner);
         
-       if (PSCHED_NS2TICKS(current_dilated_time) > cb->time_to_send) 
+       if (PSCHED_NS2TICKS(current_dilated_time) >= cb->time_to_send) 
        {
 	    qdisc_unthrottled(wd->qdisc);
 	    __netif_schedule(qdisc_root(wd->qdisc));
@@ -713,7 +720,7 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer *timer)
         }  
         else
         {
-	   hrtimer_forward_now(timer,ns_to_ktime(1000000));	
+	   hrtimer_forward_now(timer,ns_to_ktime(100000));	
 	   return HRTIMER_RESTART;
         }
 }

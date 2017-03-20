@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
                 }
 		//usleep(1000000);		
 		x++;
-                gettimeofday(&later, NULL);
+        gettimeofday(&later, NULL);
 		gettimeofdayoriginal(&later1, NULL);
 		localtime_r(&(later.tv_sec), &localtm);
 		localtime_r(&(later1.tv_sec),&origtm);

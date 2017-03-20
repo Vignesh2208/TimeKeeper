@@ -1639,15 +1639,14 @@ static inline void net_timestamp_set(struct sk_buff *skb)
 		__net_timestamp(skb);
 }
 
-extern struct pid * find_vpid(int);
 extern s64 get_current_dilated_time(struct task_struct *);
 
-static inline void __set_dilated_timestamp(struct sk_buff * skb, int owner_pid){
+static inline void __set_dilated_timestamp(struct sk_buff * skb, struct pid * owner_pid){
 
 	struct task_struct * result;
 	s64 dilated_time = 0;
 	result = NULL;
-	result = pid_task(find_vpid(owner_pid),PIDTYPE_PID);
+	result = pid_task(owner_pid,PIDTYPE_PID);
 
 	if(result != NULL) {
 		dilated_time = get_current_dilated_time(result);

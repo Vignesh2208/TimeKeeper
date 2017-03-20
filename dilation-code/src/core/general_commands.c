@@ -1,5 +1,6 @@
 #include "dilation_module.h"
 
+
 /***
 Contains some general commands that a userland process can manually call on TimeKeeper ie: Freeze a specific process.
 It is broken up into 'groups' of functions, ie: slowing down containers, freezing/unfreezing, and so forth
@@ -34,8 +35,10 @@ void set_netdevice_owner(char * write_buffer) {
 
     char dev_name[IFNAMSIZ];
     int pid;
+    struct pid * pid_struct = NULL;
     int i = 0;
 	struct net * net;
+	struct task_struct * task;
 
 	for(i = 0; i < IFNAMSIZ; i++)
 		dev_name[i] = '\0';
@@ -51,6 +54,16 @@ void set_netdevice_owner(char * write_buffer) {
 
 	struct net_device * dev;
 	int found = 0;
+	
+	for_each_process(task) {
+	    if(task != NULL) {
+	        if(task->pid == pid) {
+	       
+	            pid_struct = get_task_pid(task,PIDTYPE_PID);
+	            break;
+	        }
+	    }
+	}
    
 
     write_lock_bh(&dev_base_lock);
@@ -59,7 +72,7 @@ void set_netdevice_owner(char * write_buffer) {
 			if(dev != NULL) {
 				if(strcmp(dev->name,dev_name) == 0) {
 					printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Found Specified Net Device: %s\n", dev_name);
-					dev->owner_pid = pid;
+					dev->owner_pid = pid_struct;
 					found = 1;
 		    	}
 			
@@ -252,6 +265,44 @@ void freeze_proc(struct task_struct *aTask) {
     kill(aTask, SIGSTOP, NULL);
 	return;
 }
+
+void unfreeze_all(struct task_struct *aTask) {
+    struct list_head *list;
+    struct task_struct *taskRecurse;
+    struct task_struct *me;
+    struct task_struct *t;
+	unsigned long flags;
+
+	if (aTask == NULL) {
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Resume All: Task does not exist\n");
+		return 0;
+	}
+
+	if (aTask->pid == 0) {
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+				printk(KERN_INFO "TimeKeeper: Resume All: PID equals 0\n");
+		return 0;
+	}
+
+	me = aTask;
+	t = me;
+	do {
+		kill(t,SIGSTOP,NULL);
+	} while_each_thread(me, t);
+
+	
+    list_for_each(list, &aTask->children)
+    {
+		taskRecurse = list_entry(list, struct task_struct, sibling);
+        if (taskRecurse->pid == 0) {
+            continue;
+        }
+	    unfreeze_all(taskRecurse);
+    }
+}
+
+
 
 /***
 Unfreezes a container (will be allowed to run on the CPU once again)

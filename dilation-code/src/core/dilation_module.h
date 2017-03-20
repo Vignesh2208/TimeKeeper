@@ -71,7 +71,7 @@ struct poll_helper_struct
 	unsigned int nfds;
 	int err;
 	wait_queue_head_t w_queue;
-	int done;
+	atomic_t done;
 
 };
 
@@ -83,14 +83,14 @@ struct select_helper_struct
 	unsigned long n;
 	wait_queue_head_t w_queue;
 	int ret;
-	int done;
+	atomic_t done;
 };
 
 struct sleep_helper_struct
 {
 	pid_t process_pid;
 	wait_queue_head_t w_queue;
-	int done;
+	atomic_t done;
 };
 
 /***
@@ -128,7 +128,7 @@ How many processors are dedicated to the experiment. My system has 8, so I set i
 This needs to be >= 2 and your system needs to have at least 4 vCPUs
 */
 
-#define EXP_CPUS 4
+#define EXP_CPUS 2
                           
 
 #define NETLINK_USER 31
@@ -176,6 +176,27 @@ extern void sync_and_freeze(void);
 extern void progress_exp(void);
 extern void set_cbe_exp_timeslice(char *write_buffer);
 
+
+extern void add_to_exp(int pid);
+extern void addToChain(struct dilation_task_struct *task);
+extern void assign_to_cpu(struct dilation_task_struct *task);
+extern void printChainInfo(void);
+extern void clean_exp(void);
+extern void set_children_time(struct task_struct *aTask, s64 time);
+extern int resume_all(struct task_struct *aTask,struct dilation_task_struct * lxc) ;
+extern int freeze_proc_exp_recurse(struct dilation_task_struct *aTask);
+extern int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_time);
+extern void set_children_policy(struct task_struct *aTask, int policy, int priority);
+extern void set_children_cpu(struct task_struct *aTask, int cpu);
+extern void clean_stopped_containers(void);
+extern void dilate_proc_recurse_exp(int pid, int new_dilation);
+extern void change_containers_dilation(void);
+extern void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 now, s64 expected_time);
+extern s64 calculate_change(struct dilation_task_struct* task, s64 virt_time, s64 expected_time);
+extern s64 get_virtual_time(struct dilation_task_struct* task, s64 now);
+
+
+
 /* s3f_sync_experiment.c */
 extern void s3f_add_to_exp_proc(char *write_buffer);
 extern void s3f_set_interval(char *write_buffer);
@@ -192,6 +213,10 @@ extern asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *o
 /* posix-timing.c */
 extern asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
 extern asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespec __user * tp);
+
+/* vt_advance.c */
+extern int run_head_process(struct dilation_task_struct * lxc, lxc_schedule_elem * head, s64 start_time, s64 vt_advance);
+extern int unfreeze_proc_vt_advance(struct dilation_task_struct *aTask, s64 expected_time) ;
 
 
 /* common.c */

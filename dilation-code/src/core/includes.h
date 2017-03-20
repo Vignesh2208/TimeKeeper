@@ -34,6 +34,7 @@
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/string.h>
+#include <linux/delay.h>
 
 /* user defined headers */
 #include "../utils/linkedlist.h"

@@ -238,7 +238,7 @@ int __init my_module_init(void)
 
 	catchup_task = kthread_create(&catchup_func, NULL, "catchup_task");
 	if(!IS_ERR(catchup_task)) {
-	    kthread_bind(catchup_task,0);
+	    //kthread_bind(catchup_task,0);
 	    wake_up_process(catchup_task);
 	}
 
@@ -298,9 +298,9 @@ void __exit my_module_exit(void)
 	for (i = 0; i < 1000000000; i++) {}
 
 	if ( kthread_stop(catchup_task) )
-        {
+    {
                 printk(KERN_INFO "TimeKeeper: Stopping catchup_task error\n");
-        }
+    }
 	
 
 	/* Resetting just in case experiment does not finish properly */

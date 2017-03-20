@@ -28,8 +28,13 @@ int llist_append(llist *l, void * item){
 	llist_elem * new_elem;
 	
 	new_elem = (llist_elem *) kmalloc(sizeof(llist_elem), GFP_KERNEL);
-	if(new_elem == NULL)
+	if(new_elem == NULL) {
+		printk(KERN_INFO "LLIST Append: NOMEM\n");
 		return OUT_OF_MEMORY_ERROR;
+	}
+	
+	if(item == NULL)
+		printk(KERN_INFO "Appending Null Item\n");
 
 	new_elem->item = item;	
 	l->size ++;
@@ -45,6 +50,7 @@ int llist_append(llist *l, void * item){
 		return SUCCESS;
 	}
 	
+	
 	l->tail->next = new_elem;
 	new_elem->next = NULL;
 	new_elem->prev = l->tail;
@@ -59,11 +65,15 @@ void * llist_get(llist * l, int index){
 	llist_elem * head = l->head;
 	while(head != NULL){
 		if(i == index){
+			if(head->item == NULL)
+				printk(KERN_INFO "Item is NULL\n");
 			return head->item;
 		}
 		i++;
 		head = head->next;
 	}
+	
+	printk(KERN_INFO "LLIST Head is NULL\n");
 	return NULL;
 
 }
@@ -86,6 +96,31 @@ void llist_set_equality_checker(llist * l, int (*equality_checker)(void * elem1,
 	l->equals = equality_checker;
 }
 
+void llist_requeue(llist * l) {
+	
+	if(l == NULL)
+		return;
+	
+	if(l->size == 0 || l->size == 1)
+		return;
+		
+	llist_elem * head = l->head;
+	llist_elem * tail = l->tail;
+	
+	l->head = l->head->next;
+	l->head->prev = NULL;
+	
+	l->tail->next = head;
+	head->prev = l->tail;
+	l->tail = head;
+	l->tail->next = NULL;
+	
+	return;
+	
+
+}
+
+
 void * llist_remove_at(llist * l, int index){
 
 	if(l == NULL)
@@ -99,7 +134,7 @@ void * llist_remove_at(llist * l, int index){
 			result =  head->item;
 			l->size --;
 			if(head == l->head){
-				if(l->head == l->tail){
+				if(l->size == 0){
 					l->head = NULL;
 					l->tail = NULL;
 					kfree(head);
@@ -119,6 +154,11 @@ void * llist_remove_at(llist * l, int index){
 				l->tail = l->tail->prev;
 				if(l->tail != NULL)
 					l->tail->next = NULL;
+				else{
+					l->head = NULL;
+					l->tail = NULL;
+					l->size = 0;
+				}
 
 				kfree(head);
 				return result;
@@ -126,9 +166,16 @@ void * llist_remove_at(llist * l, int index){
 
 			if(head->prev != NULL)
 				head->prev->next = head->next;
+			else{
+				printk(KERN_INFO "LLIST Warning Should not happen\n");
+			}
 
-			if(head->next != NULL)
+			if(head->next != NULL){
 				head->next->prev = head->prev;
+			}
+			else{
+				printk(KERN_INFO "LLIST Warning Should not happen\n");
+			}
 
 			kfree(head);
 			return result;
@@ -145,8 +192,30 @@ int llist_size(llist * l){
 }
 
 void * llist_pop(llist * l){
-	if(l != NULL)
-		return llist_remove_at(l,0);
+	if(l != NULL){
+		//return llist_remove_at(l,0);
+		if(l->size == 0)
+		return NULL;
+		
+		llist_elem * head = l->head;
+		llist_elem * tail = l->tail;
+		void * result = head->item;
+		
+		if(l->size == 1){
+			l->head = NULL;
+			l->tail = NULL;
+			kfree(head);
+		}
+		else{	
+			l->head = l->head->next;
+			l->head->prev = NULL;
+			kfree(head);
+		}
+	
+		l->size = l->size - 1;
+		return result;		
+	
+	}	
 	else
 		return NULL;
 }

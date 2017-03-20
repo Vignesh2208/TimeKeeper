@@ -325,6 +325,82 @@ void print_threads_proc(char *write_buffer) {
 	}
 
 
+/***
+Increment the past physical times of the process and all it's children to the specified argument 
+***/
+/*
+void increment_all_past_physical_times_recurse(struct task_struct * aTask, s64 increment){
+
+	struct list_head *list;
+	struct task_struct *taskRecurse;
+	struct dilation_task_struct *dilTask;
+	struct task_struct *me;
+	struct task_struct *t;
+	unsigned long flags;
+
+
+	if (aTask == NULL) {
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+			printk(KERN_INFO "TimeKeeper: Set all past physical times: Task does not exist\n");
+		return;
+	}
+
+	if (aTask->pid == 0) {
+		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
+				printk(KERN_INFO "TimeKeeper: Set all past physical times: pid 0 error\n");
+		return;
+	}
+	
+	if(increment < 0)
+	    return;
+
+    acquire_irq_lock(&aTask->dialation_lock,flags);
+	aTask->past_physical_time = aTask->past_physical_time + increment;
+	release_irq_lock(&aTask->dialation_lock,flags);
+	
+	me = aTask;
+	t = me;
+	do {
+	    if(t->pid != aTask->pid){
+    		acquire_irq_lock(&t->dialation_lock,flags);
+	    	t->past_physical_time = t->past_physical_time + increment;
+	    	release_irq_lock(&t->dialation_lock,flags);
+		}
+		
+	} while_each_thread(me, t);
+
+    list_for_each(list, &aTask->children)
+    {
+
+        taskRecurse = list_entry(list, struct task_struct, sibling);
+        if (taskRecurse->pid == 0) {
+                continue;
+        }
+
+        increment_all_past_physical_times_recurse(taskRecurse, increment);
+    }
+}
+*/
+
+
+int find_in_schedule_list(struct dilation_task_struct * lxc, int pid) {
+
+	int i = 0;
+	lxc_schedule_elem * curr;
+	if(lxc != NULL) {
+		for(i = 0; i < schedule_list_size(lxc); i++){
+			curr = llist_get(&lxc->schedule_queue, i);
+			if(curr != NULL) {
+				if(curr->pid == pid)
+					return 1;
+			}
+		}
+	
+	}
+	
+	return 0;
+}
+
 /*** 
 Add to tail of schedule queue 
 ***/
@@ -353,8 +429,11 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 		return -1;
 
 	/* child already exists. don't add */
-	if(hmap_get(&lxc->valid_children, &new_task->pid) != NULL) 
-	{	return 0;
+	if(hmap_get_abs(&lxc->valid_children,new_task->pid) != NULL) 
+	{	
+		if(find_in_schedule_list(lxc,new_task->pid) == 0)
+			printk(KERN_INFO "Add to Schedule List Error: Found in map but not in list. Pid = %d\n", new_task->pid);
+		return 0;
 	}
 
 
@@ -392,14 +471,11 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	acquire_irq_lock(&new_task->dialation_lock,flags);
 
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
-	//new_task->virt_start_time = lxc->linux_task->virt_start_time;
 	
 	if(lxc->last_run != NULL && find_task_by_pid(lxc->last_run->pid) != NULL) {
-	    printk(KERN_INFO "TimeKeeper: Setting new task time. Pid = %d\n", new_task->pid);
-    	new_task->freeze_time = lxc->last_run->curr_task->freeze_time;
+	   	new_task->freeze_time = lxc->last_run->curr_task->freeze_time;
     	new_task->past_physical_time = lxc->last_run->curr_task->past_physical_time;
     	new_task->past_virtual_time = lxc->last_run->curr_task->past_virtual_time;
-    	//new_task->past_virtual_time = 0;
     	new_task->virt_start_time = lxc->last_run->curr_task->virt_start_time;
     }
     else{
@@ -448,22 +524,28 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 		//base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; 
 		//lxc->rr_run_time += (int)(140 - new_element->static_priority)/5;
 
-        
-		base_time_quanta = base_time_quanta*500000;
+
+        if(new_task->pid == lxc->linux_task->pid)
+            base_time_quanta = base_time_quanta*100000;
+        else
+    		base_time_quanta = base_time_quanta*500000;
+    		
 		lxc->rr_run_time += 1;
 	}
 	else{
 
 		/* 100 ms for now */
-		linux_time_quanta = 5*(20); 
-		base_time_quanta = base_time_quanta*500000;
+		linux_time_quanta = 5*(20);
+		
+		if(new_task->pid == lxc->linux_task->pid)
+            base_time_quanta = base_time_quanta*100000;
+        else
+    		base_time_quanta = base_time_quanta*500000; 
 		lxc->rr_run_time += 1;
 	}
 	
 	
-	printk(KERN_INFO "TimeKeeper: Add To Schedule List: PID : %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, base_time_quanta, n_threads, expected_increase);
-
-	//new_task->virt_start_time = lxc->linux_task->virt_start_time;
+	printk(KERN_INFO "TimeKeeper: Add To Schedule List: PID : %d, LXC: %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, lxc->linux_task->pid, base_time_quanta, n_threads, expected_increase);
 	release_irq_lock(&new_task->dialation_lock,flags);
 
 	new_element->share_factor = base_time_quanta;
@@ -481,7 +563,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	struct sched_param sp;
 	sp.sched_priority = 99;
 	sched_setscheduler(new_task, SCHED_RR, &sp);
-	hmap_put(&lxc->valid_children, &new_element->pid, new_element);
+	hmap_put_abs(&lxc->valid_children,new_element->pid, new_element);
 	
 
 	return 0;
@@ -503,7 +585,7 @@ struct task_struct * pop_schedule_list(struct dilation_task_struct * lxc){
 
 	if(head != NULL){
 		curr_task = head->curr_task;
-		hmap_remove(&lxc->valid_children, &head->pid);
+		hmap_remove_abs(&lxc->valid_children, head->pid);
 		kfree(head);
 		return curr_task;
 	}
@@ -513,13 +595,17 @@ struct task_struct * pop_schedule_list(struct dilation_task_struct * lxc){
 
 }
 
+
+
 /***
 Get pointer to task_Struct of head but don't remove the element from the schedule list 
 ***/
 lxc_schedule_elem * schedule_list_get_head(struct dilation_task_struct * lxc){
 
-	if(lxc == NULL)
+	if(lxc == NULL) {
+		printk(KERN_INFO "Get Head: LXC is Null\n");
 		return NULL;
+	}
 
 
 	return llist_get(&lxc->schedule_queue, 0);
@@ -537,13 +623,7 @@ void requeue_schedule_list(struct dilation_task_struct * lxc){
 
 	if(lxc == NULL)
 		return;
-
-	lxc_schedule_elem * head;
-	head = llist_pop(&lxc->schedule_queue);
-	if(head != NULL){
-		llist_append(&lxc->schedule_queue, head);
-		hmap_put(&lxc->valid_children, &head->pid, head);
-	}
+	llist_requeue(&lxc->schedule_queue);
 
 }
 
@@ -567,6 +647,8 @@ int schedule_list_size(struct dilation_task_struct * lxc){
 	return llist_size(&lxc->schedule_queue);
 
 }
+
+
 
 /*** Wrappers for performing dialated poll and select system calls ***/
 
@@ -655,7 +737,7 @@ int max_sel_fd(unsigned long n, fd_set_bits *fds,struct task_struct * tsk)
 	n /= BITS_PER_LONG;
 	fdt = files_fdtable(current->files);
 	open_fds = fdt->open_fds + n;
-	printk(KERN_INFO "TimeKeeper: max_sel_fd : n = %lu\n",n);
+	printk(KERN_INFO "TimeKeeper: max_sel_fd : Pid = %d, n = %lu\n",current->pid, n);
 
 	max = 0;
 	if (set) {
@@ -707,12 +789,15 @@ int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk)
 	unsigned int busy_flag = 0;
 	unsigned long busy_end = 0;
 
+
+	printk(KERN_INFO "TimeKeeper: Do dialated Select: Entered. Pid = %d\n", current->pid);
+
 	rcu_read_lock();
 	retval = max_sel_fd(n, fds,tsk);
 	rcu_read_unlock();
 
 	
-	printk(KERN_INFO "TimeKeeper: Do dialated Select: Returned from Max_Sel_fd\n");
+	printk(KERN_INFO "TimeKeeper: Do dialated Select: Returned from Max_Sel_fd. Pid = %d\n", current->pid);
 
 	if (retval < 0)
 		return retval;
@@ -796,6 +881,7 @@ int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk)
 
 
 	poll_freewait(&table);
+	printk(KERN_INFO "TimeKeeper: Do dialated Select: Returned function. Pid = %d\n", current->pid);
 
 	return retval;
 }
