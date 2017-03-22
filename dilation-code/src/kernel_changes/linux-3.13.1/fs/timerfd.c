@@ -153,7 +153,7 @@ static enum alarmtimer_restart timerfd_alarmproc(struct alarm *alarm,
 			return ALARMTIMER_NORESTART;
 		}
 		else{
-			hrtimer_forward_now(&ctx->t.tmr,ctx->tintv);
+			hrtimer_forward_now(&ctx->t.tmr,ns_to_ktime(100000));
 			return ALARMTIMER_RESTART;
 		}
 
@@ -254,10 +254,16 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 		if (flags & TFD_TIMER_ABSTIME){
 			ctx->wakeup_time = timespec_to_ns(&ktmr->it_value);
 			curr_dilated_time = get_dilated_task_time(ctx->owner_task);
-			if(curr_dilated_time >= ctx->wakeup_time)
-				relative_expiry_duration = 100000;
-			else
+			if(curr_dilated_time >= ctx->wakeup_time) {
+				relative_expiry_duration = 0;
+			}
+			else {
 				relative_expiry_duration = ctx->wakeup_time - curr_dilated_time;
+				//relative_expiry_duration = 1000000;
+			}
+			if(relative_expiry_duration > 0) {
+                		printk(KERN_INFO "TimerFD: ABS Setting up timer fire period %llu, Wakeup Time = %llu, Curr time = %llu. Current = %d, owner = %d\n", relative_expiry_duration, ctx->wakeup_time, curr_dilated_time, current->pid, ctx->owner_task->pid);
+			}
 
 		}
 		else{
@@ -265,9 +271,11 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 			relative_expiry_duration = timespec_to_ns(&ktmr->it_value);
 			ctx->wakeup_time = curr_dilated_time + relative_expiry_duration;
 
-		}
+			if(relative_expiry_duration > 0) {
+                		printk(KERN_INFO "TimerFD: REL Setting up timer fire period %llu, Wakeup Time = %llu, Curr time = %llu. Current = %d, owner = %d\n", relative_expiry_duration, ctx->wakeup_time, curr_dilated_time, current->pid, ctx->owner_task->pid);
+			}
 
-    	        printk(KERN_INFO "TimerFD: Setting up timer fire period %llu. Curr time = %llu\n", relative_expiry_duration, curr_dilated_time);
+		}
 
 	}
 

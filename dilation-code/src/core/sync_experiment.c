@@ -76,6 +76,8 @@ void print_schedule_list(struct dilation_task_struct * lxc)
 s64 PRECISION = 1000;  
 s64 FREEZE_QUANTUM = 300000000;
 s64 Sim_time_scale = 1;
+s64 boottime;
+atomic_t is_boottime_set = ATOMIC_INIT(0);
 hashmap poll_process_lookup;
 hashmap select_process_lookup;
 hashmap sleep_process_lookup;
@@ -1592,17 +1594,6 @@ void clean_exp() {
 	}
 	
 	
-	
-	/*
-	list_for_each_safe(pos, n, &exp_list)
-    {
-        task = list_entry(pos, struct dilation_task_struct, list);
-        if (experiment_stopped != NOTRUNNING) 
-			resume_all(task->linux_task,task);
-			
-			
-	}
-	*/
 
      
     /*list_for_each_safe(pos, n, &exp_list)
@@ -1612,10 +1603,8 @@ void clean_exp() {
 			unfreeze_all(task->linux_task);
 			
 			
-	}*/  
-    //wait_event_interruptible(exit_queue, atomic_read(&n_active_syscalls) == 0);
-    
-	
+	}*/ 
+   
 
 	/* free any heap memory associated with each container, cancel corresponding timers */
     list_for_each_safe(pos, n, &exp_list)
@@ -1627,7 +1616,7 @@ void clean_exp() {
 			
 			//resume_all(task->linux_task,task);		
 			
-			/*		
+					
 			if (experiment_type == CS || experiment_type == CBE){
 	
 				acquire_irq_lock(&task->linux_task->dialation_lock,flags);
@@ -1637,11 +1626,10 @@ void clean_exp() {
 				task->linux_task->virt_start_time = 0;
 				release_irq_lock(&task->linux_task->dialation_lock,flags);
 				kill(task->linux_task,SIGCONT,NULL);
-				//unfreeze_children(task->linux_task,now_ns,task->expected_time,task);
-				
+				unfreeze_all(task->linux_task);
 
 			}
-			*/
+			
 
             if (task->stopped != -1 && ret != -1) {
                 sp.sched_priority = 0;
@@ -1653,8 +1641,8 @@ void clean_exp() {
 	
 				/* -1 to fill cpu mask so that they can be scheduled in any cpu */
 				set_children_cpu(task->linux_task, -1); 
-				kill(task->linux_task,SIGCONT,NULL);		
-				unfreeze_all(task->linux_task);
+				//kill(task->linux_task,SIGCONT,NULL);		
+				//unfreeze_all(task->linux_task);
 			}
 			
         }

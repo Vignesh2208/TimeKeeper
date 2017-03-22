@@ -407,10 +407,8 @@ Add to tail of schedule queue
 int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *new_task, s64 FREEZE_QUANTUM, s64 highest_dilation){
 
 
-	int linux_time_quanta = 0;
-	int lowest_linux_time_quanta = 100; // 5 ms
-	int dilation_factor;
 
+	int dilation_factor;
 	int dil;
     s64 temp_proc;
     s64 temp_high;
@@ -443,18 +441,6 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 
 
 	new_element->static_priority = new_task->static_prio;
-
-
-	/** TODO Handle lower priority processes **/
-	if(new_element->static_priority  < 120) {
-		/* In ms */
-		linux_time_quanta = 20*(140 - new_element->static_priority); 
-	}
-	else{
-		/* 100 ms for now */
-		linux_time_quanta = 5*(20); 
-	}
-	
 	
 
     /* temp_proc and temp_high are temporary dilations for the container and leader respectively.
@@ -515,32 +501,27 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	}
 
 	
-	if(new_element->static_priority  < 120){
+	if(new_element->static_priority  <= 120){
 
-		/* In ms */
-		linux_time_quanta = 20*(140 - new_element->static_priority); 
-
-		/* 200000 = 1000000/5 */
-		//base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 200000; 
-		//lxc->rr_run_time += (int)(140 - new_element->static_priority)/5;
-
+		/* In ms- Normal Process allotted 200 us vt quanta. Quanta of higher priority processes scaled according to linux spec*/
 
         if(new_task->pid == lxc->linux_task->pid)
             base_time_quanta = base_time_quanta*100000;
-        else
-    		base_time_quanta = base_time_quanta*500000;
+        else {
+    		//base_time_quanta = base_time_quanta*200000;
+    		base_time_quanta = base_time_quanta*(140 - new_element->static_priority)* 10000; 
+    		
+    	}
     		
 		lxc->rr_run_time += 1;
 	}
 	else{
 
-		/* 100 ms for now */
-		linux_time_quanta = 5*(20);
-		
+		/* 200 us for now for all lower priority process. TODO */		
 		if(new_task->pid == lxc->linux_task->pid)
             base_time_quanta = base_time_quanta*100000;
         else
-    		base_time_quanta = base_time_quanta*500000; 
+    		base_time_quanta = base_time_quanta*200000; 
 		lxc->rr_run_time += 1;
 	}
 	

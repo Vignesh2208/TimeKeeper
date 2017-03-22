@@ -363,7 +363,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		release_irq_lock(&current->dialation_lock,flags);	
 		atomic_dec(&n_active_syscalls);
 		
-		return -EFAULT;
+		return ref_sys_select(k,inp,outp,exp,tvp);
 	}
 	
 	release_irq_lock(&current->dialation_lock,flags);	
@@ -565,7 +565,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		release_irq_lock(&current->dialation_lock,flags);	
 		atomic_dec(&n_active_syscalls);
    			
-   		return -EFAULT;
+   		return ref_sys_poll(ufds,nfds,timeout_msecs);
 
 	}
 	
