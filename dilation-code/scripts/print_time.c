@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 	else
 		loops = 10000;
 
-	/*
+	
 	for(i = 0; i < 2; i++){
 		pid = fork();
 		if(pid == 0){
@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
 			}
 			return 0;
 		}
-	}*/
+	}
 	
 	printf("Started ...\n");
 	fflush(stdout);

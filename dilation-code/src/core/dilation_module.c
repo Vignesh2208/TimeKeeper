@@ -260,10 +260,14 @@ int __init my_module_init(void)
 	
 	/* Wait to stop loop_task */
 	#ifdef __x86_64
-        	if (loop_task != NULL)
+        	if (loop_task != NULL) {
                 	kill(loop_task, SIGSTOP, NULL);
-        	else
+                	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
+       				cpumask_set_cpu(1,&loop_task->cpus_allowed);
+            }
+        	else {
                 	printk(KERN_INFO "TimeKeeper: Loop_task is null??\n");
+            }
 	#endif
 
   	return 0;
