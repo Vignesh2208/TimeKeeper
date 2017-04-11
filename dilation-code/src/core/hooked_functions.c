@@ -16,9 +16,6 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 
-asmlinkage long sys_gettimeofday_new(struct timeval __user *tv, struct timezone __user *tz);
-asmlinkage long (*ref_sys_gettimeofday)(struct timeval __user *tv, struct timezone __user *tz);
-
 
 extern struct list_head exp_list;
 //struct poll_list;
@@ -42,7 +39,6 @@ extern s64 Sim_time_scale;
 extern s64 expected_increase;
 extern atomic_t n_active_syscalls;
 extern atomic_t experiment_stopping;
-extern struct timezone sys_tz;
 
 
 extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk);
@@ -117,6 +113,9 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	int is_dialated = 0;
 	struct sleep_helper_struct helper;	
 	struct sleep_helper_struct * sleep_helper = &helper;
+	struct list_head *list;
+    struct task_struct *taskRecurse;
+
 	
 
 	acquire_irq_lock(&current->dialation_lock,flags);
@@ -144,8 +143,20 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			
 			now_new = get_dilated_time(current);
 			if(now_new < wakeup_time){  			
-			    if(current->freeze_time == 0)
-			        kill(current,SIGCONT,NULL); 
+			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0){
+					kill(current,SIGCONT,NULL);
+					list_for_each(list, &current->children)
+ 		   			{
+            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
+						if (taskRecurse!= NULL &&taskRecurse->pid == 0) {
+							    continue;
+						}
+						//taskRecurse->freeze_time = 0;
+						/* Let other children use the cpu */
+						if(taskRecurse != NULL)
+						kill(taskRecurse, SIGCONT, NULL); 
+					}   
+				}
 			}
 
 		    
@@ -210,7 +221,8 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	int is_dialated = 0;
 	struct select_helper_struct  helper;
 	struct select_helper_struct * select_helper = &helper;
-			
+	struct list_head *list;
+    struct task_struct *taskRecurse;	
 	
 	rcu_read_lock();
 	fdt = files_fdtable(current->files);
@@ -316,8 +328,21 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 			now_new = get_dilated_time(current);
 			if(now_new < wakeup_time) {
 				acquire_irq_lock(&current->dialation_lock,flags);	
-			    if(current->freeze_time == 0)
+			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0) {
 			        kill(current,SIGCONT,NULL);
+			        list_for_each(list, &current->children)
+ 		   			{
+            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
+						if (taskRecurse != NULL && taskRecurse->pid == 0) {
+							    continue;
+						}
+						//taskRecurse->freeze_time = 0;
+						/* Let other children use the cpu */
+						if(taskRecurse != NULL)
+						kill(taskRecurse, SIGCONT, NULL); 
+					}
+			        
+				}
 			    release_irq_lock(&current->dialation_lock,flags);
 			}
 			else{
@@ -401,6 +426,8 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	int is_dialated = 0;
 	struct poll_helper_struct helper;
 	struct poll_helper_struct * poll_helper =  &helper;
+	struct list_head *list;
+    struct task_struct *taskRecurse;
 	
 
 	
@@ -510,8 +537,20 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 			now_new = get_dilated_time(current);
 			if(now_new < wakeup_time) {
 				acquire_irq_lock(&current->dialation_lock,flags);
-			    if(current->freeze_time == 0)
+			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0) {
 			        kill(current,SIGCONT,NULL);
+					list_for_each(list, &current->children)
+ 		   			{
+            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
+						if (taskRecurse != NULL && taskRecurse->pid == 0) {
+							    continue;
+						}
+						//taskRecurse->freeze_time = 0;
+						/* Let other children use the cpu */
+						if(taskRecurse != NULL)
+						kill(taskRecurse, SIGCONT, NULL); 
+					}
+				}				
 			    release_irq_lock(&current->dialation_lock,flags);		
 			}
 			else{
@@ -580,47 +619,6 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 
 
 
-}
-
-asmlinkage long sys_gettimeofday_new(struct timeval __user *tv, struct timezone __user *tz){
-
-	struct list_head *pos;
-	struct list_head *n;
-	struct dilation_task_struct* task;
-	struct dilation_task_struct *dilTask;
-	s64 curr_dilated_time = 0;
-	unsigned long flags;
-	struct timeval ktv;
-
-	printk(KERN_INFO "TimeKeeper: Sys Gettimeofday. Pid = %d\b", current->pid);
-	if(current->virt_start_time != 0 && experiment_stopped == RUNNING && tv != NULL){
-			
-			list_for_each_safe(pos, n, &exp_list)
-			{
-				
-				task = list_entry(pos, struct dilation_task_struct, list);
-				if(task != NULL) {
-					
-					if (find_children_info(task->linux_task, current->pid) == 1) {
-						
-						acquire_irq_lock(&task->linux_task->dialation_lock,flags);
-						curr_dilated_time = get_dilated_time(task->linux_task);
-						release_irq_lock(&task->linux_task->dialation_lock,flags);	
-						ktv = ns_to_timeval(curr_dilated_time);
-						if (copy_to_user(tv, &ktv, sizeof(ktv)))
-							return -EFAULT;
-						if(tz != NULL) {
-							if (copy_to_user(tz, &sys_tz, sizeof(sys_tz)))
-								return -EFAULT;
-						}
-
-						return 0;
-
-					}
-				}
-			}
-	}
-	return ref_sys_gettimeofday(tv,tz);
 }
 
 

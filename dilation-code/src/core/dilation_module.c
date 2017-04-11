@@ -13,7 +13,7 @@ extern asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user
 extern asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
 extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
-extern asmlinkage long (*ref_sys_gettimeofday)(struct timeval __user *tv, struct timezone __user *tz);
+
 
 
 
@@ -254,7 +254,6 @@ int __init my_module_init(void)
 	ref_sys_select = (void *) sys_call_table[NR_select];
 	ref_sys_clock_gettime = (void *)sys_call_table[__NR_clock_gettime];
 	ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
-	ref_sys_gettimeofday = (void *) sys_call_table[__NR_gettimeofday];
 	write_cr0(original_cr0 | 0x00010000);
 
 
@@ -314,7 +313,6 @@ void __exit my_module_exit(void)
 	sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
-	sys_call_table[__NR_gettimeofday] = (unsigned long *) ref_sys_gettimeofday;
 	sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
 	sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
 	write_cr0(original_cr0 | 0x00010000);

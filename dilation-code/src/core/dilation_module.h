@@ -209,7 +209,6 @@ extern unsigned long **aquire_sys_call_table(void);
 extern asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp);
 extern asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
 extern asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
-extern asmlinkage long sys_gettimeofday_new(struct timeval __user *tv, struct timezone __user *tz);
 
 /* posix-timing.c */
 extern asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);

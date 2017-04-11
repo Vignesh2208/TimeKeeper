@@ -166,7 +166,7 @@ extern asmlinkage long (*ref_sys_select)(int n, fd_set __user *inp, fd_set __use
 extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
 extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
 extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
-extern asmlinkage long (*ref_sys_gettimeofday)(struct timeval __user *tv, struct timezone __user *tz);
+
 
 extern unsigned long **sys_call_table; //address of the sys_call_table, so we can hijack certain system calls
 unsigned long orig_cr0;
@@ -354,7 +354,6 @@ void sync_and_freeze() {
 	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
-	sys_call_table[__NR_gettimeofday] = (unsigned long *) sys_gettimeofday_new;
 
 	write_cr0(orig_cr0 | 0x00010000 );
 
@@ -827,8 +826,7 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
     
 	virt_time = get_virtual_time(task, now);
 	
-	/*
-	if(virt_time > expected_time) {
+	/*if(virt_time > expected_time) {
 	    change_vt = virt_time - expected_time;
 	    if(change_vt > 0) {
 		    printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the future: Pid = %d, Virtual time Error = %llu. \n",task->linux_task->pid,change_vt);
@@ -1424,6 +1422,7 @@ void set_all_freeze_times_recurse(struct task_struct * aTask, s64 freeze_time,s6
 
 		acquire_irq_lock(&t->dialation_lock,flags);
 		t->freeze_time = freeze_time; 
+		kill(t,SIGSTOP,NULL);
 		release_irq_lock(&t->dialation_lock,flags);
 
 	} while_each_thread(me, t);
@@ -1614,8 +1613,6 @@ void clean_exp() {
 		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
 		sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 		sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
-		sys_call_table[__NR_gettimeofday] = (unsigned long *) ref_sys_gettimeofday;
-
 		write_cr0(orig_cr0 | 0x00010000);
 		printk(KERN_INFO "TimeKeeper: Clean Exp: Sys Call table Updated\n");
 	}
@@ -2916,7 +2913,6 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 	    change_vt = expected_time - virt_time;
 		if(change_vt > 0) {
 			printk(KERN_INFO "TimeKeeper: Here in the past: Pid = %d, rem_time = %llu, Virtual time Error = %llu\n",aTask->linux_task->pid, rem_time, change_vt);
-			
 			aTask->running_time = change_vt;
     		return unfreeze_proc_exp_single_core_mode(aTask,expected_time);
 
