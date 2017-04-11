@@ -458,18 +458,18 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 
 	new_task->dilation_factor = lxc->linux_task->dilation_factor;
 	
-	if(lxc->last_run != NULL && find_task_by_pid(lxc->last_run->pid) != NULL) {
+	/*if(lxc->last_run != NULL && find_task_by_pid(lxc->last_run->pid) != NULL) {
 	   	new_task->freeze_time = lxc->last_run->curr_task->freeze_time;
     	new_task->past_physical_time = lxc->last_run->curr_task->past_physical_time;
     	new_task->past_virtual_time = lxc->last_run->curr_task->past_virtual_time;
     	new_task->virt_start_time = lxc->last_run->curr_task->virt_start_time;
     }
-    else{
+    else{*/
         new_task->virt_start_time = lxc->linux_task->virt_start_time;
     	new_task->freeze_time = lxc->linux_task->freeze_time;
     	new_task->past_physical_time = lxc->linux_task->past_physical_time;
     	new_task->past_virtual_time = lxc->linux_task->past_virtual_time;
-    }
+    //}
 	
 	
 

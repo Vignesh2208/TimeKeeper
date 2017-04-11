@@ -190,6 +190,8 @@ void leap(int pid, int interval)
 		printk(KERN_INFO "TimeKeeper: Leap: Task is null in leap, returning\n");
 		return;
 	}
+
+
 	if (task->freeze_time == 0) {
 		printk(KERN_INFO "TimeKeeper: Leap: Task is not frozen in leap, returning\n");
 		return;

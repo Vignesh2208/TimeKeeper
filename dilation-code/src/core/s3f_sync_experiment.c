@@ -80,8 +80,8 @@ void s3f_add_to_exp_proc(char *write_buffer) {
         int pid, value, timeline;
 
 	if (experiment_type == CBE) {
-                printk(KERN_INFO "TimeKeeper: S3F Add to Exp Proc: Trying to add to wrong experiment type.. exiting\n");
-        }
+          	printk(KERN_INFO "TimeKeeper: S3F Add to Exp Proc: Trying to add to wrong experiment type.. exiting\n");
+    }
 	else if (experiment_stopped == NOTRUNNING) {
 	        pid = atoi(write_buffer);
         	value = get_next_value(write_buffer);
@@ -135,7 +135,6 @@ int s3f_progress_timeline(char *write_buffer) {
 
 	value = get_next_value(write_buffer);
     pid = atoi(write_buffer + value);
-
 	value += get_next_value(write_buffer + value);
     force = atoi(write_buffer + value);
 
@@ -144,7 +143,6 @@ int s3f_progress_timeline(char *write_buffer) {
 	}
 	else if (experiment_stopped != NOTRUNNING) {
 		task = find_task_by_pid(pid);
-
 		tl = doesTimelineExist(timeline);
 		if (tl != NULL) {
 			tl->user_proc = task;
@@ -449,7 +447,8 @@ int run_timeline_processes(void * data){
 				unfreeze_proc_exp_recurse(task, task->expected_time);
 				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Finished unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
 
-				if (tl->force == FORCE || ( (get_virtual_time(task, now) - task->expected_time) > task->increment) ) { 
+				//if (tl->force == FORCE || ( (get_virtual_time(task, now) - task->expected_time) > task->increment) ) { 
+				if (tl->force == FORCE && get_virtual_time(task, now) != task->expected_time) {
 
 					/* force the vt to be what you expect */
 					force_virtual_time(task->linux_task, task->expected_time);
@@ -464,7 +463,7 @@ int run_timeline_processes(void * data){
 		                        unfreeze_proc_exp_recurse(task, task->expected_time);
 		                        printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Finished unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
 				       			//startJob = 1;
-								if (tl->force == FORCE || ( (get_virtual_time(task, now) - task->expected_time) > task->increment) ) 									{ 
+								if (tl->force == FORCE && get_virtual_time(task, now) != task->expected_time ) 									{ 
 									/* force the vt to be what you expect */
 									force_virtual_time(task->linux_task, task->expected_time);
 								}
@@ -490,7 +489,7 @@ int run_timeline_processes(void * data){
 					if(task != NULL){
 						printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Cpu list : %d not empty. Current timeline = %d, Running next timeline : %d\n", index, tl->number, task->tl->number);
 						if(tl->number == task->tl->number){
-							printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Thats wierd\n");
+							printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Thats weird\n");
 							ntl = tl;
 						}
 						else
@@ -498,9 +497,7 @@ int run_timeline_processes(void * data){
 					}
 
 					/* this moves on to the queued progress of the next timeline on the same cpu chain. This way the timelines on the same cpu chain are advanced one after the other */
-					list_del((&cpuWorkList[index])->next); 										
-					
-					
+					list_del((&cpuWorkList[index])->next); 															
 					set_current_state(TASK_INTERRUPTIBLE);
 					
 				}
@@ -517,10 +514,7 @@ int run_timeline_processes(void * data){
 				spin_unlock(&cpuLock[index]);
 				atomic_set(&tl->done,1);
 				wake_up_interruptible_sync(&tl->w_queue);
-				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Sent msg to user proc for timeline %d\n",tl->number);
-
-				
-				
+				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Sent msg to user proc for timeline %d\n",tl->number);				
 			}			
 
 	    }
@@ -689,10 +683,10 @@ void s3fCalcTaskRuntime(struct dilation_task_struct * task) {
 
 	if (dil > 0) {
 		tempVal = task->increment * task->linux_task->dilation_factor;
-                task->running_time = div_s64_rem(tempVal,1000,&rem);
+        task->running_time = div_s64_rem(tempVal,1000,&rem);
 	}
 	else if (dil < 0) {
-                task->running_time = div_s64_rem(task->increment*1000,task->linux_task->dilation_factor*(-1),&rem);
+        task->running_time = div_s64_rem(task->increment*1000,task->linux_task->dilation_factor*(-1),&rem);
 	}
 	else {
 		task->running_time = task->increment;
@@ -805,8 +799,8 @@ void fix_timeline(int timeline) {
         	}
 			printk(KERN_INFO "TimeKeeper: Calling Fix timeline\n");
 	        while (tmp != NULL) {
-			force_virtual_time(tmp->linux_task, tmp->expected_time);
-        	        tmp = tmp->next;
+				force_virtual_time(tmp->linux_task, tmp->expected_time);
+        	    tmp = tmp->next;
         	}
 	}
 	else {
@@ -815,72 +809,4 @@ void fix_timeline(int timeline) {
 	return;
 }
 
-/***
-An attempt to fix virtual time errors. Currently not utilized, as it did not work correctly
-***/
-int is_off(struct dilation_task_struct *task) {
-	struct timeval ktv;
-	s64 now;
-    s64 real_running_time;
-    s64 temp_past_physical_time;
-    s64 dilated_running_time;
-    s64 change;
-    s32 rem;
-	s64 expected_time = task->expected_time;
-	do_gettimeofday(&ktv);
-    now = timeval_to_ns(&ktv);
 
-    real_running_time = now - task->linux_task->virt_start_time;
-    temp_past_physical_time = task->linux_task->past_physical_time + (now - task->linux_task->freeze_time);
-
-    if (task->linux_task->dilation_factor > 0)
-    {
-dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*PRECISION ,task->linux_task->dilation_factor,&rem) + task->linux_task->past_virtual_time;
-            now = dilated_running_time + task->linux_task->virt_start_time;
-    }
-    else if (task->linux_task->dilation_factor < 0)
-    {
-dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*(task->linux_task->dilation_factor*-1), PRECISION, &rem) + task->linux_task->past_virtual_time;
-            now =  dilated_running_time + task->linux_task->virt_start_time;
-    }
-    else
-    {
-            dilated_running_time = (real_running_time - temp_past_physical_time) + task->linux_task->past_virtual_time;
-            now = dilated_running_time + task->linux_task->virt_start_time;
-    }
-
-    if (expected_time - now < 0)
-    {
-            if (task->linux_task->dilation_factor > 0)
-                    change = div_s64_rem( ((expected_time - now)*-1)*task->linux_task->dilation_factor, PRECISION, &rem);
-            else if (task->linux_task->dilation_factor < 0)
-            {
-                    change = div_s64_rem( ((expected_time - now)*-1)*PRECISION, task->linux_task->dilation_factor*-1,&rem);
-                    change += rem;
-            }
-            else if (task->linux_task->dilation_factor == 0)
-                    change = (expected_time - now)*-1;
-            }
-    else
-    {
-            if (task->linux_task->dilation_factor > 0)
-                    change = div_s64_rem( (expected_time - now)*task->linux_task->dilation_factor, PRECISION, &rem);
-            else if (task->linux_task->dilation_factor < 0)
-            {
-                    change = div_s64_rem((expected_time - now)*PRECISION, task->linux_task->dilation_factor*-1,&rem);
-                    change += rem;
-            }
-            else if (task->linux_task->dilation_factor == 0)
-            {
-                    change = (expected_time - now);
-            }
-            change *= -1; //make negative
-    }
-
-    if (change > task->increment*2)
-    {
-		printk(KERN_INFO "TimeKeeper: %d *** resetting task with change %lld\n", task->linux_task->pid, change);
-		return 1;
-    }
-	return 0;
-}

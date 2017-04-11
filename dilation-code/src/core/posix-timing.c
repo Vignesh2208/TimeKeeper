@@ -58,7 +58,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 		set_current_state(TASK_INTERRUPTIBLE);
 		init_waitqueue_head(&sleep_helper->w_queue);
 		atomic_set(&sleep_helper->done,0);
-		hmap_put(&sleep_process_lookup,&current->pid,sleep_helper);
+		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 
 		printk(KERN_INFO "TimeKeeper: Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
@@ -77,7 +77,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
         }
 
 		acquire_irq_lock(&current->dialation_lock,flag);
-		hmap_remove(&sleep_process_lookup, &current->pid);
+		hmap_remove_abs(&sleep_process_lookup, current->pid);
 		release_irq_lock(&current->dialation_lock,flags);
 		return 0;
 			

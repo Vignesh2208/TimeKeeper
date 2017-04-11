@@ -16,6 +16,9 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
 
+asmlinkage long sys_gettimeofday_new(struct timeval __user *tv, struct timezone __user *tz);
+asmlinkage long (*ref_sys_gettimeofday)(struct timeval __user *tv, struct timezone __user *tz);
+
 
 extern struct list_head exp_list;
 //struct poll_list;
@@ -34,10 +37,12 @@ extern hashmap sleep_process_lookup;
 extern int find_children_info(struct task_struct* aTask, int pid);
 extern int kill(struct task_struct *killTask, int sig, struct dilation_task_struct* dilation_task);
 extern int experiment_stopped;
+extern int experiment_type;
 extern s64 Sim_time_scale;
 extern s64 expected_increase;
 extern atomic_t n_active_syscalls;
 extern atomic_t experiment_stopping;
+extern struct timezone sys_tz;
 
 
 extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk);
@@ -228,7 +233,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		secs_to_sleep = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
 		nsecs_to_sleep = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
 		time_to_sleep = (secs_to_sleep*1000000000) + nsecs_to_sleep;
-		if(time_to_sleep < expected_increase)
+		if(experiment_type != CS && time_to_sleep < expected_increase)
 			goto revert_select;
 		    
 
@@ -411,7 +416,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		secs_to_sleep = timeout_msecs / MSEC_PER_SEC;
 		nsecs_to_sleep = (timeout_msecs % MSEC_PER_SEC) * NSEC_PER_MSEC;
 		time_to_sleep = (secs_to_sleep*1000000000) + nsecs_to_sleep;
-		if(time_to_sleep < expected_increase)
+		if(experiment_type != CS && time_to_sleep < expected_increase)
 	        goto revert_poll;
 		    
 		if (nfds > RLIMIT_NOFILE){
@@ -575,6 +580,47 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 
 
 
+}
+
+asmlinkage long sys_gettimeofday_new(struct timeval __user *tv, struct timezone __user *tz){
+
+	struct list_head *pos;
+	struct list_head *n;
+	struct dilation_task_struct* task;
+	struct dilation_task_struct *dilTask;
+	s64 curr_dilated_time = 0;
+	unsigned long flags;
+	struct timeval ktv;
+
+	printk(KERN_INFO "TimeKeeper: Sys Gettimeofday. Pid = %d\b", current->pid);
+	if(current->virt_start_time != 0 && experiment_stopped == RUNNING && tv != NULL){
+			
+			list_for_each_safe(pos, n, &exp_list)
+			{
+				
+				task = list_entry(pos, struct dilation_task_struct, list);
+				if(task != NULL) {
+					
+					if (find_children_info(task->linux_task, current->pid) == 1) {
+						
+						acquire_irq_lock(&task->linux_task->dialation_lock,flags);
+						curr_dilated_time = get_dilated_time(task->linux_task);
+						release_irq_lock(&task->linux_task->dialation_lock,flags);	
+						ktv = ns_to_timeval(curr_dilated_time);
+						if (copy_to_user(tv, &ktv, sizeof(ktv)))
+							return -EFAULT;
+						if(tz != NULL) {
+							if (copy_to_user(tz, &sys_tz, sizeof(sys_tz)))
+								return -EFAULT;
+						}
+
+						return 0;
+
+					}
+				}
+			}
+	}
+	return ref_sys_gettimeofday(tv,tz);
 }
 
 

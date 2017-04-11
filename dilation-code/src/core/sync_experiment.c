@@ -166,7 +166,7 @@ extern asmlinkage long (*ref_sys_select)(int n, fd_set __user *inp, fd_set __use
 extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
 extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
 extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
-
+extern asmlinkage long (*ref_sys_gettimeofday)(struct timeval __user *tv, struct timezone __user *tz);
 
 extern unsigned long **sys_call_table; //address of the sys_call_table, so we can hijack certain system calls
 unsigned long orig_cr0;
@@ -354,6 +354,7 @@ void sync_and_freeze() {
 	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
+	sys_call_table[__NR_gettimeofday] = (unsigned long *) sys_gettimeofday_new;
 
 	write_cr0(orig_cr0 | 0x00010000 );
 
@@ -826,6 +827,7 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
     
 	virt_time = get_virtual_time(task, now);
 	
+	/*
 	if(virt_time > expected_time) {
 	    change_vt = virt_time - expected_time;
 	    if(change_vt > 0) {
@@ -840,12 +842,14 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
 
 		}
 	
-	}
+	}*/
 	
 	change = 0;
 	change = calculate_change(task, virt_time, expected_time);
 
 	if (experiment_type == CS) {
+
+			/*
 	        if (change < 0)
         	{
 	        	ktime = ktime_set(0, 0);
@@ -853,7 +857,24 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
         	else
 	        {
         		ktime = ktime_set(0, change);
+				
+	        }*/
+			if(virt_time > expected_time){
+	        
+	            ktime = ktime_set(0,0);
 	        }
+	        else{
+	        
+	           
+	           if(task->linux_task->dilation_factor > 0)
+    	            diff = div_s64_rem( (expected_time - virt_time)*task->linux_task->dilation_factor, PRECISION, &rem);
+	           else
+	                diff = expected_time - virt_time;
+	                    
+	           ktime = ktime_set(0,diff);
+	           
+	        }
+
 	}
 	if (experiment_type == CBE) {
 	
@@ -1101,9 +1122,11 @@ int catchup_func(void *data)
 				if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
 					printk(KERN_INFO "TimeKeeper: Catchup Func: All sync drift thread finished\n");	
 				
-				#ifdef MULTI_CORE_NODES
-    				set_all_process_virtual_times(start_ns);		
-				#endif
+				if(experiment_type != CS) {
+					#ifdef MULTI_CORE_NODES
+						set_all_process_virtual_times(start_ns);		
+					#endif
+				}
 			}
 
 			/* if there are no continers in the experiment, then stop the experiment */
@@ -1470,6 +1493,8 @@ void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, i
 		   	    t->past_physical_time = lxc->linux_task->past_physical_time;
 	  	    	t->freeze_time = 0;
 		   	}
+			t->virt_start_time = lxc->linux_task->virt_start_time;
+			t->past_virtual_time = lxc->linux_task->past_virtual_time;
 			release_irq_lock(&t->dialation_lock,flags);
 		}
 		
@@ -1589,6 +1614,8 @@ void clean_exp() {
 		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
 		sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 		sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
+		sys_call_table[__NR_gettimeofday] = (unsigned long *) ref_sys_gettimeofday;
+
 		write_cr0(orig_cr0 | 0x00010000);
 		printk(KERN_INFO "TimeKeeper: Clean Exp: Sys Call table Updated\n");
 	}
@@ -1730,6 +1757,7 @@ void set_clean_exp() {
 		    /* sync experiment was never started, so just clean the list */
 			printk(KERN_INFO "TimeKeeper: Set Clean Exp: Clean up immediately..\n");
 			experiment_stopped = STOPPING;
+			atomic_set(&experiment_stopping,1);
 		    clean_exp();
 		}
 		else if (experiment_stopped == RUNNING) {
@@ -2879,14 +2907,14 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 	virt_time = get_virtual_time(aTask,timeval_to_ns(&now) );
 	if(virt_time > expected_time) {
 	    change_vt = virt_time - expected_time;
-	    if(change_vt > expected_increase) {
+	    if(change_vt > 0) {
 		    printk(KERN_INFO "TimeKeeper: Here in the future: Pid = %d, Virtual time Error = %llu. \n",aTask->linux_task->pid,change_vt);
 		}
 	
 	}
 	else{
 	    change_vt = expected_time - virt_time;
-		if(change_vt > expected_increase) {
+		if(change_vt > 0) {
 			printk(KERN_INFO "TimeKeeper: Here in the past: Pid = %d, rem_time = %llu, Virtual time Error = %llu\n",aTask->linux_task->pid, rem_time, change_vt);
 			
 			aTask->running_time = change_vt;
@@ -3065,11 +3093,16 @@ Unfreezes the container, then calls unfreeze_children to unfreeze all of the chi
 ***/
 int unfreeze_proc_exp_recurse(struct dilation_task_struct *aTask, s64 expected_time) {
 
-	#ifdef MULTI_CORE_NODES
-		return unfreeze_proc_exp_multi_core_mode(aTask,expected_time);
-	#else
+	if(experiment_type != CS) {
+		#ifdef MULTI_CORE_NODES
+			return unfreeze_proc_exp_multi_core_mode(aTask,expected_time);
+		#else
+			return unfreeze_proc_exp_single_core_mode(aTask,expected_time);
+		#endif
+	}
+	else{
 		return unfreeze_proc_exp_single_core_mode(aTask,expected_time);
-	#endif
+	}
 
 }
 
