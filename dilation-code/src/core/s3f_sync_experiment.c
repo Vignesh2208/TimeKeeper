@@ -80,7 +80,7 @@ void s3f_add_to_exp_proc(char *write_buffer) {
         int pid, value, timeline;
 
 	if (experiment_type == CBE) {
-          	printk(KERN_INFO "TimeKeeper: S3F Add to Exp Proc: Trying to add to wrong experiment type.. exiting\n");
+          	PDEBUG_E("S3F Add to Exp Proc: Trying to add to wrong experiment type.. exiting\n");
     }
 	else if (experiment_stopped == NOTRUNNING) {
 	        pid = atoi(write_buffer);
@@ -89,7 +89,7 @@ void s3f_add_to_exp_proc(char *write_buffer) {
         	s3f_add_to_exp(pid, timeline);
 	}
 	else {
-		printk(KERN_INFO "TimeKeeper: S3F Add to Exp Proc: Trying to add a LXC to S3F experiment that is already running\n");
+		PDEBUG_E("S3F Add to Exp Proc: Trying to add a LXC to S3F experiment that is already running\n");
 	}
 }
 
@@ -101,7 +101,7 @@ void s3f_reset(char *write_buffer) {
 	struct timeline* tl;
 	struct dilation_task_struct* task;
 	if (experiment_type == CBE) {
-		printk(KERN_INFO "TimeKeeper: S3f Reset: Trying to mix CBE and CS commands.. exiting\n");
+		PDEBUG_E("S3f Reset: Trying to mix CBE and CS commands.. exiting\n");
 	}
 	else if (experiment_stopped != NOTRUNNING) {
 		timeline = atoi(write_buffer);
@@ -115,7 +115,7 @@ void s3f_reset(char *write_buffer) {
 		}
 	}
 	else {
-		printk(KERN_INFO "TimeKeeper: S3f Reset: Trying to Run s3f reset when experiment is not running\n");
+		PDEBUG_E("S3f Reset: Trying to Run s3f reset when experiment is not running\n");
 	}
 }
 
@@ -139,7 +139,7 @@ int s3f_progress_timeline(char *write_buffer) {
     force = atoi(write_buffer + value);
 
 	if (experiment_type == CBE) {
-		printk(KERN_INFO "TimeKeeper: Progress: Error: Trying to mix CBE and CS commands.. exiting\n");
+		PDEBUG_E("Progress: Error: Trying to mix CBE and CS commands.. exiting\n");
 	}
 	else if (experiment_stopped != NOTRUNNING) {
 		task = find_task_by_pid(pid);
@@ -158,14 +158,14 @@ int s3f_progress_timeline(char *write_buffer) {
                     calculate_virtual_time_difference(lxc,now,lxc->expected_time);            	    
                 }
                 if (lxc->running_time > 1000000 || lxc->running_time < 10000 ) {
-						printk(KERN_INFO "TimeKeeper: Progress: On timeline %d, LXC: %d should run for %lld if %lld is > 0\n",tl->number, lxc->linux_task->pid, lxc->running_time, lxc->increment);
+					PDEBUG_V("Progress: On timeline %d, LXC: %d should run for %lld if %lld is > 0\n",tl->number, lxc->linux_task->pid, lxc->running_time, lxc->increment);
                 }
                 lxc = lxc->next;
             }
 			lxc = tl->head;
 			lxc = s3fGetNextRunnableTask(lxc);
 			if(lxc == NULL){
-				printk(KERN_INFO "TimeKeeper: Progress: For timeline %d, No tasks to run. No need to wake progress timeline thread\n", timeline);	
+				PDEBUG_V("Progress: For timeline %d, No tasks to run. No need to wake progress timeline thread\n", timeline);	
 				return 255;
 			}
 			else{
@@ -173,7 +173,7 @@ int s3f_progress_timeline(char *write_buffer) {
 
 				atomic_set(&tl->done,0);
 				atomic_set(&tl->progress_thread_done,1);
-				printk(KERN_INFO "TimeKeeper: Progress: For timeline %d, waking up progress timeline thread\n", timeline);
+				PDEBUG_V("Progress: For timeline %d, waking up progress timeline thread\n", timeline);
 				set_current_state(TASK_INTERRUPTIBLE);
 				wake_up_interruptible_sync(&tl->progress_thread_queue);
 				do{
@@ -184,20 +184,20 @@ int s3f_progress_timeline(char *write_buffer) {
 						set_current_state(TASK_RUNNING);
 
 				}while(ret == 0);
-				printk(KERN_INFO "TimeKeeper: Progress: For timeline %d, Resumed user process\n", timeline);
+				PDEBUG_V("Progress: For timeline %d, Resumed user process\n", timeline);
 
 			}
 			return 0;
 		}
 		else {
-			printk(KERN_INFO "TimeKeeper: Progress: Timeline does not exist..\n");
+			PDEBUG_E("Progress: Timeline does not exist..\n");
 		}
 	}
 	else {
 
 		
 		//send_a_message(pid);
-		printk(KERN_INFO "TimeKeeper: Progress: Trying to progress a timeline when experiment is not running!\n");
+		PDEBUG_E("Progress: Trying to progress a timeline when experiment is not running!\n");
 		return -1;
 	}
 	return 0;
@@ -220,7 +220,7 @@ void s3f_set_interval(char *write_buffer) {
 	value += get_next_value(write_buffer + value);
 	timeline = atoi(write_buffer + value);
 	if (experiment_type == CBE) {
-		printk(KERN_INFO "TimeKeeper: Set Interval: Error: Trying to mix CBE and CS commands.. exiting\n");
+		PDEBUG_E("Set Interval: Error: Trying to mix CBE and CS commands.. exiting\n");
 	}
 	else if (experiment_stopped != NOTRUNNING) {
         list_for_each_safe(pos, n, &exp_list)
@@ -232,16 +232,16 @@ void s3f_set_interval(char *write_buffer) {
 				if (list_node->running_time <= 5000) {
 					list_node->increment = 0;
 					list_node->running_time = 0;
-					printk(KERN_INFO "TimeKeeper: Set Interval: Running time too small, exiting\n");
+					PDEBUG_V("Set Interval: Running time too small, exiting\n");
 				}
 				
 				return;
 			}
 		}
-		printk(KERN_INFO "TimeKeeper: Set Interval: Task not found in exp_list\n");
+		PDEBUG_E("Set Interval: Task not found in exp_list\n");
 	}
 	else {
-		printk(KERN_INFO "TimeKeeper: Set Interval: Trying to run setInterval when experiment is not running!\n");
+		PDEBUG_E("Set Interval: Trying to run setInterval when experiment is not running!\n");
 	}
 	return;
 }
@@ -283,7 +283,7 @@ void assign_timeline_to_cpu(struct timeline* tl) {
                     index = i;
             }
     }
-	printk(KERN_INFO "TimeKeeper: Assign Timeline To Cpu: Index is %d, number of heads %d\n", index, number_of_heads);
+	PDEBUG_I("Assign Timeline To Cpu: Index is %d, number of heads %d\n", index, number_of_heads);
     walk = timelineHead[index];
     if (walk == NULL) {
             timelineHead[index] = tl;
@@ -297,7 +297,7 @@ void assign_timeline_to_cpu(struct timeline* tl) {
     }
     chainlength[index] += 1;
 	tl->cpu_assignment = index+(TOTAL_CPUS - EXP_CPUS);
-	printk(KERN_INFO "TimeKeeper: Assign Timeline to Cpu: Adding timeline %d to index: %d\n",tl->number, index);
+	PDEBUG_I("Assign Timeline to Cpu: Adding timeline %d to index: %d\n",tl->number, index);
 }
 
 /***
@@ -347,7 +347,7 @@ void s3f_add_to_exp(int pid, int timeline) {
     aTask = find_task_by_pid(pid);
     if (aTask == NULL)
     {
-            printk(KERN_INFO "TimeKeeper: S3f Add to Exp: Pid %d is invalid, dropping out\n",pid);
+            PDEBUG_E("S3f Add to Exp: Pid %d is invalid, dropping out\n",pid);
             return;
     }
 
@@ -424,7 +424,7 @@ int run_timeline_processes(void * data){
 	    {
 
 	    	if(atomic_read(&tl->stop_thread) > 0){
-	    		printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Stopped timeline thread %d\n", tl->number);
+	    		PDEBUG_I("Run Timeline Processes: Stopped timeline thread %d\n", tl->number);
 	    		if(atomic_dec_and_test(&tl->stop_thread))
 	    			kfree(tl);
 	    		return 0;
@@ -435,17 +435,17 @@ int run_timeline_processes(void * data){
 			task = tl->head;
             task = s3fGetNextRunnableTask(task);
             ntl = NULL;
-            printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Resumed timeline thread for timeline %d\n",tl->number);
+            PDEBUG_V("Run Timeline Processes: Resumed timeline thread for timeline %d\n",tl->number);
 			if (task == NULL) {
-                printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Task is null?? No running tasks for timeline %d\n", tl->number);
+                PDEBUG_I("Run Timeline Processes: Task is null?? No running tasks for timeline %d\n", tl->number);
 				/* Sending a message doesnt always work. Sometimes user process misses the message */               
 				//send_a_message(tl->user_proc->pid);
             }
             else {
 				
-				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Starting unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
+				PDEBUG_V("Run Timeline Processes: Starting unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
 				unfreeze_proc_exp_recurse(task, task->expected_time);
-				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Finished unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
+				PDEBUG_V("Run Timeline Processes: Finished unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
 
 				//if (tl->force == FORCE || ( (get_virtual_time(task, now) - task->expected_time) > task->increment) ) { 
 				if (tl->force == FORCE && get_virtual_time(task, now) != task->expected_time) {
@@ -459,9 +459,9 @@ int run_timeline_processes(void * data){
 			        	task = task->next;
 		                if (task->running_time > 0 && task->increment > 0 && task->stopped != -1)
 		                {
-			                	printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Starting unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
+			                	PDEBUG_V("Run Timeline Processes: Starting unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
 		                        unfreeze_proc_exp_recurse(task, task->expected_time);
-		                        printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Finished unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
+		                        PDEBUG_V("Run Timeline Processes: Finished unfreeze_proc for %d, on timeline %d\n", task->linux_task->pid, tl->number);
 				       			//startJob = 1;
 								if (tl->force == FORCE && get_virtual_time(task, now) != task->expected_time ) 									{ 
 									/* force the vt to be what you expect */
@@ -487,9 +487,9 @@ int run_timeline_processes(void * data){
 
 					task = list_first_entry(&cpuWorkList[index], struct dilation_task_struct, cpuList);
 					if(task != NULL){
-						printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Cpu list : %d not empty. Current timeline = %d, Running next timeline : %d\n", index, tl->number, task->tl->number);
+						PDEBUG_V("Run Timeline Processes: Cpu list : %d not empty. Current timeline = %d, Running next timeline : %d\n", index, tl->number, task->tl->number);
 						if(tl->number == task->tl->number){
-							printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Thats weird\n");
+							PDEBUG_E("Run Timeline Processes: Thats weird\n");
 							ntl = tl;
 						}
 						else
@@ -506,7 +506,7 @@ int run_timeline_processes(void * data){
 					cpuIdle[index] = 0;	
 				}				
 
-				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Send a message called from run timeline processes for timeline %d\n",tl->number);
+				PDEBUG_V("Run Timeline Processes: Send a message called from run timeline processes for timeline %d\n",tl->number);
 
 				/* Sending message to user proc doesn't always work */
 				//send_a_message(tl->user_proc->pid); 
@@ -514,12 +514,12 @@ int run_timeline_processes(void * data){
 				spin_unlock(&cpuLock[index]);
 				atomic_set(&tl->done,1);
 				wake_up_interruptible_sync(&tl->w_queue);
-				printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Sent msg to user proc for timeline %d\n",tl->number);				
+				PDEBUG_V("Run Timeline Processes: Sent msg to user proc for timeline %d\n",tl->number);				
 			}			
 
 	    }
 	    else {
-			printk(KERN_INFO "TimeKeeper: Run Timeline Processes: BIG BUG, the timeline in the timeline thread should never be null...\n");
+			PDEBUG_E("Run Timeline Processes: BIG BUG, the timeline in the timeline thread should never be null...\n");
 	    }
 	    round++;
 	    noWork:
@@ -535,10 +535,10 @@ int run_timeline_processes(void * data){
     	}
     	else{
     		if(ntl == tl){
-    			printk(KERN_INFO "TimeKeeper: Run Timeline Processes: ntl == tl. continue\n");
+    			PDEBUG_V("Run Timeline Processes: ntl == tl. continue\n");
     		}
     		else{
-    			printk(KERN_INFO "TimeKeeper: Run Timeline Processes: Finished timeline thread for timeline %d\n",tl->number);
+    			PDEBUG_V("Run Timeline Processes: Finished timeline thread for timeline %d\n",tl->number);
     			wait_event_interruptible(tl->pthread_queue,atomic_read(&tl->pthread_done) == 1);
     		}
     	}
@@ -571,18 +571,15 @@ int progress_timeline_thread(void *data)
 		if (tl != NULL) {
 
 		if(atomic_read(&tl->stop_thread) > 0){
-    		printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: Stopped progress timeline thread %d\n", tl->number);
+    		PDEBUG_I("Progress Timeline Thread: Stopped progress timeline thread %d\n", tl->number);
     		if(atomic_dec_and_test(&tl->stop_thread))
     			kfree(tl);
     		return 0;
     	}
 
-		printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: Resumed progress timeline thread for timeline %d\n",tl->number);
-
-
+		PDEBUG_V("Progress Timeline Thread: Resumed progress timeline thread for timeline %d\n",tl->number);
 		do_gettimeofday(&ktv);
         now = timeval_to_ns(&ktv);
-		
 		
 		task = tl->head;
         task = s3fGetNextRunnableTask(task);
@@ -590,7 +587,7 @@ int progress_timeline_thread(void *data)
 		/* if cpu is idle, unfreeze n go, if it is not idle, add to a queue */
 		if (task == NULL) {
             set_current_state(TASK_INTERRUPTIBLE);
-            printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: Send a message called from progress timeline thread for timeline %d\n",tl->number);
+            PDEBUG_V("Progress Timeline Thread: Send a message called from progress timeline thread for timeline %d\n",tl->number);
             send_message = 1;
             //send_a_message(tl->user_proc->pid);
            
@@ -631,10 +628,10 @@ int progress_timeline_thread(void *data)
 
 					/* This will probably happen if two timelines are assigned the same cpu. When they both call progress, one of them will be queued */
 					list_add_tail(&(task->cpuList), &cpuWorkList[index]); 
-					printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: queued new job for timeline %d\n",task->tl->number);
+					PDEBUG_V("Progress Timeline Thread: queued new job for timeline %d\n",task->tl->number);
 				}
 				else{
-					printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: did not queue job. timeline %d already exists\n", task->tl->number);
+					PDEBUG_V("Progress Timeline Thread: did not queue job. timeline %d already exists\n", task->tl->number);
 				}
 			}
 			spin_unlock(&cpuLock[index]);
@@ -643,7 +640,7 @@ int progress_timeline_thread(void *data)
 
 			/* END CRITICAL REGION */
 			if (isEmpty == 1) { 
-				printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: Run timeline thread wake up sent to timeline %d\n",tl->number);
+				PDEBUG_V("Progress Timeline Thread: Run timeline thread wake up sent to timeline %d\n",tl->number);
 				set_current_state(TASK_INTERRUPTIBLE);
 				atomic_set(&tl->pthread_done,1);
 				wake_up_interruptible_sync(&tl->pthread_queue);
@@ -652,11 +649,11 @@ int progress_timeline_thread(void *data)
 		round++;
 		}
 		else {
-			printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: BIG BUG, the timeline in the timeline thread should never be null...\n");
+			PDEBUG_E("Progress Timeline Thread: BIG BUG, the timeline in the timeline thread should never be null...\n");
 		}
 		noWork:
             set_current_state(TASK_INTERRUPTIBLE);
-            printk(KERN_INFO "TimeKeeper: Progress Timeline Thread: Finished progress timeline thread for timeline %d\n",tl->number);
+            PDEBUG_V("Progress Timeline Thread: Finished progress timeline thread for timeline %d\n",tl->number);
 			if(send_message){
 				if(tl != NULL){
 					////send_a_message(tl->user_proc->pid); // ** modified
@@ -712,7 +709,7 @@ enum hrtimer_restart s3f_hrtimer_callback( struct hrtimer *timer )
     now = timeval_to_ns(&ktv);
     task = container_of(timer, struct dilation_task_struct, timer);
 	if (task == NULL) {
-		printk(KERN_INFO "TimeKeeper: This should never be null... task in hrtimer\n");
+		PDEBUG_E("S3F Hrtimer: This should never be null... task in hrtimer\n");
 		return HRTIMER_NORESTART;
 	}
     dil = task->linux_task->dilation_factor;
@@ -721,7 +718,7 @@ enum hrtimer_restart s3f_hrtimer_callback( struct hrtimer *timer )
 	/* get timeline the task belongs to */
 	tl = task->tl;
 	if (tl == NULL) {
-		printk(KERN_INFO "TimeKeeper: The timeline of the task is null.. \n");
+		PDEBUG_E("S3F Hrtimer: The timeline of the task is null.. \n");
 		return HRTIMER_NORESTART;
 	}
 
@@ -739,7 +736,7 @@ void force_virtual_time(struct task_struct* aTask, s64 time) {
     struct task_struct *t;
 
     if (aTask == NULL) {
-            printk(KERN_INFO "TimeKeeper: Force VT: Task does not exist\n");
+            PDEBUG_E("Force VT: Task does not exist\n");
             return;
     }
     if (aTask->pid == 0) {
@@ -794,17 +791,17 @@ void fix_timeline(int timeline) {
 	if (tl != NULL) {
 	        tmp = tl->head;
         	if (tmp == NULL) {
-                	printk(KERN_INFO "TimeKeeper: Fix Timeline: No tasks assigned to timeline %d\n", timeline);
-                	return;
+            	PDEBUG_E("Fix Timeline: No tasks assigned to timeline %d\n", timeline);
+            	return;
         	}
-			printk(KERN_INFO "TimeKeeper: Calling Fix timeline\n");
+			PDEBUG_V("Calling Fix timeline\n");
 	        while (tmp != NULL) {
 				force_virtual_time(tmp->linux_task, tmp->expected_time);
         	    tmp = tmp->next;
         	}
 	}
 	else {
-		printk(KERN_INFO "TimeKeeper: Fix Timeline: Timeline %d does not exist\n", timeline);
+		PDEBUG_E("Fix Timeline: Timeline %d does not exist\n", timeline);
 	}
 	return;
 }

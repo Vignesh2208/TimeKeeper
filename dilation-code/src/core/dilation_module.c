@@ -127,7 +127,7 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 	else if (write_buffer[0] == START_EXP)
 		core_sync_exp();
 	else if (write_buffer[0] == PROGRESS){
-		printk(KERN_INFO "TimeKeeper: Received new progress request. Buffer = %s\n", write_buffer + 2);
+		//PDEBUG_A(" Received new progress request. Buffer = %s\n", write_buffer + 2);
 		ret = s3f_progress_timeline(write_buffer+2);
 	}
 	else if (write_buffer[0] == ADD_TO_EXP_CS)
@@ -154,13 +154,17 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 		set_cbe_exp_timeslice(write_buffer + 2);
 	else if (write_buffer[0] == SET_NETDEVICE_OWNER)
 		set_netdevice_owner(write_buffer + 2);
+	else if (write_buffer[0] == PROGRESS_INTERVAL_CBE)
+		progress_exp_cbe(write_buffer + 2);
+	else if (write_buffer[0] == RESUME_CBE)
+		resume_exp_cbe();
 	else
-		printk(KERN_ALERT "Invalid Write Command: %s\n", write_buffer);
+		PDEBUG_E("Dilation Module Write: Invalid Write Command: %s\n", write_buffer);
 
 	if(ret != 255)
 		return count;
 	else{
-		printk(KERN_INFO "Returned special value\n");
+		PDEBUG_A("Dilation Module Write: Returned special value\n");
 		/* special return value when progress timeline thread is not called in s3f_progress_timeline */
 		return -10;	
 	}
@@ -174,25 +178,25 @@ int __init my_module_init(void)
 {
 	int i;
 
-   	printk(KERN_INFO "TimeKeeper: Loading TimeKeeper MODULE\n");
+   	PDEBUG_A(" Loading TimeKeeper MODULE\n");
 
 	/* Set up TimeKeeper status file in /proc */
   	dilation_dir = proc_mkdir(DILATION_DIR, NULL);
   	if(dilation_dir == NULL)
 	{
 	    	remove_proc_entry(DILATION_DIR, NULL);
-   		printk(KERN_INFO "TimeKeeper: Error: Could not initialize /proc/%s\n", DILATION_DIR);
+   		PDEBUG_E(" Error: Could not initialize /proc/%s\n", DILATION_DIR);
    		return -ENOMEM;
   	}
-  	printk(KERN_INFO "TimeKeeper: /proc/%s created\n", DILATION_DIR);
+  	PDEBUG_A(" /proc/%s created\n", DILATION_DIR);
 	dilation_file = proc_create(DILATION_FILE, 0660, dilation_dir,&proc_file_fops);
 	if(dilation_file == NULL)
 	{
 	    	remove_proc_entry(DILATION_FILE, dilation_dir);
-   		printk(KERN_ALERT "Error: Could not initialize /proc/%s/%s\n", DILATION_DIR, DILATION_FILE);
+   		PDEBUG_E("Error: Could not initialize /proc/%s/%s\n", DILATION_DIR, DILATION_FILE);
    		return -ENOMEM;
   	}
-	printk(KERN_INFO "TimeKeeper: /proc/%s/%s created\n", DILATION_DIR, DILATION_FILE);
+	PDEBUG_A(" /proc/%s/%s created\n", DILATION_DIR, DILATION_FILE);
 
 	/* If it is 64-bit, initialize the looping script */
 	#ifdef __x86_64
@@ -209,16 +213,16 @@ int __init my_module_init(void)
 	nl_sk = netlink_kernel_create(&init_net, NETLINK_USER, &cfg);
     	if (!nl_sk)
     	{
-        	printk(KERN_ALERT "Error creating socket.\n");
+        	PDEBUG_E("Error creating socket.\n");
         	return -10;
     	}
 
 	/* Acquire number of CPUs on system */
 	TOTAL_CPUS = num_online_cpus();
-	printk(KERN_INFO "TimeKeeper: Number of CPUS: %d\n", num_online_cpus());
+	PDEBUG_A(" Number of CPUS: %d\n", num_online_cpus());
 
 	if (EXP_CPUS > TOTAL_CPUS) {
-		printk(KERN_INFO "TimeKeeper: WARNING -- EXP_CPUS LARGER THAN TOTAL_CPUS! FIX IN dilation_module.h\n");
+		PDEBUG_A(" WARNING -- EXP_CPUS LARGER THAN TOTAL_CPUS! FIX IN dilation_module.h\n");
 	}
 
 	/* Initialize experiment specific variables */
@@ -266,7 +270,7 @@ int __init my_module_init(void)
        				cpumask_set_cpu(1,&loop_task->cpus_allowed);
             }
         	else {
-                	printk(KERN_INFO "TimeKeeper: Loop_task is null??\n");
+                	PDEBUG_E(" Loop_task is null??\n");
             }
 	#endif
 
@@ -285,9 +289,9 @@ void __exit my_module_exit(void)
 	netlink_kernel_release(nl_sk);
 
 	remove_proc_entry(DILATION_FILE, dilation_dir);
-   	printk(KERN_INFO "TimeKeeper: /proc/%s/%s deleted\n", DILATION_DIR, DILATION_FILE);
+   	PDEBUG_A(" /proc/%s/%s deleted\n", DILATION_DIR, DILATION_FILE);
    	remove_proc_entry(DILATION_DIR, NULL);
-   	printk(KERN_INFO "TimeKeeper: /proc/%s deleted\n", DILATION_DIR);
+   	PDEBUG_A(" /proc/%s deleted\n", DILATION_DIR);
 
 	hmap_destroy(&poll_process_lookup);
 	hmap_destroy(&select_process_lookup);
@@ -303,7 +307,7 @@ void __exit my_module_exit(void)
 
 	if ( kthread_stop(catchup_task) )
     {
-                printk(KERN_INFO "TimeKeeper: Stopping catchup_task error\n");
+         PDEBUG_E(" Stopping catchup_task error\n");
     }
 	
 
@@ -327,7 +331,7 @@ void __exit my_module_exit(void)
 		if (loop_task != NULL)
 			kill(loop_task, SIGKILL, NULL);
 	#endif
-   	printk(KERN_INFO "TimeKeeper: MP2 MODULE UNLOADED\n");
+   	PDEBUG_A(" MP2 MODULE UNLOADED\n");
 }
 
 /* needs to be defined, but we do not read from /proc/dilation/status so we do not do anything here */

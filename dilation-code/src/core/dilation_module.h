@@ -175,7 +175,8 @@ extern void add_sim_to_exp_proc(char *write_buffer);
 extern void sync_and_freeze(void);
 extern void progress_exp(void);
 extern void set_cbe_exp_timeslice(char *write_buffer);
-
+extern int progress_exp_cbe(char * write_buffer);
+extern void resume_exp_cbe();
 
 extern void add_to_exp(int pid);
 extern void addToChain(struct dilation_task_struct *task);

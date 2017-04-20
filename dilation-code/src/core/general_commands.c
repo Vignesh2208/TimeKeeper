@@ -47,10 +47,10 @@ void set_netdevice_owner(char * write_buffer) {
     int next_idx = get_next_value(write_buffer);
 	
 
-	for(i = 0; *(write_buffer + next_idx + i) != '\0' && i < IFNAMESIZ ; i++)
+	for(i = 0; *(write_buffer + next_idx + i) != '\0' && i < IFNAMSIZ ; i++)
 		dev_name[i] = *(write_buffer + next_idx + i);
 
-    printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Received Pid: %d, Dev Name: %s\n", pid, dev_name);
+    PDEBUG_A("Set Net Device Owner: Received Pid: %d, Dev Name: %s\n", pid, dev_name);
 
 	struct net_device * dev;
 	int found = 0;
@@ -71,32 +71,14 @@ void set_netdevice_owner(char * write_buffer) {
 		for_each_netdev(net,dev) {
 			if(dev != NULL) {
 				if(strcmp(dev->name,dev_name) == 0) {
-					printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Found Specified Net Device: %s\n", dev_name);
+					PDEBUG_A("Set Net Device Owner: Found Specified Net Device: %s\n", dev_name);
 					dev->owner_pid = pid_struct;
 					found = 1;
 		    	}
-			
-			 	printk(KERN_INFO "TimeKeeper: Found New Net Device: %s\n", dev->name);
 			}
 		}
 	}	
 		
-	
-
-
-
-    /*dev = first_net_device(&init_net);
-    while(dev) {
-		if(strcmp(dev->name,dev_name) == 0) {
-			printk(KERN_INFO "TimeKeeper: Set Net Device Owner: Found Specified Net Device: %s\n", dev_name);
-			dev->owner_pid = pid;
-			break;
-        }
-		else{
-			dev = next_net_device(dev);
-        }
-
-    }*/
 	write_unlock_bh(&dev_base_lock);
 
 }
@@ -108,7 +90,7 @@ void perform_on_children(struct task_struct *aTask, void(*action)(int,int), int 
         struct list_head *list;
         struct task_struct *taskRecurse;
         if (aTask == NULL) {
-                printk(KERN_INFO "TimeKeeper: Perform On Children: Task does not exist\n");
+                PDEBUG_E("Perform On Children: Task does not exist\n");
                 return;
         }
         if (aTask->pid == 0) {
@@ -187,13 +169,13 @@ void leap(int pid, int interval)
 	struct task_struct *task;
 	task = find_task_by_pid(pid);
 	if (task == NULL) {
-		printk(KERN_INFO "TimeKeeper: Leap: Task is null in leap, returning\n");
+		PDEBUG_E("Leap: Task is null in leap, returning\n");
 		return;
 	}
 
 
 	if (task->freeze_time == 0) {
-		printk(KERN_INFO "TimeKeeper: Leap: Task is not frozen in leap, returning\n");
+		PDEBUG_E("Leap: Task is not frozen in leap, returning\n");
 		return;
 	}
 
@@ -254,7 +236,7 @@ void freeze_proc(struct task_struct *aTask) {
     struct timeval now;
     if (aTask->freeze_time > 0)
 	{
-        	printk(KERN_INFO "TimeKeeper: Freeze Proc Cmd: Process already frozen\n");
+        	PDEBUG_E("Freeze Proc Cmd: Process already frozen\n");
         	return;
     }
     do_gettimeofday(&now);
@@ -276,14 +258,13 @@ void unfreeze_all(struct task_struct *aTask) {
 	unsigned long flags;
 
 	if (aTask == NULL) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Resume All: Task does not exist\n");
+		
+		PDEBUG_E("Resume All: Task does not exist\n");
 		return 0;
 	}
 
 	if (aTask->pid == 0) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Resume All: PID equals 0\n");
+		PDEBUG_E("Resume All: PID equals 0\n");
 		return 0;
 	}
 
@@ -314,7 +295,7 @@ void unfreeze_proc(struct task_struct *aTask) {
         s64 now_ns;
         if (aTask->freeze_time == 0)
 		{
-        	printk(KERN_INFO "TimeKeeper: Unfreeze Proc Cmd: Process not frozen\n");
+        	PDEBUG_E("Unfreeze Proc Cmd: Process not frozen\n");
         	return;
         }
         do_gettimeofday(&now);
@@ -333,7 +314,7 @@ void freeze_or_unfreeze(int pid, int sig) {
         struct task_struct *aTask;
         aTask = find_task_by_pid(pid);
         if (aTask == NULL ) {
-                printk(KERN_INFO "TimeKeeper: Freeze of Unfreeze Cmd: Process not exist\n");
+                PDEBUG_E("Freeze of Unfreeze Cmd: Process not exist\n");
                 return;
         }
 
@@ -351,7 +332,7 @@ void freeze_or_unfreeze(int pid, int sig) {
 Change the dilation factor of a container.
 ***/
 void change_dilation(int pid, int new_dilation) {
-        printk(KERN_INFO "TimeKeeper: Change Dilation Cmd: Change_dilation called\n");
+        PDEBUG_V("Change Dilation Cmd: Change_dilation called\n");
         struct task_struct *aTask;
         struct timeval now_timeval;
         s64 real_running_time, dilated_running_time, now;
@@ -384,7 +365,7 @@ void change_dilation(int pid, int new_dilation) {
 	        aTask->dilation_factor = new_dilation;
 			release_irq_lock(&aTask->dialation_lock,flags);
 
-   			printk(KERN_INFO "TimeKeeper: Change Dilation Cmd: Dilating new process %d %d %lld %lld\n", pid, new_dilation, real_running_time, dilated_running_time);
+   			PDEBUG_I("Change Dilation Cmd: Dilating new process %d %d %lld %lld\n", pid, new_dilation, real_running_time, dilated_running_time);
 	}
 }
 

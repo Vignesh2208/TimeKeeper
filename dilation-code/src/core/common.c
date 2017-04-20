@@ -47,7 +47,7 @@ Wrapper for sending a message to userspace
 void send_a_message_proc(char * write_buffer) {
         int pid;
         pid = atoi(write_buffer);
-        printk(KERN_INFO "TimeKeeper : Send a message proc: called from send_a_msg_proc\n");
+        PDEBUG_V("Send a message proc: called from send_a_msg_proc\n");
         send_a_message(pid);
 }
 
@@ -68,10 +68,8 @@ void send_a_message(int pid) {
 
     if (!skb_out)
     {
-
-        printk(KERN_ERR "Send a message: Failed to allocate new skb\n");
+        PDEBUG_E("Send a message: Failed to allocate new skb\n");
         return;
-
     }
     nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
     NETLINK_CB(skb_out).dst_group = 0;
@@ -79,7 +77,7 @@ void send_a_message(int pid) {
 
     res = nlmsg_unicast(nl_sk, skb_out, pid);
     if (res < 0) {
-        printk(KERN_INFO "TimeKeeper: Send a message: Error while sending bak to user %d, pid = %d\n", res, pid);
+        PDEBUG_E(KERN_INFO "TimeKeeper: Send a message: Error while sending bak to user %d, pid = %d\n", res, pid);
     }
 }
 
@@ -134,8 +132,8 @@ int kill(struct task_struct *killTask, int sig, struct dilation_task_struct* dil
         {
                 if (dilation_task != NULL)
                 {
-                        dilation_task->stopped = -1;
-						printk(KERN_INFO "TimeKeeper: Kill: Error sending kill msg for pid %d\n", dilation_task->linux_task->pid);
+                    dilation_task->stopped = -1;
+					PDEBUG_E("Kill: Error sending kill msg for pid %d\n", dilation_task->linux_task->pid);
                 }
         }
         return returnVal;
@@ -151,7 +149,7 @@ void print_children_info_proc(char *write_buffer) {
 	pid = atoi(write_buffer);
 	aTask = find_task_by_pid(pid);
 	if (aTask != NULL) {
-		printk(KERN_INFO "TimeKeeper: Print Children Info Proc: Finding children pids for %d\n", aTask->pid);
+		PDEBUG_V("Print Children Info Proc: Finding children pids for %d\n", aTask->pid);
 		print_children_info(aTask);
 	}
 }
@@ -164,7 +162,7 @@ void print_children_info_pid(int pid) {
 
         aTask = find_task_by_pid(pid);
         if (aTask != NULL) {
-                printk(KERN_INFO "TimeKeeper: Print Children Info PID: Finding children pids for %d\n", aTask->pid);
+                PDEBUG_V("Print Children Info PID: Finding children pids for %d\n", aTask->pid);
                 print_children_info(aTask);
         }
 }
@@ -176,7 +174,7 @@ void print_children_info(struct task_struct *aTask) {
         struct list_head *list;
         struct task_struct *taskRecurse;
         if (aTask == NULL) {
-                printk(KERN_INFO "TimeKeeper: Print Children Info: Task does not exist\n");
+                PDEBUG_E("Print Children Info: Task does not exist\n");
                 return;
         }
         if (aTask->pid == 0) {
@@ -204,11 +202,11 @@ int find_children_info(struct task_struct *aTask, int pid) {
 	struct task_struct *t;
 
     if (aTask == NULL) {
-            printk(KERN_INFO "TimeKeeper: Find Children Info: Task does not exist\n");
+            PDEBUG_E("Find Children Info: Task does not exist\n");
             return -1;
     }
     if (pid == aTask->pid) {
-            printk(KERN_INFO "TimeKeeper: Find Children Info: Task exists for this pid : %d in the experiment \n", pid);
+            PDEBUG_E("Find Children Info: Task exists for this pid : %d in the experiment \n", pid);
             return 1;
     }
 
@@ -269,7 +267,7 @@ void print_proc_info(char *write_buffer) {
         if (aTask != NULL && aTask2 != NULL) {
         	do_gettimeofday(&now_timeval);
         	now = timeval_to_ns(&now_timeval);
-        	printk(KERN_INFO "TimeKeeper: ---------------STARTING COMPARE--------------\n");
+        	PDEBUG_A(" ---------------STARTING COMPARE--------------\n");
                 real_running_time = now - aTask->virt_start_time;
                 if (aTask->dilation_factor > 0) {
 						dilated_running_time = div_s64_rem( (real_running_time - aTask->past_physical_time)*1000 ,aTask->dilation_factor,&rem) + aTask->past_virtual_time;
@@ -279,7 +277,7 @@ void print_proc_info(char *write_buffer) {
                         dilated_running_time = (real_running_time - aTask->past_physical_time) + aTask->past_virtual_time;
                         tempTime = dilated_running_time + aTask->virt_start_time;
                 }
-                printk(KERN_INFO "TimeKeeper: now: %lld d_r_t: %lld time: %lld\n", now, dilated_running_time, tempTime);
+                PDEBUG_A(" now: %lld d_r_t: %lld time: %lld\n", now, dilated_running_time, tempTime);
                 ktv = ns_to_timeval(tempTime);
                 real_running_time = now - aTask2->virt_start_time;
                 if (aTask2->dilation_factor > 0) {
@@ -291,18 +289,18 @@ void print_proc_info(char *write_buffer) {
                         tempTime = dilated_running_time + aTask2->virt_start_time;
                 }
                 ktv2 = ns_to_timeval(tempTime);
-        	printk(KERN_INFO "TimeKeeper: PID: %d %d TGID: %d %d\n", aTask->pid, aTask2->pid, aTask->tgid, aTask2->tgid);
-	        printk(KERN_INFO "TimeKeeper: Dilation %d %d\n", aTask->dilation_factor, aTask2->dilation_factor);
-        	printk(KERN_INFO "TimeKeeper: virt_start_time %lld %lld\n", aTask->virt_start_time, aTask2->virt_start_time);
-	        printk(KERN_INFO "TimeKeeper: diff %lld %lld\n", now - aTask->virt_start_time, now - aTask2->virt_start_time);
-        	printk(KERN_INFO "TimeKeeper: current seconds %ld %ld\n", ktv.tv_sec, ktv2.tv_sec);
-	        printk(KERN_INFO "TimeKeeper: freeze_time %lld %lld\n", aTask->freeze_time, aTask2->freeze_time);
-        	printk(KERN_INFO "TimeKeeper: past_physical_time %lld %lld\n", aTask->past_physical_time, aTask2->past_physical_time);
-	        printk(KERN_INFO "TimeKeeper: past_virtual_time %lld %lld\n", aTask->past_virtual_time, aTask2->past_virtual_time);
+        	PDEBUG_A(" PID: %d %d TGID: %d %d\n", aTask->pid, aTask2->pid, aTask->tgid, aTask2->tgid);
+	        PDEBUG_A(" Dilation %d %d\n", aTask->dilation_factor, aTask2->dilation_factor);
+        	PDEBUG_A(" virt_start_time %lld %lld\n", aTask->virt_start_time, aTask2->virt_start_time);
+	        PDEBUG_A(" diff %lld %lld\n", now - aTask->virt_start_time, now - aTask2->virt_start_time);
+        	PDEBUG_A(" current seconds %ld %ld\n", ktv.tv_sec, ktv2.tv_sec);
+	        PDEBUG_A(" freeze_time %lld %lld\n", aTask->freeze_time, aTask2->freeze_time);
+        	PDEBUG_A(" past_physical_time %lld %lld\n", aTask->past_physical_time, aTask2->past_physical_time);
+	        PDEBUG_A(" past_virtual_time %lld %lld\n", aTask->past_virtual_time, aTask2->past_virtual_time);
         }
 
         else {
-                printk(KERN_INFO "TimeKeeper: A task is null\n");
+                PDEBUG_A(" A task is null\n");
         }
         return;
 }
@@ -317,9 +315,9 @@ void print_threads_proc(char *write_buffer) {
 	pid = atoi(write_buffer);
 	me = find_task_by_pid(pid);
 	t = me;
-	printk(KERN_INFO "TimeKeeper: Print Threads Proc: Finding threads for pid: %d\n", me->pid);
+	PDEBUG_V("Print Threads Proc: Finding threads for pid: %d\n", me->pid);
 	do {
-    		printk(KERN_INFO "TimeKeeper: Print Threads Proc: Pid: %d %d\n",t->pid, t->tgid);
+    		PDEBUG_V("Print Threads Proc: Pid: %d %d\n",t->pid, t->tgid);
 	} while_each_thread(me, t);
 	return;
 	}
@@ -341,13 +339,13 @@ void increment_all_past_physical_times_recurse(struct task_struct * aTask, s64 i
 
 	if (aTask == NULL) {
 		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Set all past physical times: Task does not exist\n");
+			PDEBUG_A(" Set all past physical times: Task does not exist\n");
 		return;
 	}
 
 	if (aTask->pid == 0) {
 		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Set all past physical times: pid 0 error\n");
+				PDEBUG_A(" Set all past physical times: pid 0 error\n");
 		return;
 	}
 	
@@ -430,7 +428,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	if(hmap_get_abs(&lxc->valid_children,new_task->pid) != NULL) 
 	{	
 		if(find_in_schedule_list(lxc,new_task->pid) == 0)
-			printk(KERN_INFO "Add to Schedule List Error: Found in map but not in list. Pid = %d\n", new_task->pid);
+			PDEBUG_E("Add to Schedule List Error: Found in map but not in list. Pid = %d\n", new_task->pid);
 		return 0;
 	}
 
@@ -526,7 +524,7 @@ int add_to_schedule_list(struct dilation_task_struct * lxc, struct task_struct *
 	}
 	
 	
-	printk(KERN_INFO "TimeKeeper: Add To Schedule List: PID : %d, LXC: %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, lxc->linux_task->pid, base_time_quanta, n_threads, expected_increase);
+	PDEBUG_A("Add To Schedule List: PID : %d, LXC: %d, Base Quanta : %lld. N_threads : %d. Expected_increase : %lld\n", new_task->pid, lxc->linux_task->pid, base_time_quanta, n_threads, expected_increase);
 	release_irq_lock(&new_task->dialation_lock,flags);
 
 	new_element->share_factor = base_time_quanta;
@@ -584,7 +582,7 @@ Get pointer to task_Struct of head but don't remove the element from the schedul
 lxc_schedule_elem * schedule_list_get_head(struct dilation_task_struct * lxc){
 
 	if(lxc == NULL) {
-		printk(KERN_INFO "Get Head: LXC is Null\n");
+		PDEBUG_V("Get Head: LXC is Null\n");
 		return NULL;
 	}
 
@@ -718,7 +716,7 @@ int max_sel_fd(unsigned long n, fd_set_bits *fds,struct task_struct * tsk)
 	n /= BITS_PER_LONG;
 	fdt = files_fdtable(current->files);
 	open_fds = fdt->open_fds + n;
-	printk(KERN_INFO "TimeKeeper: max_sel_fd : Pid = %d, n = %lu\n",current->pid, n);
+	//PDEBUG_A(" max_sel_fd : Pid = %d, n = %lu\n",current->pid, n);
 
 	max = 0;
 	if (set) {
@@ -771,14 +769,14 @@ int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk)
 	unsigned long busy_end = 0;
 
 
-	printk(KERN_INFO "TimeKeeper: Do dialated Select: Entered. Pid = %d\n", current->pid);
+	//PDEBUG_A(" Do dialated Select: Entered. Pid = %d\n", current->pid);
 
 	rcu_read_lock();
 	retval = max_sel_fd(n, fds,tsk);
 	rcu_read_unlock();
 
 	
-	printk(KERN_INFO "TimeKeeper: Do dialated Select: Returned from Max_Sel_fd. Pid = %d\n", current->pid);
+	//PDEBUG_A(" Do dialated Select: Returned from Max_Sel_fd. Pid = %d\n", current->pid);
 
 	if (retval < 0)
 		return retval;
@@ -862,7 +860,7 @@ int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk)
 
 
 	poll_freewait(&table);
-	printk(KERN_INFO "TimeKeeper: Do dialated Select: Returned function. Pid = %d\n", current->pid);
+	//PDEBUG_A(" Do dialated Select: Returned function. Pid = %d\n", current->pid);
 
 	return retval;
 }

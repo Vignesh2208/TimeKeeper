@@ -61,7 +61,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 
-		printk(KERN_INFO "TimeKeeper: Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
+		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
 
 		while(now_new < wakeup_time) {
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -143,7 +143,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 			if (find_children_info(task->linux_task, current->pid) == 1) { 
 				now = get_dilated_time(task->linux_task);
 				//now = now - boottime;
-				printk(KERN_INFO "TimeKeeper: Sys ClockGetTime: Pid: %d. Time = %llu, boottime = %llu\n", current->pid, now, boottime);
+				PDEBUG_I("Sys ClockGetTime: Pid: %d. Time = %llu, boottime = %llu\n", current->pid, now, boottime);
 				struct timespec tempStruct = ns_to_timespec(now);
 				if(copy_to_user(tp, &tempStruct, sizeof(tempStruct)))
 					return -EFAULT;

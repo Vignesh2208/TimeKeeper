@@ -41,11 +41,16 @@
 #include "../utils/hashmap.h"
 #include "../../scripts/TimeKeeper_definitions.h"
 
+/* Define this macro to enable debug kernel logging in INFO mode*/
+#define TIMEKEEPER_DEBUG_INFO
+
+/* Define this macro to enable debug kernel logging in VERBOSE mode*/
+//#define TIMEKEEPER_DEBUG_VERBOSE
 
 #define DEBUG_LEVEL_NONE 0
 #define DEBUG_LEVEL_INFO 1
 #define DEBUG_LEVEL_VERBOSE 2
-#define DEBUG_LEVEL DEBUG_LEVEL_INFO
+
 
 
 #define BITS_PER_LONG 32
@@ -79,9 +84,37 @@
 #define FINISHED 2
 #define GOT_RESULT -1
 #define IFNAMESIZ 16
-
 #define NR_select __NR_select
 #define ENABLE_LOCKING
+
+#ifdef TIMEKEEPER_DEBUG_VERBOSE
+	#define DEBUG_LEVEL DEBUG_LEVEL_VERBOSE
+#else
+	#define DEBUG_LEVEL DEBUG_LEVEL_NONE
+#endif
+
+#ifdef TIMEKEEPER_DEBUG_INFO
+	#define DEBUG_LEVEL DEBUG_LEVEL_INFO
+#else
+	#define DEBUG_LEVEL DEBUG_LEVEL_NONE
+#endif
+
+
+#if DEBUG_LEVEL != DEBUG_LEVEL_NONE
+	#define PDEBUG_I(fmt, args...) printk(KERN_INFO "TimeKeeper: <INFO> " fmt, ## args)
+#else
+	#define PDEBUG_I(fmt,args...)
+#endif
+
+#if DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE
+	#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
+#else
+	#define PDEBUG_V(fmt,args...)
+#endif
+	
+#define PDEBUG_A(fmt, args...) printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)
+#define PDEBUG_E(fmt, args...) printk(KERN_ERR "TimeKeeper: <ERROR> " fmt, ## args)
+
 
 
 #ifdef ENABLE_IRQ_LOCKING

@@ -133,7 +133,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 		release_irq_lock(&current->dialation_lock,flags);
 		
 		s64 wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale;
-		printk(KERN_INFO "TimeKeeper: Sys Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, rqtp->tv_sec, rqtp->tv_nsec, wakeup_time); 
+		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, rqtp->tv_sec, rqtp->tv_nsec, wakeup_time); 
 		
 		while(now_new < wakeup_time) {
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -171,7 +171,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 		s64 diff = 0;
 		diff = now_new - wakeup_time;
-		printk(KERN_INFO "TimeKeeper: Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+		PDEBUG_V("Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 		
 		atomic_dec(&n_active_syscalls);
 		return 0; 
@@ -238,7 +238,6 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 		atomic_inc(&n_active_syscalls);	
 		is_dialated = 1;
-		printk(KERN_INFO "TimeKeeper: Sys Select: PID: %d\n",current->pid);
 		if (copy_from_user(&tv, tvp, sizeof(tv)))
 			goto revert_select;
 
@@ -302,7 +301,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		
 		
 		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 	
-		printk(KERN_INFO "TimeKeeper: Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
+		PDEBUG_V("Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
 		
 		while(1){
 			
@@ -357,13 +356,12 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		s64 diff = 0;
 		if(wakeup_time >  now_new){
 			diff = wakeup_time - now_new; 
-			printk(KERN_INFO "TimeKeeper: Sys Select: Resumed Select Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 
 		}
 		else{
 			diff = now_new - wakeup_time;
-			printk(KERN_INFO "TimeKeeper: Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
-
+			PDEBUG_V("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 		}		 
 		
 		ret = select_helper->ret;
@@ -385,7 +383,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 			kfree(select_helper->bits);
 
 		out_nofds:
-		printk(KERN_INFO "TimeKeeper: Sys Select: Select finished PID %d\n",current->pid);
+		PDEBUG_V("Sys Select: Select finished PID %d\n",current->pid);
 		atomic_dec(&n_active_syscalls);
 		return ret;
 		
@@ -436,9 +434,6 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	
 		atomic_inc(&n_active_syscalls);
 		is_dialated = 1;
-				
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Processing Poll Process %d\n",current->pid);
 
 		secs_to_sleep = timeout_msecs / MSEC_PER_SEC;
 		nsecs_to_sleep = (timeout_msecs % MSEC_PER_SEC) * NSEC_PER_MSEC;
@@ -447,20 +442,20 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	        goto revert_poll;
 		    
 		if (nfds > RLIMIT_NOFILE){
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Invalid");
+			PDEBUG_E("Sys Poll: Poll Process Invalid");
 			goto revert_poll;
 		}
 
 
 		poll_helper->head = (struct poll_list *) kmalloc(POLL_STACK_ALLOC/sizeof(long), GFP_KERNEL);
 		if(poll_helper->head == NULL){
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
+			PDEBUG_E("Sys Poll: Poll Process NOMEM");
 			goto revert_poll;
 		}
 		
 		poll_helper->table = (struct poll_wqueues *) kmalloc(sizeof(struct poll_wqueues), GFP_KERNEL);
 		if(poll_helper->table == NULL){
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process NOMEM");
+			PDEBUG_E("Sys Poll: Poll Process NOMEM");
 			kfree(poll_helper->head);
 			goto revert_poll;
 		}
@@ -510,7 +505,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		now_new = get_dilated_time(current);
 		s64 wakeup_time;
 		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
-		printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
+		PDEBUG_V("Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
 		hmap_put_abs(&poll_process_lookup,current->pid,poll_helper);			
 		release_irq_lock(&current->dialation_lock,flags);
 
@@ -567,12 +562,12 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		s64 diff = 0;
 		if(wakeup_time > now_new){
 			diff = wakeup_time - now_new; 
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Resumed Poll Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Poll: Resumed Poll Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 
 		}
 		else{
 			diff = now_new - wakeup_time;
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Resumed Poll Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Poll: Resumed Poll Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 
 		}
 		
@@ -597,10 +592,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		}
 		kfree(head);
 		kfree(poll_helper->table);		
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE || DEBUG_LEVEL == DEBUG_LEVEL_INFO)
-			printk(KERN_INFO "TimeKeeper: Sys Poll: Poll Process Finished %d",current->pid);
-
+		PDEBUG_V("Sys Poll: Poll Process Finished %d",current->pid);
 		atomic_dec(&n_active_syscalls);			
 		return err;
 		

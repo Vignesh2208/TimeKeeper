@@ -63,12 +63,10 @@ void print_schedule_list(struct dilation_task_struct * lxc)
 		for(i = 0; i < schedule_list_size(lxc); i++){
 			curr = llist_get(&lxc->schedule_queue, i);
 			if(curr != NULL) {
-				printk(KERN_INFO "Schedule List Item No: %d, Item: %d, LXC: %d, Size: %d\n",i, curr->pid, lxc->linux_task->pid,schedule_list_size(lxc)); 
+				PDEBUG_V("Schedule List Item No: %d, Item: %d, LXC: %d, Size: %d\n",i, curr->pid, lxc->linux_task->pid,schedule_list_size(lxc));
 			}
-		}
-	
+		}	
 	}
-
 }
 
 /* Local Variables */
@@ -128,6 +126,7 @@ int dilation_change = 0;
 int experiment_type = NOTSET; 
 int stopped_change = 0;
 
+
 /* synchronization variables to support parallelization */
 
 static DECLARE_WAIT_QUEUE_HEAD(wq);
@@ -140,10 +139,16 @@ atomic_t catchup_Task_finished = ATOMIC_INIT(0);
 atomic_t woke_up_catchup_Task = ATOMIC_INIT(0);	
 atomic_t wake_up_signal[EXP_CPUS];
 atomic_t wake_up_signal_sync_drift[EXP_CPUS];
+atomic_t progress_cbe_rounds = ATOMIC_INIT(0);
+atomic_t progress_cbe_enabled = ATOMIC_INIT(0);
+
 int curr_process_finished_flag[EXP_CPUS];
 static int curr_sync_task_finished_flag[EXP_CPUS];
 static wait_queue_head_t per_cpu_wait_queue[EXP_CPUS];
 static wait_queue_head_t per_cpu_sync_task_queue[EXP_CPUS];
+static wait_queue_head_t progress_cbe_wait_queue;
+static wait_queue_head_t progress_cbe_catchup_tsk;
+static wait_queue_head_t cbe_exp_stop_queue;
 
 // externs
 extern struct poll_list {
@@ -170,6 +175,47 @@ extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, stru
 
 extern unsigned long **sys_call_table; //address of the sys_call_table, so we can hijack certain system calls
 unsigned long orig_cr0;
+
+
+int progress_exp_cbe(char * write_buffer){
+
+	int progress_rounds = 0;
+	int ret = 0;
+	if(experiment_type != CBE)
+		return -1;
+	
+	set_current_state(TASK_INTERRUPTIBLE);	
+	progress_rounds = atoi(write_buffer);
+	if(progress_rounds > 0 )
+		atomic_set(&progress_cbe_rounds,progress_rounds);
+	else
+		atomic_set(&progress_cbe_rounds,1);	
+		
+	atomic_set(&progress_cbe_enabled,1);
+	PDEBUG_V("Progress CBE - initiated. Number of Progress rounds = %d\n", progress_rounds);
+	wake_up_interruptible(&progress_cbe_catchup_tsk);
+	do{
+			ret = wait_event_interruptible_timeout(progress_cbe_wait_queue,atomic_read(&progress_cbe_rounds) == 0,HZ);
+			if(ret == 0)
+				set_current_state(TASK_INTERRUPTIBLE);
+			else
+				set_current_state(TASK_RUNNING);
+
+	}while(ret == 0);
+	
+	return 0;
+}
+
+void resume_exp_cbe(){
+
+	if(atomic_read(&progress_cbe_enabled) == 1 && atomic_read(&progress_cbe_rounds) <= 0 && experiment_type == CBE) {
+		atomic_set(&progress_cbe_enabled,0);
+		atomic_set(&progress_cbe_rounds,0);
+		wake_up_interruptible(&progress_cbe_catchup_tsk);
+	
+	}
+
+}
 
 
 /***
@@ -203,11 +249,9 @@ void set_cbe_exp_timeslice(char *write_buffer){
 	s64 timeslice;
 	timeslice = atoi(write_buffer);
 	if(experiment_type == CBE){
-		printk(KERN_INFO "TimeKeeper : Set CBE Exp Timeslice: Got Freeze Quantum : %d\n", timeslice);
 		FREEZE_QUANTUM = timeslice;
 		FREEZE_QUANTUM = FREEZE_QUANTUM*Sim_time_scale;
-
-		printk(KERN_INFO "TimeKeeper : Set CBE Exp Timeslice: Set Freeze Quantum : %lld\n", FREEZE_QUANTUM);
+		PDEBUG_A("Set CBE Exp Timeslice: Set Freeze Quantum : %lld\n", FREEZE_QUANTUM);
 	}
 
 }
@@ -227,7 +271,7 @@ Creates and initializes dilation_task_struct given a task_struct.
 */
 struct dilation_task_struct* initialize_node(struct task_struct* aTask) {
 	struct dilation_task_struct* list_node;
-	printk(KERN_INFO "TimeKeeper: Initialize Node: Adding a pid: %d Num of Nodes added to experiment so Far: %d, Number of Heads %d\n", aTask->pid, proc_num, number_of_heads);
+	PDEBUG_A("Initialize Node: Adding a pid: %d Num of Nodes in experiment so Far: %d, Number of CPUS used so Far: %d\n", aTask->pid, proc_num, number_of_heads);
 	list_node = (struct dilation_task_struct *)kmalloc(sizeof(struct dilation_task_struct), GFP_KERNEL);
 	list_node->linux_task = aTask;
 	list_node->stopped = 0;
@@ -265,13 +309,13 @@ void add_to_exp_proc(char *write_buffer) {
     pid = atoi(write_buffer);
 
 	if (experiment_type == CS) {
-		printk(KERN_INFO "TimeKeeper: Add To Exp Proc: Trying to add to wrong experiment type.. exiting\n");
+		PDEBUG_A("Add To Exp Proc: Trying to add to wrong experiment type.. exiting\n");
 	}
 	else if (experiment_stopped == NOTRUNNING) {
         add_to_exp(pid);
 	}
 	else {
-		printk(KERN_INFO "TimeKeeper: Add to Exp Proc: Trying to add a LXC to experiment that is already running\n");
+		PDEBUG_A("Add to Exp Proc: Trying to add a LXC to experiment that is already running\n");
 	}
 }
 
@@ -286,7 +330,7 @@ void add_to_exp(int pid) {
         /* maybe I should just skip this pid instead of completely dropping out? */
         if (aTask == NULL)
         {
-                printk(KERN_INFO "TimeKeeper: Add to Exp: Pid %d is invalid, Dropping out\n",pid);
+                PDEBUG_A("Add to Exp: Pid %d is invalid, Dropping out\n",pid);
                 return;
         }
 
@@ -326,15 +370,15 @@ void sync_and_freeze() {
 	placed_lxcs = 0;
 	unsigned long flags;
 
-	printk(KERN_INFO "TimeKeeper: Sync And Freeze: ** Starting Experiment Synchronization **\n");
+	PDEBUG_A("Sync And Freeze: ** Starting Experiment Synchronization **\n");
 
 	if (proc_num == 0) {
-		printk(KERN_INFO "TimeKeeper: Sync And Freeze: Nothing added to experiment, dropping out\n");
+		PDEBUG_A("Sync And Freeze: Nothing added to experiment, dropping out\n");
 		return;
 	}
 
 	if (experiment_stopped != NOTRUNNING) {
-        printk(KERN_INFO "TimeKeeper: Sync And Freeze: Trying to StartExp when an experiment is already running!\n");
+        PDEBUG_A("Sync And Freeze: Trying to StartExp when an experiment is already running!\n");
         return;
     }
 
@@ -343,8 +387,8 @@ void sync_and_freeze() {
 	hmap_init( &select_process_lookup,"int",0);
 	hmap_init( &sleep_process_lookup,"int",0);
 
-	printk(KERN_INFO "TimeKeeper: Sync and Freeze: Hooking system calls\n");
-	printk(KERN_INFO "Catchup Task: Pid = %d\n", catchup_task->pid);
+	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
+	PDEBUG_A("Catchup Task: Pid = %d\n", catchup_task->pid);
 
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
@@ -363,11 +407,17 @@ void sync_and_freeze() {
 	}
     
 	sp.sched_priority = 99;
+	
+	if(experiment_type == CBE) {
+		init_waitqueue_head(&progress_cbe_wait_queue);
+		init_waitqueue_head(&progress_cbe_catchup_tsk);	
+		init_waitqueue_head(&cbe_exp_stop_queue);
+	}
 
 	/* Create the threads for parallel computing */
 	for (i = 0; i < number_of_heads; i++)
 	{
-		printk(KERN_INFO "TimeKeeper: Sync And Freeze: Adding Worker Thread %d\n", i);
+		PDEBUG_A("Sync And Freeze: Adding Worker Thread %d\n", i);
 		chainhead[i] = NULL;
 		chainlength[i] = 0;
 		if (experiment_type == CBE){
@@ -378,7 +428,7 @@ void sync_and_freeze() {
 			if(!IS_ERR(chaintask[i])) {
 	            kthread_bind(chaintask[i],i % (TOTAL_CPUS - EXP_CPUS));
 	            wake_up_process(chaintask[i]);
-	            printk(KERN_INFO "Chain Task %d: Pid = %d\n", i, chaintask[i]->pid);
+	            PDEBUG_A("Chain Task %d: Pid = %d\n", i, chaintask[i]->pid);
 	        }
 
 
@@ -403,7 +453,7 @@ void sync_and_freeze() {
     do_gettimeofday(&now_timeval);
     now = timeval_to_ns(&now_timeval);
     actual_time = now;
-    printk(KERN_INFO "TimeKeeper: Sync And Freeze: Setting the virtual start time of all tasks to be: %lld\n", actual_time);
+    PDEBUG_A("Sync And Freeze: Setting the virtual start time of all tasks to be: %lld\n", actual_time);
 
     /* for every container in the experiment, set the virtual_start_time (so it starts at the same time), calculate
     how long each task should be allowed to run in each round, and freeze the container */
@@ -434,24 +484,24 @@ void sync_and_freeze() {
 
 		/* set priority and scheduling policy */
         if (list_node->stopped == -1) {
-            printk(KERN_INFO "TimeKeeper: Sync And Freeze: One of the LXCs no longer exist.. exiting experiment\n");
+            PDEBUG_A("Sync And Freeze: One of the LXCs no longer exist.. exiting experiment\n");
             clean_exp();
             return;
         }
 
        	if (sched_setscheduler(list_node->linux_task, SCHED_RR, &sp) == -1 )
-           	printk(KERN_INFO "TimeKeeper: Sync And Freeze: Error setting SCHED_RR %d\n",list_node->linux_task->pid);
+           	PDEBUG_A("Sync And Freeze: Error setting SCHED_RR %d\n",list_node->linux_task->pid);
         set_children_time(list_node->linux_task, now);
 		set_children_policy(list_node->linux_task, SCHED_RR, sp.sched_priority);
 
 		if (experiment_type == CS) {
-				printk(KERN_INFO "TimeKeeper: Sync And Freeze: Cpus allowed! : %d \n", list_node->linux_task->cpus_allowed);
+				PDEBUG_A("Sync And Freeze: Cpus allowed! : %d \n", list_node->linux_task->cpus_allowed);
      			bitmap_zero((&list_node->linux_task->cpus_allowed)->bits, 8);
 	        	cpumask_set_cpu(list_node->cpu_assignment, &list_node->linux_task->cpus_allowed);
 				set_children_cpu(list_node->linux_task, list_node->cpu_assignment);
 		}
 
-		printk(KERN_INFO "TimeKeeper: Sync And Freeze: Task running time: %lld\n", list_node->running_time);
+		PDEBUG_A("Sync And Freeze: Task running time: %lld\n", list_node->running_time);
 	}
 
 	/* If in CBE mode, assign all tasks to a specfic CPU (this has already been done if in CS mode) */
@@ -489,7 +539,7 @@ void sync_and_freeze() {
 #ifdef __x86_64
 	kill(loop_task, SIGCONT, NULL);
 #endif
-	printk(KERN_INFO "TimeKeeper: Finished Sync and Freeze\n");
+	PDEBUG_A("Finished Sync and Freeze\n");
 
 }
 
@@ -502,16 +552,16 @@ void core_sync_exp() {
 	ktime_t ktime;
 
 	if (experiment_type == CS) {
-		printk(KERN_INFO "TimeKeeper: Core Sync Exp: Trying to start wrong type of experiment.. exiting\n");
+		PDEBUG_A("Core Sync Exp: Trying to start wrong type of experiment.. exiting\n");
 		return;
 	}
 	if (experiment_stopped != FROZEN) {
-		printk(KERN_INFO "TimeKeeper: Core Sync Exp: Experiment is not ready to commence, must run synchronizeAndFreeze\n");
+		PDEBUG_A("Core Sync Exp: Experiment is not ready to commence, must run synchronizeAndFreeze\n");
 		return;
 	}
 
 	/* for every 'head' container, unfreeze it and set its timer to fire at some point in the future (based off running_time) */
-	printk(KERN_INFO "TimeKeeper: Core Sync Exp: Freezing all nodes\n");
+	PDEBUG_A("Core Sync Exp: Freezing all nodes\n");
 	for (i=0; i<number_of_heads; i++)
 	{
 	    list_node = chainhead[i];
@@ -519,11 +569,11 @@ void core_sync_exp() {
 
 	}
 
-	printk(KERN_INFO "TimeKeeper : Core Sync Exp: Waking up catchup task\n");
+	PDEBUG_A("Core Sync Exp: Waking up catchup task\n");
 	experiment_stopped = RUNNING;
 	while(wake_up_process(catchup_task) != 1);
 	
-	printk(KERN_INFO "TimeKeeper : Core Sync Exp: Woke up catchup task\n");
+	PDEBUG_A("Core Sync Exp: Woke up catchup task\n");
 }
 
 /***
@@ -591,7 +641,7 @@ void calcTaskRuntime(struct dilation_task_struct * task) {
                 task->running_time = (div_s64_rem(FREEZE_QUANTUM,temp_proc,&rem) + rem)*temp_high;
         }
 	else {
-		printk("TimeKeeper: Calc Task Runtime: Should be fixed when highest dilation is updated\n");
+		PDEBUG_I("Calc Task Runtime: Should be fixed when highest dilation is updated\n");
 	}
         return;
 }
@@ -650,14 +700,14 @@ void assign_to_cpu(struct dilation_task_struct* task) {
 Just debug function for containers being mapped to specific CPUs
 ***/
 void printChainInfo() {
-        int i;
-        s64 max = chainlength[0];
-        for (i=0; i<number_of_heads; i++)
-        {
-	    printk(KERN_INFO " TimeKeeper: Print Chain Info: Length of chain %d is %lld\n", i, chainlength[i]);
-            if (chainlength[i] > max)
-                    max = chainlength[i];
-        }
+    int i;
+    s64 max = chainlength[0];
+    for (i=0; i<number_of_heads; i++)
+    {
+    	PDEBUG_I("Print Chain Info: Length of chain %d is %lld\n", i, chainlength[i]);
+        if (chainlength[i] > max)
+            max = chainlength[i];
+    }
 }
 
 /***
@@ -692,14 +742,11 @@ void set_all_ppp_freeze_times_recurse(struct task_struct * aTask, s64 freeze_tim
 	unsigned long flags;
 
 	if (aTask == NULL) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Set all past physical times: Task does not exist\n");
+		PDEBUG_E("Set all past physical times: Task does not exist\n");
 		return;
 	}
 
 	if (aTask->pid == 0) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Set all past physical times: pid 0 error\n");
 		return;
 	}
 	
@@ -825,23 +872,6 @@ void calculate_virtual_time_difference(struct dilation_task_struct* task, s64 no
     start_change:
     
 	virt_time = get_virtual_time(task, now);
-	
-	/*if(virt_time > expected_time) {
-	    change_vt = virt_time - expected_time;
-	    if(change_vt > 0) {
-		    printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the future: Pid = %d, Virtual time Error = %llu. \n",task->linux_task->pid,change_vt);
-		}
-	
-	}
-	else{
-	    change_vt = expected_time - virt_time;
-		if(change_vt > 2*expected_increase) {
-			printk(KERN_INFO "TimeKeeper: Virtual time round error is too far in the past: Pid = %d, Virtual time Error = %llu\n",task->linux_task->pid, change_vt);
-
-		}
-	
-	}*/
-	
 	change = 0;
 	change = calculate_change(task, virt_time, expected_time);
 
@@ -918,7 +948,7 @@ int calculate_sync_drift(void *data)
 	if(atomic_read(&wake_up_signal_sync_drift[cpuID]) != 1)
 		atomic_set(&wake_up_signal_sync_drift[cpuID],0);
 		
-	printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Started Sync drift Thread for lxcs on CPU = %d\n",cpuID);
+	PDEBUG_I("#### Calculate Sync Drift: Started Sync drift Thread for lxcs on CPU = %d\n",cpuID);
 
 	
 	/* if it is the very first round, don't try to do any work, just rest */
@@ -933,14 +963,9 @@ int calculate_sync_drift(void *data)
             set_current_state(TASK_INTERRUPTIBLE);
 		    atomic_dec(&worker_count);
 		    atomic_set(&wake_up_signal_sync_drift[cpuID],0);
-		    run_cpu = get_cpu();
-		
-
-		    if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			    printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
-
+		    run_cpu = get_cpu();   
+			PDEBUG_V("#### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
 		    wake_up_interruptible(&wq);
-        
         	return 0;
         }
 
@@ -960,8 +985,8 @@ int calculate_sync_drift(void *data)
 
 		if (task == NULL) {
 
-			if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Calculate Sync Drift: No Tasks in chain %d \n", cpuID);
+	
+			PDEBUG_V("Calculate Sync Drift: No Tasks in chain %d \n", cpuID);				
 			atomic_inc(&running_done);
 			atomic_inc(&start_count);
 		}
@@ -970,20 +995,15 @@ int calculate_sync_drift(void *data)
 		        task = getNextRunnableTask(task);
     	       	if (task != NULL)
     	       	{
-    	       		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-						printk(KERN_INFO "TimeKeeper: Calculate Sync Drift: Called  UnFreeze Proc Recurse on CPU: %d\n", cpuID);
-					
+					PDEBUG_V("Calculate Sync Drift: Called  UnFreeze Proc Recurse on CPU: %d\n", cpuID);					
     				unfreeze_proc_exp_recurse(task, actual_time);
-   
-					if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-						printk(KERN_INFO "TimeKeeper : Calculate Sync Drift: Finished Unfreeze Proc on CPU: %d\n", cpuID);
+ 					PDEBUG_V("Calculate Sync Drift: Finished Unfreeze Proc on CPU: %d\n", cpuID);
     	           	task = task->next;
 				
                	}
                	else
                	{
-               		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-                  		printk(KERN_INFO "TimeKeeper: Calculate Sync Drift: %d chain %d has nothing to run\n",round,cpuID);
+               		PDEBUG_I("Calculate Sync Drift: %d chain %d has nothing to run\n",round,cpuID);
 					break;
                	}
 			
@@ -991,20 +1011,14 @@ int calculate_sync_drift(void *data)
 			}while(task != NULL);
 		}
 
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Calculate Sync Drift: Thread done with on %d\n",cpuID);
-
+		PDEBUG_V("Calculate Sync Drift: Thread done with on %d\n",cpuID);
 		/* when the first task has started running, signal you are done working, and sleep */
 		round++;
 		set_current_state(TASK_INTERRUPTIBLE);
 		atomic_dec(&worker_count);
 		atomic_set(&wake_up_signal_sync_drift[cpuID],0);
 		run_cpu = get_cpu();
-		
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: #### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
-
+		PDEBUG_V("#### Calculate Sync Drift: Sending wake up from Sync drift Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
 		wake_up_interruptible(&wq);
 		
 
@@ -1012,9 +1026,7 @@ int calculate_sync_drift(void *data)
 		schedule();
 		set_current_state(TASK_RUNNING);
 		run_cpu = get_cpu();
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: ~~~~ Calculate Sync Drift: I am woken up for lxcs on CPU =  %d. My Run cpu = %d\n",cpuID,run_cpu);
+		PDEBUG_V("~~~~ Calculate Sync Drift: I am woken up for lxcs on CPU =  %d. My Run cpu = %d\n",cpuID,run_cpu);
 		
 	}
 	return 0;
@@ -1037,10 +1049,8 @@ int catchup_func(void *data)
 	    s64 start_ns;
 	
 	 	set_current_state(TASK_INTERRUPTIBLE);
-	 	printk(KERN_INFO "TimeKeeper: Catchup Func: started.\n");
-        
-        
-
+	 	PDEBUG_I("Catchup Func: started.\n");
+                
 		while (!kthread_should_stop())
         {
             round_count++;
@@ -1050,7 +1060,7 @@ int catchup_func(void *data)
             if (experiment_stopped == STOPPING)
             {
 
-					printk(KERN_INFO "TimeKeeper: Catchup Func: Cleaning experiment via catchup task\n");
+					PDEBUG_I("Catchup Func: Cleaning experiment via catchup task\n");
                     clean_exp();
 					set_current_state(TASK_INTERRUPTIBLE);	
 					schedule();
@@ -1070,21 +1080,27 @@ int catchup_func(void *data)
 				continue;
 			}
 			else if(atomic_read(&experiment_stopping) == 1) {
-				printk(KERN_INFO "TimeKeeper: Catchup Func: Stopping. NActive syscalls = %d\n", atomic_read(&n_active_syscalls));
+				PDEBUG_I("Catchup Func: Stopping. NActive syscalls = %d\n", atomic_read(&n_active_syscalls));
 			}
 
+			if(atomic_read(&progress_cbe_enabled) == 1 && atomic_read(&progress_cbe_rounds) > 0){
+				atomic_dec(&progress_cbe_rounds);
+				if(atomic_read(&progress_cbe_rounds) == 0) {
+					PDEBUG_V("Waking up Progress CBE Process\n");
+					wake_up_interruptible(&progress_cbe_wait_queue);
+				}
+			}
+
+			wait_event_interruptible(progress_cbe_catchup_tsk, (atomic_read(&progress_cbe_enabled) == 1 && atomic_read(&progress_cbe_rounds) > 0) || atomic_read(&progress_cbe_enabled) == 0);
+			
             do_gettimeofday(&ktv);
 			atomic_set(&start_count, 0);
 
 			/* wait up each synchronization worker thread, then wait til they are all done */
 			if (number_of_heads > 0) {
 
-				if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE) {
-					printk(KERN_INFO "TimeKeeper: Catchup Func: Round finished. Waking up worker threads to calculate next round time\n");
-					printk(KERN_INFO "TimeKeeper: Catchup Func: Current FREEZE_QUANTUM : %d\n", FREEZE_QUANTUM);
-				}
-
-  
+				PDEBUG_V("Catchup Func: Round finished. Waking up worker threads to calculate next round time\n");
+				PDEBUG_V("Catchup Func: Current FREEZE_QUANTUM : %d\n", FREEZE_QUANTUM);
 				atomic_set(&worker_count, number_of_heads);
 			
 				for (i=0; i<number_of_heads; i++) {
@@ -1094,22 +1110,18 @@ int catchup_func(void *data)
 					/* chaintask refers to calculate_sync_drift thread */
 					if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE) {			
 						if(wake_up_process(chaintask[i]) == 1){ 
-							printk(KERN_INFO "TimeKeeper: Catchup Func: Sync thread %d wake up\n",i);
+							PDEBUG_V("Catchup Func: Sync thread %d wake up\n",i);
 						}
 						else{
 						    while(wake_up_process(chaintask[i]) != 1);
-							printk(KERN_INFO "TimeKeeper: Catchup Func: Sync thread %d already running\n",i);
+							PDEBUG_V("Catchup Func: Sync thread %d already running\n",i);
 						}
 					}
-	
-				
 				}
 
 				int run_cpu;
 				run_cpu = get_cpu();
-
-				if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-					printk(KERN_INFO "TimeKeeper: Catchup Func: Waiting for sync drift threads to finish. Run_cpu %d\n",run_cpu);
+				PDEBUG_V("Catchup Func: Waiting for sync drift threads to finish. Run_cpu %d\n",run_cpu);
             
                 do_gettimeofday(&now);
                 start_ns = timeval_to_ns(&now);
@@ -1117,9 +1129,7 @@ int catchup_func(void *data)
 				wait_event_interruptible(wq, atomic_read(&worker_count) == 0);
 				set_current_state(TASK_INTERRUPTIBLE);
 
-				if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-					printk(KERN_INFO "TimeKeeper: Catchup Func: All sync drift thread finished\n");	
-				
+				PDEBUG_V("Catchup Func: All sync drift thread finished\n");	
 				if(experiment_type != CS) {
 					#ifdef MULTI_CORE_NODES
 						set_all_process_virtual_times(start_ns);		
@@ -1129,8 +1139,8 @@ int catchup_func(void *data)
 
 			/* if there are no continers in the experiment, then stop the experiment */
 			if (proc_num == 0 && experiment_stopped == RUNNING) {
-				printk(KERN_INFO "TimeKeeper: Catchup Func: Cleaning experiment via catchup task because no tasks left\n");
-                		clean_exp();	
+				PDEBUG_I("Catchup Func: Cleaning experiment via catchup task because no tasks left\n");
+           		clean_exp();	
 				set_current_state(TASK_INTERRUPTIBLE);	
 				schedule();
 				continue;
@@ -1140,21 +1150,19 @@ int catchup_func(void *data)
 		    { 	/* something bad happened, because not a single task was started, think due to page fault */
 			    redo_count++;
 			    atomic_set(&running_done, 0);
-			    printk(KERN_INFO "TimeKeeper: Catchup Func: %d Redo computations %d Proc_num: %d Exp stopped: %d\n",round_count, redo_count, proc_num, experiment_stopped);
+			    PDEBUG_I("Catchup Func: %d Redo computations %d Proc_num: %d Exp stopped: %d\n",round_count, redo_count, proc_num, experiment_stopped);
 			    goto redo;
 		    }
 
 			end:
-                	set_current_state(TASK_INTERRUPTIBLE);	
+                set_current_state(TASK_INTERRUPTIBLE);	
 		
 			if(experiment_stopped == NOTRUNNING){
-				printk(KERN_INFO "TimeKeeper: Catchup Func: Waiting to be woken up\n");
+				PDEBUG_I("Catchup Func: Waiting to be woken up\n");
 				set_current_state(TASK_INTERRUPTIBLE);	
 				schedule();			
 			}
-			printk(KERN_INFO "TimeKeeper : Catchup Func: Resumed\n");
-			
-
+			PDEBUG_V("Catchup Func: Resumed\n");
         }
         return 0;
 }
@@ -1211,7 +1219,7 @@ void change_containers_dilation() {
             if (leader_task != NULL)
             {
                 calcExpectedIncrease();
-		        printk(KERN_INFO "TimeKeeper: Change Containers Dilation: New highest dilation is: %d new expected_increase: %lld\n", exp_highest_dilation, expected_increase);
+		        PDEBUG_I("Change Containers Dilation: New highest dilation is: %d new expected_increase: %lld\n", exp_highest_dilation, expected_increase);
             }
             /* update running time for each container because we have a new leader */
             list_for_each_safe(pos, n, &exp_list)
@@ -1251,7 +1259,7 @@ void clean_stopped_containers() {
         if (task->stopped  == -1) //if stopped = -1, the process is no longer running, so free the structure
         {
 
-			printk(KERN_INFO "TimeKeeper : Clean Stopped Containers: Detected stopped task\n");
+			PDEBUG_I("Clean Stopped Containers: Detected stopped task\n");
           	if (leader_task == task)
 			{ 
 				/* the leader task is done, we NEED a new leader */
@@ -1268,7 +1276,7 @@ void clean_stopped_containers() {
 			/* handle head/tail logic */
 			if (prev_task == NULL && next_task == NULL) {
 				chainhead[task->cpu_assignment - (TOTAL_CPUS - EXP_CPUS)] = NULL;
-				printk(KERN_INFO "TimeKeeper: Clean Stopped Containers: Stopping only head task for cPUID %d\n", task->cpu_assignment - (TOTAL_CPUS - EXP_CPUS));
+				PDEBUG_I("Clean Stopped Containers: Stopping only head task for cPUID %d\n", task->cpu_assignment - (TOTAL_CPUS - EXP_CPUS));
 			}
 			else if (prev_task == NULL) { 
 				/* the stopped task was the head */
@@ -1287,7 +1295,7 @@ void clean_stopped_containers() {
 			chainlength[task->cpu_assignment - (TOTAL_CPUS - EXP_CPUS)] -= task->running_time;
 
 			proc_num--;
-           	printk(KERN_INFO "TimeKeeper: Clean Stopped Containers: Process %d is stopped!\n", task->linux_task->pid);
+           	PDEBUG_I("Clean Stopped Containers: Process %d is stopped!\n", task->linux_task->pid);
 			list_del(pos);
            	kfree(task);
 			continue;
@@ -1310,7 +1318,7 @@ void clean_stopped_containers() {
         if (leader_task != NULL)
         {
            	calcExpectedIncrease();
-			printk(KERN_INFO "TimeKeeper: Clean Stopped Containers: New highest dilation is: %d new expected_increase: %lld\n", exp_highest_dilation, expected_increase);
+			PDEBUG_I("Clean Stopped Containers: New highest dilation is: %d new expected_increase: %lld\n", exp_highest_dilation, expected_increase);
         }
 
         /* update running time for each container because we have a new leader */
@@ -1360,9 +1368,7 @@ enum hrtimer_restart exp_hrtimer_callback( struct hrtimer *timer )
 	
 
 	if (catchup_task == NULL) {
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Hrtimer Callback: Proc called but catchup_task is null\n");
+		PDEBUG_E("Hrtimer Callback: Proc called but catchup_task is null\n");
 		return HRTIMER_NORESTART;
 	}
 
@@ -1405,14 +1411,12 @@ void set_all_freeze_times_recurse(struct task_struct * aTask, s64 freeze_time,s6
 
     if (aTask == NULL) {
 
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        	printk(KERN_INFO "TimeKeeper: Set all freeze times: Task does not exist\n");
+       	PDEBUG_E("Set all freeze times: Task does not exist\n");
         return;
     }
     if (aTask->pid == 0) {
 
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Set all freeze times: pid 0 error\n");
+		PDEBUG_E("Set all freeze times: pid 0 error\n");
         return;
     }
 
@@ -1460,14 +1464,12 @@ void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, i
 		return;
 
 	if (aTask == NULL) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Set all past physical times: Task does not exist\n");
+		PDEBUG_E("Set all past physical times: Task does not exist\n");
 		return;
 	}
 
 	if (aTask->pid == 0) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Set all past physical times: pid 0 error\n");
+		PDEBUG_E("Set all past physical times: pid 0 error\n");
 		return;
 	}
 	
@@ -1488,7 +1490,7 @@ void set_all_past_physical_times_recurse(struct task_struct * aTask, s64 time, i
 				t->freeze_time = 0;
 		   	}
 		   	else{
-		   	    printk(KERN_INFO "TimeKeeper: Set all past physical times: freeze_time not set pid = %d\n", t->pid);
+		   	    PDEBUG_I("Set all past physical times: freeze_time not set pid = %d\n", t->pid);
 		   	    t->past_physical_time = lxc->linux_task->past_physical_time;
 	  	    	t->freeze_time = 0;
 		   	}
@@ -1533,16 +1535,13 @@ struct task_struct * search_lxc(struct task_struct * aTask, int pid, int max_no_
 		return NULL;
 
 	if (aTask == NULL) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: search lxc: Task does not exist\n");
-
+		PDEBUG_E("Search lxc: Task does not exist\n");
 		return NULL;
 	}
 
 	if (aTask->pid == 0) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: search lxc: pid 0 error\n");
-			return NULL;
+		PDEBUG_E("Search lxc: pid 0 error\n");
+		return NULL;
 	}
 
 	me = aTask;
@@ -1596,7 +1595,7 @@ void clean_exp() {
 	s64 now_ns;
 	unsigned long flags;
 
-	printk(KERN_INFO "TimeKeeper: Clean Exp: Starting Experiment Cleanup\n");
+	PDEBUG_A("Clean Exp: Starting Experiment Cleanup\n");
 	ret = 0;
 	do_gettimeofday(&now);
 	now_ns = timeval_to_ns(&now);
@@ -1605,7 +1604,7 @@ void clean_exp() {
 	set_current_state(TASK_INTERRUPTIBLE);	
 	if(experiment_type != NOTSET){
 
-		printk(KERN_INFO "TimeKeeper: Clean Exp: Resetting Sys Call table\n");
+		PDEBUG_A("Clean Exp: Resetting Sys Call table\n");
 		orig_cr0 = read_cr0();
 		write_cr0(orig_cr0 & ~0x00010000);
 		sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
@@ -1614,20 +1613,8 @@ void clean_exp() {
 		sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 		sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
 		write_cr0(orig_cr0 | 0x00010000);
-		printk(KERN_INFO "TimeKeeper: Clean Exp: Sys Call table Updated\n");
+		PDEBUG_A("Clean Exp: Sys Call table Updated\n");
 	}
-	
-	
-
-     
-    /*list_for_each_safe(pos, n, &exp_list)
-    {
-        task = list_entry(pos, struct dilation_task_struct, list);
-        if (experiment_stopped != NOTRUNNING) 
-			unfreeze_all(task->linux_task);
-			
-			
-	}*/ 
    
 
 	/* free any heap memory associated with each container, cancel corresponding timers */
@@ -1637,8 +1624,8 @@ void clean_exp() {
 		sp.sched_priority = 0;
 		if (experiment_stopped != NOTRUNNING) {
 			
-			
-			//resume_all(task->linux_task,task);		
+			if(experiment_type == CS)			
+				resume_all(task->linux_task,task);		
 			
 					
 			if (experiment_type == CS || experiment_type == CBE){
@@ -1658,15 +1645,13 @@ void clean_exp() {
             if (task->stopped != -1 && ret != -1) {
                 sp.sched_priority = 0;
                 if (sched_setscheduler(task->linux_task, SCHED_NORMAL, &sp) == -1 )
-                        printk(KERN_INFO "TimeKeeper: Clean Exp: Error setting policy: %d pid: %d\n", SCHED_NORMAL, task->linux_task->pid);
+                        PDEBUG_A("Clean Exp: Error setting policy: %d pid: %d\n", SCHED_NORMAL, task->linux_task->pid);
                             
          		set_children_policy(task->linux_task, SCHED_NORMAL, 0);
         		cpumask_setall(&task->linux_task->cpus_allowed);
 	
 				/* -1 to fill cpu mask so that they can be scheduled in any cpu */
-				set_children_cpu(task->linux_task, -1); 
-				//kill(task->linux_task,SIGCONT,NULL);		
-				//unfreeze_all(task->linux_task);
+				set_children_cpu(task->linux_task, -1);
 			}
 			
         }
@@ -1674,24 +1659,24 @@ void clean_exp() {
         if (&task->timer != NULL)
         {
                 ret = hrtimer_cancel( &task->timer );
-                if (ret) printk(KERN_INFO "TimeKeeper: Clean Exp: The timer was still in use...\n");
+                if (ret) PDEBUG_A("Clean Exp: The timer was still in use...\n");
         }
 		clean_up_schedule_list(task);
 		kfree(task);
 	}
 
-    printk(KERN_INFO "TimeKeeper: Clean Exp: Linked list deleted\n");
+    PDEBUG_A("Clean Exp: Linked list deleted\n");
     for (i=0; i<number_of_heads; i++) //clean up cpu specific chains
     {
 		chainhead[i] = NULL;
 		chainlength[i] = 0;
 		if (experiment_stopped != NOTRUNNING) {
-			printk(KERN_INFO "TimeKeeper: Clean Exp: Stopping chaintask %d\n", i);
+			PDEBUG_A("Clean Exp: Stopping chaintask %d\n", i);
 			if (chaintask[i] != NULL && kthread_stop(chaintask[i]) )
 			{
-		        		printk(KERN_INFO "TimeKeeper: Clean Exp: Stopping worker %d error\n", i);
+		        		PDEBUG_A("Clean Exp: Stopping worker %d error\n", i);
 			}
-			printk(KERN_INFO "TimeKeeper: Clean Exp: Stopped chaintask %d\n", i);
+			PDEBUG_A("Clean Exp: Stopped chaintask %d\n", i);
 		}
 
 		/* clean up timeline structs */
@@ -1710,31 +1695,31 @@ void clean_exp() {
 				atomic_set(&tmp->stop_thread,2);
 				wake_up_interruptible_sync(&tmp->pthread_queue);	
 				wake_up_interruptible_sync(&tmp->progress_thread_queue);				
-				printk(KERN_INFO "TimeKeeper: Clean Exp: Stopped all kernel threads for timeline : %d\n",tmp->number);
+				PDEBUG_A("Clean Exp: Stopped all kernel threads for timeline : %d\n",tmp->number);
 			}
 		}
 	}
 
 	
-	experiment_stopped = NOTRUNNING;
-	experiment_type = NOTSET;
-	proc_num = 0;
 
-	
+	proc_num = 0;
 
 	/* reset highest_dilation */
 	exp_highest_dilation = -100000000; 
 	leader_task = NULL;
 	atomic_set(&running_done, 0);
+	atomic_set(&experiment_stopping,0);
 	number_of_heads = 0;
 	stopped_change = 0;
 
-	//#ifdef __x86_64
-	//	kill(loop_task, SIGSTOP, NULL);
-	//#endif
 
-
-	printk(KERN_INFO "TimeKeeper: Clean Exp: Exited Clean Experiment\n");
+	if(experiment_stopped != NOTRUNNING && experiment_type == CBE) {
+		wake_up_interruptible(&cbe_exp_stop_queue);
+	}	
+	experiment_stopped = NOTRUNNING;
+	experiment_type = NOTSET;
+	
+	PDEBUG_A("Clean Exp: Exited Clean Experiment\n");
 	
 	
 	
@@ -1748,11 +1733,13 @@ Sets the experiment_stopped flag, signalling catchup_task (sync function) to sto
 ***/
 void set_clean_exp() {
 
+		int ret = 0;
+
 		/* assuming stopExperiment will not be called if still waiting for a S3F progress to return */
 		if (experiment_stopped == NOTRUNNING || experiment_type == CS || experiment_stopped == FROZEN) {
 
 		    /* sync experiment was never started, so just clean the list */
-			printk(KERN_INFO "TimeKeeper: Set Clean Exp: Clean up immediately..\n");
+			PDEBUG_A("Set Clean Exp: Clean up immediately..\n");
 			experiment_stopped = STOPPING;
 			atomic_set(&experiment_stopping,1);
 		    clean_exp();
@@ -1760,9 +1747,20 @@ void set_clean_exp() {
 		else if (experiment_stopped == RUNNING) {
 
 			/* the experiment is running, so set the flag */
-			printk(KERN_INFO "TimeKeeper: Set Clean Exp: Wait for catchup task to run before cleanup\n");
-			//experiment_stopped = STOPPING;
+			PDEBUG_A("Set Clean Exp: Waiting for catchup task to run before cleanup\n");
+			set_current_state(TASK_INTERRUPTIBLE);
 			atomic_set(&experiment_stopping,1);
+			
+			do{
+				ret = wait_event_interruptible_timeout(cbe_exp_stop_queue,atomic_read(&experiment_stopping) == 0,HZ);
+				if(ret == 0)
+					set_current_state(TASK_INTERRUPTIBLE);
+				else
+					set_current_state(TASK_RUNNING);
+
+			}while(ret == 0);			
+			
+			PDEBUG_A("Set Clean Exp: Cleanup Complete\n");
 		}
 
         return;
@@ -1779,11 +1777,11 @@ void set_children_time(struct task_struct *aTask, s64 time) {
 	unsigned long flags;
 
 	if (aTask == NULL) {
-        printk(KERN_INFO "TimeKeeper: Set Children Time: Task does not exist\n");
+        PDEBUG_E("Set Children Time: Task does not exist\n");
         return;
     }
     if (aTask->pid == 0) {
-                return;
+        return;
     }
 	me = aTask;
 	t = me;
@@ -1833,7 +1831,7 @@ void set_children_policy(struct task_struct *aTask, int policy, int priority) {
         struct task_struct *t;
 
 		if (aTask == NULL) {
-		    printk(KERN_INFO "TimeKeeper: Set Children Policy: Task does not exist\n");
+		   	PDEBUG_E("Set Children Policy: Task does not exist\n");
 		    return;
 		}
 		if (aTask->pid == 0) {
@@ -1848,7 +1846,7 @@ void set_children_policy(struct task_struct *aTask, int policy, int priority) {
 			if (t->pid != aTask->pid) {
 		   		sp.sched_priority = priority; 
 				if (sched_setscheduler(t, policy, &sp) == -1 )
-		    	    printk(KERN_INFO "TimeKeeper: Set Children Policy: Error setting thread policy: %d pid: %d\n",policy,t->pid);
+		    	    PDEBUG_I("Set Children Policy: Error setting thread policy: %d pid: %d\n",policy,t->pid);
 			}
 
 		} while_each_thread(me, t);
@@ -1863,7 +1861,7 @@ void set_children_policy(struct task_struct *aTask, int policy, int priority) {
 			/* set children scheduling policy */
 		    sp.sched_priority = priority; 
 			if (sched_setscheduler(taskRecurse, policy, &sp) == -1 )
-		        printk(KERN_INFO "TimeKeeper: Set Children Policy: Error setting policy: %d pid: %d\n",policy,taskRecurse->pid);
+		        PDEBUG_I("Set Children Policy: Error setting policy: %d pid: %d\n",policy,taskRecurse->pid);
 		    set_children_policy(taskRecurse, policy, priority);
 		}
 }
@@ -1878,7 +1876,7 @@ void set_children_cpu(struct task_struct *aTask, int cpu) {
     	struct task_struct *t;
 
 	if (aTask == NULL) {
-		printk(KERN_INFO "TimeKeeper: Set Children CPU: Task does not exist\n");
+		PDEBUG_E("Set Children CPU: Task does not exist\n");
 		return;
 	}
 		if (aTask->pid == 0) {
@@ -1936,14 +1934,13 @@ int kill_children(struct task_struct *aTask) {
 	
 
     if (aTask == NULL) {
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        	printk(KERN_INFO "TimeKeeper: Freeze Children: Task does not exist\n");
+    
+       	PDEBUG_E("Kill Children: Task does not exist\n");
         return 0;
     }
     if (aTask->pid == 0) {
 
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Freeze Children: PID equals 0\n");
+		PDEBUG_E("Kill Children: PID equals 0\n");
         return 0;
     }
 
@@ -1978,14 +1975,12 @@ int freeze_children(struct task_struct *aTask, s64 time) {
 	
 
     if (aTask == NULL) {
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        	printk(KERN_INFO "TimeKeeper: Freeze Children: Task does not exist\n");
+       	PDEBUG_E("Freeze Children: Task does not exist\n");
         return 0;
     }
     if (aTask->pid == 0) {
 
-    	if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Freeze Children: PID equals 0\n");
+		PDEBUG_E("Freeze Children: PID equals 0\n");
         return 0;
     }
 
@@ -2061,15 +2056,12 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 	unsigned long flags;
 
 	if (aTask == NULL) {
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Unfreeze Children: Task does not exist\n");
+		PDEBUG_E("Unfreeze Children: Task does not exist\n");
 		return 0;
 	}
 	if (aTask->pid == 0) {
 
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Unfreeze Children: Pid is 0 in unfreeze\n");
+		PDEBUG_E("Unfreeze Children: PID equals 0\n");
 		return 0;
 	}
 
@@ -2098,8 +2090,7 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 
 				/* just in case - to continue all threads */
 				kill(t, SIGCONT, NULL); 
-				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-					printk(KERN_INFO "TimeKeeper: Unfreeze Children: Thread not Frozen. Pid: %d Dilation %d\n", t->pid, t->dilation_factor);
+				PDEBUG_V("Unfreeze Children: Thread not Frozen. Pid: %d Dilation %d\n", t->pid, t->dilation_factor);
 			}
 			
 			task_poll_helper = hmap_get_abs(&poll_process_lookup,t->pid);
@@ -2167,8 +2158,8 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 		acquire_irq_lock(&taskRecurse->dialation_lock,flags);
 		if (taskRecurse->wakeup_time != 0 && expected_time > taskRecurse->wakeup_time) {
 			
-			if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Unfreeze Children: PID : %d Time to wake up: %lld actual time: %lld\n", taskRecurse->pid, taskRecurse->wakeup_time, expected_time);
+			
+			PDEBUG_V("Unfreeze Children: PID : %d Time to wake up: %lld actual time: %lld\n", taskRecurse->pid, taskRecurse->wakeup_time, expected_time);
 			taskRecurse->virt_start_time = aTask->virt_start_time;
             taskRecurse->freeze_time = 0;
 			taskRecurse->past_physical_time = aTask->past_physical_time;
@@ -2250,9 +2241,7 @@ int unfreeze_children(struct task_struct *aTask, s64 time, s64 expected_time,str
 			taskRecurse->past_physical_time = aTask->past_physical_time; // *** trying
 
 			if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
-
-				if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        			printk(KERN_INFO "TimeKeeper: Unfreeze Children: Process not frozen. Pid: %d Dilation %d\n", taskRecurse->pid, taskRecurse->dilation_factor);
+       			PDEBUG_V("Unfreeze Children: Process not frozen. Pid: %d Dilation %d\n", taskRecurse->pid, taskRecurse->dilation_factor);
 				release_irq_lock(&taskRecurse->dialation_lock,flags);
 				kill(taskRecurse, SIGCONT, dilTask);		
 			}
@@ -2314,14 +2303,12 @@ int resume_all(struct task_struct *aTask,struct dilation_task_struct * lxc) {
 	unsigned long flags;
 
 	if (aTask == NULL) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Resume All: Task does not exist\n");
+		PDEBUG_E("Resume All: Task does not exist\n");
 		return 0;
 	}
 
 	if (aTask->pid == 0) {
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper: Resume All: PID equals 0\n");
+		PDEBUG_E("Resume All: PID equals 0\n");
 		return 0;
 	}
 
@@ -2416,7 +2403,7 @@ lxc_schedule_elem * get_next_valid_task(struct dilation_task_struct * lxc, s64 e
 	
 	redo_again:
 	if(head == NULL) {
-		printk(KERN_INFO "TimeKeeper: GetHead returned Null. Pid = %d. Size = %d \n", lxc->linux_task->pid, schedule_list_size(lxc));
+		PDEBUG_I("Get next valid task: Head is Null. Pid = %d. Size = %d \n", lxc->linux_task->pid, schedule_list_size(lxc));
 		lxc->stopped = -1;
 		return NULL;
 	}
@@ -2430,19 +2417,12 @@ lxc_schedule_elem * get_next_valid_task(struct dilation_task_struct * lxc, s64 e
 
 		if(task == NULL){	
 			/* task is no longer running. remove from schedule queue */
-			if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-				printk(KERN_INFO "TimeKeeper : Get Next Valid Task: Task %d no longer running. Removing from schedule queue\n",head->pid);
-				
-			//if(head == lxc->last_run)
-			//	lxc->last_run = NULL;
-				
-			printk(KERN_INFO "Schedule List Before\n");
+			PDEBUG_I("Get Next Valid Task: Task %d no longer running. Removing from schedule queue\n",head->pid);
+			PDEBUG_V("Get Next Valid Task: Schedule List Before\n");
 			print_schedule_list(lxc);
-			
 			pop_schedule_list(lxc);
 			head = schedule_list_get_head(lxc);
-			
-			printk(KERN_INFO "Schedule List After\n");
+			PDEBUG_V("Get Next Valid Task: Schedule List After\n");
 			print_schedule_list(lxc);
 			
 			goto redo_again;
@@ -2461,10 +2441,8 @@ lxc_schedule_elem * get_next_valid_task(struct dilation_task_struct * lxc, s64 e
 				release_irq_lock(&head->curr_task->dialation_lock,flags);
 				if(schedule_list_size(lxc) == 1 || count == schedule_list_size(lxc)) 
 				{
-
 					/* this is the only task or all tasks are simultaneously asleep. we have have problem ? */
-					if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-						printk(KERN_INFO "TimeKeeper : Get Next Valid Task:  ERROR : All tasks simultaneously asleep\n");
+					PDEBUG_I("Get Next Valid Task:  ERROR : All tasks simultaneously asleep\n");
 					return NULL; // for now.
 				}
 
@@ -2505,15 +2483,11 @@ void add_process_to_schedule_queue_recurse(struct dilation_task_struct * lxc, st
 	unsigned long flags;
 
 	if (aTask == NULL) {
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        	printk(KERN_INFO "TimeKeeper: Add Process To Schedule Queue: Task does not exist\n");
+       	PDEBUG_I("Add Process To Schedule Queue: Task does not exist\n");
         return;
 	}
 	if (aTask->pid == 0) {
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_INFO || DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper: Add Process To Schedule Queue: pid is 0 cannot be added to schedule queue\n");
+		PDEBUG_I("Add Process To Schedule Queue: pid is 0 cannot be added to schedule queue\n");
 		return;
 	}
 
@@ -2588,10 +2562,7 @@ int run_schedule_queue_single_core_mode(struct dilation_task_struct * lxc, lxc_s
     int CPUID = lxc->cpu_assignment - (TOTAL_CPUS - EXP_CPUS);
 
 	if(head->duration_left <= 0 || remaining_run_time <= 0){
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper : Run Schedule Queue Head Process: ERROR Cannot run task. duration left is 0");
-
+		PDEBUG_E("Run Schedule Queue Head Process: ERROR Cannot run task. duration left is 0");
 		return remaining_run_time;
 
 	}
@@ -2629,55 +2600,45 @@ int run_schedule_queue_single_core_mode(struct dilation_task_struct * lxc, lxc_s
     else
         lxc->last_timer_fire_time = last_run_freeze_time;
 	
-	
-
 	acquire_irq_lock(&t->dialation_lock,flags);
 	task_poll_helper = hmap_get_abs(&poll_process_lookup,t->pid);
 	task_select_helper = hmap_get_abs(&select_process_lookup,t->pid);
 	task_sleep_helper = hmap_get_abs(&sleep_process_lookup, t->pid);
 
-	
 	if(task_poll_helper != NULL){
 		
 		t->freeze_time = 0;
 		atomic_set(&task_poll_helper->done,1);
 		wake_up(&task_poll_helper->w_queue);
-		//wake_up_process(t);
 		release_irq_lock(&t->dialation_lock,flags);
 	}
 	else if(task_select_helper != NULL){
 
 		t->freeze_time = 0;
 		atomic_set(&task_select_helper->done,1);
-		printk(KERN_INFO "Select Wakeup. Pid = %d\n", t->pid); 
+		PDEBUG_V("Select Wakeup. Pid = %d\n", t->pid); 
 		wake_up(&task_select_helper->w_queue);
-		//wake_up_process(t);
 		release_irq_lock(&t->dialation_lock,flags);
 	}
 	else if( task_sleep_helper != NULL) {
+	
+		/* Sending a Continue signal here will wake all threads up. We dont want that */
 		t->freeze_time = 0;
 		atomic_set(&task_sleep_helper->done,1);
 		wake_up(&task_sleep_helper->w_queue);
-		//wake_up_process(t);
 		release_irq_lock(&t->dialation_lock,flags);
-
-		/* Sending a Continue signal here will wake all threads up. We dont want that */
-
 	}
 	else if (t->freeze_time > 0)
    	{	
 		t->freeze_time = 0;
 		release_irq_lock(&t->dialation_lock,flags);
 	    kill(t, SIGCONT, NULL);
-
-    	}
+    }
 	else {
 	    t->freeze_time = 0;
 		release_irq_lock(&t->dialation_lock,flags);
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-        	printk(KERN_INFO "TimeKeeper: Run Schedule Queue Head Process: Thread not frozen pid: %d dilation %d\n", t->pid, t->dilation_factor);   	
+       	PDEBUG_V("Run Schedule Queue Head Process: Thread not frozen pid: %d dilation %d\n", t->pid, t->dilation_factor);   	
 		kill(t, SIGCONT, NULL);
-			
 	}
 		
 
@@ -2705,10 +2666,7 @@ int run_schedule_queue_single_core_mode(struct dilation_task_struct * lxc, lxc_s
 
 	head->duration_left = head->duration_left - timer_fire_time;
 	if(head->duration_left <= 0){
-
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper : Run Schedule Queue Head Process: Resetting head to duration of %lld\n", head->share_factor);
-		
+		PDEBUG_V("Run Schedule Queue Head Process: Resetting head to duration of %lld\n", head->share_factor);
 		head->duration_left = head->share_factor;
 		requeue_schedule_list(lxc);
 	}
@@ -2759,7 +2717,7 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
     
 	if (aTask->linux_task->freeze_time == 0)
 	{
-		printk(KERN_INFO "TimeKeeper: Unfreeze Proc Exp Recurse: Process not frozen pid: %d dilation %d in recurse\n", aTask->linux_task->pid, aTask->linux_task->dilation_factor);
+		PDEBUG_I("Unfreeze Proc Exp Recurse: Process not frozen pid: %d dilation %d in recurse\n", aTask->linux_task->pid, aTask->linux_task->dilation_factor);
 		return -1;
 	}
 	
@@ -2783,12 +2741,8 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 	if(schedule_list_size(aTask) == 1){
 
         lxc_schedule_elem * head;
-        head = get_next_valid_task(aTask,expected_time);
-        
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Single process LXC on CPU %d\n",CPUID);
-
-		//print_schedule_list(aTask);
+        head = get_next_valid_task(aTask,expected_time);		
+		PDEBUG_V("Unfreeze Proc Exp Recurse: Single process LXC on CPU %d\n",CPUID);
 		acquire_irq_lock(&aTask->linux_task->dialation_lock,flags);
         if(aTask->linux_task->freeze_time > 0) { 
            
@@ -2807,20 +2761,17 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 				if(task_poll_helper != NULL){				
 					atomic_set(&task_poll_helper->done,1);
 					wake_up(&task_poll_helper->w_queue);
-					//wake_up_process(aTask->linux_task);
 					release_irq_lock(&aTask->linux_task->dialation_lock,flags);
 				}
 				else if(task_select_helper != NULL){					
 					atomic_set(&task_select_helper->done,1);
-					printk(KERN_INFO "Select Wakeup. Pid = %d\n", aTask->linux_task->pid); 
+					PDEBUG_V("Select Wakeup. Pid = %d\n", aTask->linux_task->pid); 
 					wake_up(&task_select_helper->w_queue);
-					//wake_up_process(aTask->linux_task);
 					release_irq_lock(&aTask->linux_task->dialation_lock,flags);	
 				}
 				else if( task_sleep_helper != NULL) {				
 					atomic_set(&task_sleep_helper->done,1);		
 					wake_up(&task_sleep_helper->w_queue);
-					//wake_up_process(aTask->linux_task);
 					release_irq_lock(&aTask->linux_task->dialation_lock,flags);
 				}
 				else {
@@ -2852,8 +2803,7 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 			atomic_set(&aTask->tl->hrtimer_done,0);
 		}
 		set_current_state(TASK_RUNNING);
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Single process on CPU %d resumed\n",CPUID);
+		PDEBUG_V("Unfreeze Proc Exp Recurse: Single process on CPU %d resumed\n",CPUID);
 		
 		aTask->last_run = head;		
 		kill(aTask->linux_task, SIGSTOP, NULL);
@@ -2867,29 +2817,20 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 	
 	rem_time = aTask->running_time;
 	set_all_past_physical_times_recurse(aTask->linux_task, start_ns,0,aTask);
-	//print_schedule_list(aTask);
 	do{
 
-        
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Getting next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
-		
+		PDEBUG_V("Unfreeze Proc Exp Recurse: Getting next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
 		head = get_next_valid_task(aTask,expected_time);
 		if(head == NULL){
-
 			/* need to stop container here */
-			if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE || DEBUG_LEVEL == DEBUG_LEVEL_INFO)
-				printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: ERROR. Need to stop container\n");
+			PDEBUG_I("Unfreeze Proc Exp Recurse: ERROR. Need to stop container\n");
 			return 0;
-
 		}		
 		
 		
 		
 		atomic_set(&wake_up_signal_sync_drift[CPUID],0);
-		if(DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE)
-			printk(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Running next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
-		
+		PDEBUG_V(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Running next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
 		rem_time  = run_schedule_queue_single_core_mode(aTask, head, rem_time, expected_time);
 		set_all_freeze_times_recurse(aTask->linux_task,start_ns + aTask->running_time - rem_time,aTask->running_time,0);
 		i++;	
@@ -2905,22 +2846,18 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 	if(virt_time > expected_time) {
 	    change_vt = virt_time - expected_time;
 	    if(change_vt > 0) {
-		    printk(KERN_INFO "TimeKeeper: Here in the future: Pid = %d, Virtual time Error = %llu. \n",aTask->linux_task->pid,change_vt);
+		    PDEBUG_I("Here in the future: Pid = %d, Virtual time Error = %llu. \n",aTask->linux_task->pid,change_vt);
 		}
 	
 	}
 	else{
 	    change_vt = expected_time - virt_time;
 		if(change_vt > 0) {
-			printk(KERN_INFO "TimeKeeper: Here in the past: Pid = %d, rem_time = %llu, Virtual time Error = %llu\n",aTask->linux_task->pid, rem_time, change_vt);
+			PDEBUG_I("Here in the past: Pid = %d, rem_time = %llu, Virtual time Error = %llu\n",aTask->linux_task->pid, rem_time, change_vt);
 			aTask->running_time = change_vt;
     		return unfreeze_proc_exp_single_core_mode(aTask,expected_time);
-
 		}
-	
 	}
-	
-	
     return 0;
 }
 
@@ -2977,13 +2914,11 @@ int run_schedule_queue_multi_core_mode(struct dilation_task_struct * lxc, lxc_sc
 		
 	}
 	else if( task_sleep_helper != NULL) {
+	
+		/* Sending a Continue signal here will wake all threads up. We dont want that */
 		atomic_set(&task_sleep_helper->done,1);
 		release_irq_lock(&t->dialation_lock,flags);
 		wake_up(&task_sleep_helper->w_queue);
-		
-
-		/* Sending a Continue signal here will wake all threads up. We dont want that */
-
 	}
 	else 
    	{	
