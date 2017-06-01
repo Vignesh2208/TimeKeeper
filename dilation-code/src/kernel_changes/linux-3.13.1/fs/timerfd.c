@@ -344,8 +344,8 @@ static unsigned int timerfd_poll(struct file *file, poll_table *wait)
 	unsigned int events = 0;
 	unsigned long flags;
 
-	if(ctx->owner_task->virt_start_time != 0)
-		poll_wait(file, &ctx->wqh, wait);
+	//if(ctx->owner_task->virt_start_time != 0)
+	poll_wait(file, &ctx->wqh, wait);
 
 	spin_lock_irqsave(&ctx->wqh.lock, flags);
 	if (ctx->ticks)
