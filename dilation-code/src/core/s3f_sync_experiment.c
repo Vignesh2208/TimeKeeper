@@ -183,7 +183,7 @@ int s3f_progress_timeline(char *write_buffer) {
 					else
 						set_current_state(TASK_RUNNING);
 
-				}while(ret == 0);
+				}while(ret == 0 || experiment_stopped != RUNNING);
 				PDEBUG_V("Progress: For timeline %d, Resumed user process\n", timeline);
 
 			}

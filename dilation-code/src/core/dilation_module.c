@@ -148,8 +148,8 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 		print_children_info_proc(write_buffer+2);
 	else if (write_buffer[0] == DEBUG_THREAD_INFO)
 		print_threads_proc(write_buffer+2);
-    else if (write_buffer[0] == DEBUG_PROGRESS_EXP)
-        progress_exp();
+    	else if (write_buffer[0] == DEBUG_PROGRESS_EXP)
+        	progress_exp();
 	else if (write_buffer[0] == SET_CBE_EXP_TIMESLICE)
 		set_cbe_exp_timeslice(write_buffer + 2);
 	else if (write_buffer[0] == SET_NETDEVICE_OWNER)

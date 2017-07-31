@@ -128,7 +128,7 @@ How many processors are dedicated to the experiment. My system has 8, so I set i
 This needs to be >= 2 and your system needs to have at least 4 vCPUs
 */
 
-#define EXP_CPUS 2
+#define EXP_CPUS 4
                           
 
 #define NETLINK_USER 31

@@ -1585,7 +1585,7 @@ void clean_exp() {
 	struct list_head *n;
 	struct dilation_task_struct *task;
 	struct list_head *list_2;
-    struct task_struct *taskRecurse;
+    	struct task_struct *taskRecurse;
 	int ret;
 	int i;
 	struct sched_param sp;
@@ -1600,8 +1600,9 @@ void clean_exp() {
 	do_gettimeofday(&now);
 	now_ns = timeval_to_ns(&now);
 
-	
-	set_current_state(TASK_INTERRUPTIBLE);	
+	if(experiment_type != CS)
+		set_current_state(TASK_INTERRUPTIBLE);	
+
 	if(experiment_type != NOTSET){
 
 		PDEBUG_A("Clean Exp: Resetting Sys Call table\n");
@@ -1620,7 +1621,7 @@ void clean_exp() {
 	/* free any heap memory associated with each container, cancel corresponding timers */
     list_for_each_safe(pos, n, &exp_list)
     {
-        task = list_entry(pos, struct dilation_task_struct, list);
+        	task = list_entry(pos, struct dilation_task_struct, list);
 		sp.sched_priority = 0;
 		if (experiment_stopped != NOTRUNNING) {
 			
@@ -1642,25 +1643,26 @@ void clean_exp() {
 			}
 			
 
-            if (task->stopped != -1 && ret != -1) {
-                sp.sched_priority = 0;
-                if (sched_setscheduler(task->linux_task, SCHED_NORMAL, &sp) == -1 )
-                        PDEBUG_A("Clean Exp: Error setting policy: %d pid: %d\n", SCHED_NORMAL, task->linux_task->pid);
-                            
-         		set_children_policy(task->linux_task, SCHED_NORMAL, 0);
-        		cpumask_setall(&task->linux_task->cpus_allowed);
+		    	if (task->stopped != -1 && ret != -1) {
+		        	sp.sched_priority = 0;
+		        	if (sched_setscheduler(task->linux_task, SCHED_NORMAL, &sp) == -1 )
+		        	        PDEBUG_A("Clean Exp: Error setting policy: %d pid: %d\n", SCHED_NORMAL, task->linux_task->pid);
+		                    
+		 			set_children_policy(task->linux_task, SCHED_NORMAL, 0);
+					cpumask_setall(&task->linux_task->cpus_allowed);
 	
-				/* -1 to fill cpu mask so that they can be scheduled in any cpu */
-				set_children_cpu(task->linux_task, -1);
+					/* -1 to fill cpu mask so that they can be scheduled in any cpu */
+					set_children_cpu(task->linux_task, -1);
 			}
 			
-        }
+        	}
+
 		list_del(pos);
-        if (&task->timer != NULL)
-        {
-                ret = hrtimer_cancel( &task->timer );
-                if (ret) PDEBUG_A("Clean Exp: The timer was still in use...\n");
-        }
+	        if (&task->timer != NULL)
+        	{
+        	        ret = hrtimer_cancel( &task->timer );
+        	        if (ret) PDEBUG_A("Clean Exp: The timer was still in use...\n");
+        	}
 		clean_up_schedule_list(task);
 		kfree(task);
 	}
@@ -1742,7 +1744,7 @@ void set_clean_exp() {
 			PDEBUG_A("Set Clean Exp: Clean up immediately..\n");
 			experiment_stopped = STOPPING;
 			atomic_set(&experiment_stopping,1);
-		    clean_exp();
+		    	clean_exp();
 		}
 		else if (experiment_stopped == RUNNING) {
 
@@ -1762,6 +1764,9 @@ void set_clean_exp() {
 			
 			PDEBUG_A("Set Clean Exp: Cleanup Complete\n");
 		}
+
+		PDEBUG_A("Set Clean Exp: Exiting ..\n");
+		kill(current,SIGCONT,NULL);
 
         return;
 }
