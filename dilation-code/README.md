@@ -1,8 +1,11 @@
-#TimeKeeper
-```
-TimeKeeper has been tested with Ubuntu 12.04 and 14.04 32-bit and 64-bit with Linux kernel version 3.13.1
 
-Outlined below are basic instructions. See the installation/usage guide found in the documentation directory for additional assistance.
+## TimeKeeper
+```
+TimeKeeper has been tested with Ubuntu 12.04 and 14.04 32-bit and 64-bit with Linux kernel version 3.13.1. It has also been tested with 
+Ubuntu 14.04 and Ubuntu 16.04 64-bit with Linux Kernel 4.4.50.
+
+Outlined below are basic installation instructions. See the installation/usage guide found in the documentation directory for additional assistance 
+or contact me at: vig2208@gmail.com
 ```
 
 ## TimeKeeper configuration
