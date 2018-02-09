@@ -1,0 +1,33 @@
+
+1) runtests.py is the driver program from which the other programs can
+be called.
+
+timeofday Test
+------------
+
+The purpose of this test is to verify the dialeted time, due to changes in
+the system call time (ie) irrespective of real time elapsed, the processes
+registered with Timekeeper, sees the clock advance by a factor of the timeout
+that they register with.
+
+It is invoked using the command line
+sudo python runtests.py --script_name=timeofday.py --no=4 --tdfactor=2
+
+THere is a C Program gtod.c. This program gets the real time from system
+THe C program gtod.c is compiled using gcc
+
+gcc gtod.c -o gtod
+
+THe Python file timeofday internally calls the C executable file 
+./gtod
+
+It would print the Real time elapsed, and also the Dilated time elapsed.
+
+From the timekeeper we pass instance ID, which is used to decide
+to create time slots of various delays from base slot. 
+
+We have to monitor the log files created to check the time delays.
+
+(ie) tail -f log0.txt, tail -f log1.txt tail -f log2.txt etc
+depending upon the number of process that is spawned.
+

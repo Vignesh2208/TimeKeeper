@@ -143,7 +143,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 			if (find_children_info(task->linux_task, current->pid) == 1) { 
 				now = get_dilated_time(task->linux_task);
 				//now = now - boottime;
-				PDEBUG_I("Sys ClockGetTime: Pid: %d. Time = %llu, boottime = %llu\n", current->pid, now, boottime);
+				//PDEBUG_I("Sys ClockGetTime: Pid: %d. Time = %llu, boottime = %llu\n", current->pid, now, boottime);
 				struct timespec tempStruct = ns_to_timespec(now);
 				if(copy_to_user(tp, &tempStruct, sizeof(tempStruct)))
 					return -EFAULT;

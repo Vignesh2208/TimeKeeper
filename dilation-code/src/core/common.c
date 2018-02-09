@@ -206,7 +206,7 @@ int find_children_info(struct task_struct *aTask, int pid) {
             return -1;
     }
     if (pid == aTask->pid) {
-            PDEBUG_E("Find Children Info: Task exists for this pid : %d in the experiment \n", pid);
+            //PDEBUG_E("Find Children Info: Task exists for this pid : %d in the experiment \n", pid);
             return 1;
     }
 

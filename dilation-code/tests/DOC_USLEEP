@@ -1,0 +1,31 @@
+
+1) runtests.py is the driver program from which the other programs can
+be called.
+
+Usleep Test
+------------
+
+The purpose of this test is to verify the changes made in clock_gettime
+system call of the kernel.
+
+The clk_gettime system calls takes  initial sleep time and also an incremental
+timer value for repeated timer events.  We try to set it to different values
+and see the accuracy of repeat timers with the changed kernel.
+
+
+Invoke the test
+===============
+sudo python runtests.py --script_name=clk_gettime.py --no=4 --tdfactor=3
+
+THre is a wrapper clk_gettime.py, that is called by runtests.py with specified
+parameters. There is an array defined at the top in the file clk_gettime.py
+which defines the interval timer to be used for different processes that
+would be spawned. We can edit these values to see behaviour for different
+values.
+
+We have to monitor the log files created to check the clk_gettime values
+for the interval timer
+
+(ie) tail -f log0.txt, tail -f log1.txt tail -f log2.txt etc
+depending upon the number of process that is spawned.
+

@@ -1,0 +1,34 @@
+
+1) runtests.py is the driver program from which the other programs can
+be called.
+
+select system call
+------------
+
+The purpose of this test is to verify the to changes in
+the system call select needed for Time Dilation purposes. 
+Socket is created by Server and client programs and they communicate 
+with each other through socket.
+
+This test is basically to make sure that server & client work as expected.
+
+Invoke Server
+==============
+sudo python sockserver.py
+
+THe server opens a socket and listens for connection. 
+When connection request comes, the server accepts the connection.
+It reads the socket, converts the characters to Upper case and sends it back
+on the socket.
+
+
+Invoke client
+==============
+sudo python sockclient.py
+
+It registers with the Server program, opens the file in the current directory
+named sock_testdata, sends it to server.
+
+After that it goes into a loop to read from the socket. The characters
+received from the server is printed.
+

@@ -1,0 +1,10 @@
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1945 Deviation : 945
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1481 Deviation : 481
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1992 Deviation : 992
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1494 Deviation : 494
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1995 Deviation : 995
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1498 Deviation : 498
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1993 Deviation : 993
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1494 Deviation : 494
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1997 Deviation : 997
+Requested : 1000 MicroSecs <--> Elapsed Sec : 0 Elapsed Microsec :1500 Deviation : 500
