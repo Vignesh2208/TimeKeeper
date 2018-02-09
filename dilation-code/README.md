@@ -10,14 +10,14 @@ Outlined below are basic instructions. See the installation/usage guide found in
 1. Setup Kernel:
 
 	cd dilation-code
-	sudo make setup_kernel (Note: choose kexec-tools to not handle reboots)
+	sudo make setup_4_4_kernel (Note: choose kexec-tools to not handle reboots)
 	
 	
-	#The kernel_setup script will download Linux Kernel version 3.13.1 and required software dependencies, and store it in /src directory.
+	#The kernel_setup script will download Linux Kernel version 4.4.5 and required software dependencies, and store it in /src directory.
  	#Then it will modify the source code with the necessary changes.
 	#Compile the kernel. Follow the instructions below: 
 	
-	[user~]$ cd /src/linux-3.13.1
+	[user~]$ cd /src/linux-4.4.5
 	[user~]$ sudo cp -vi /boot/config-`uname -r` .config
 	[user~]$ sudo make menuconfig #load from .config file and append suitable version name for new kernel
 	[user~]$ sudo make -j6
@@ -25,9 +25,10 @@ Outlined below are basic instructions. See the installation/usage guide found in
 	[user~]$ sudo make install
 	
 	#reboot system and into the newly created kernel
-
 	#Compilation Instructions obtained from: http://mitchtech.net/compile-linux-kernel-on-ubuntu-12-04-lts-detailed/.
 
+	#TimeKeeper can also work with linux kernel 3.13.1 which is supported by older linux systems. To use this kernel run: sudo make setup_3_1_kernel
+	#and repeat the above steps.
 	
 
 
@@ -44,5 +45,28 @@ Outlined below are basic instructions. See the installation/usage guide found in
 	sudo make install
 
 
-From here, TimeKeeper should be installed, loaded into the Linux Kernel, and good to go!
+From here, TimeKeeper should be installed, loaded into the Linux Kernel, and good to go!.
+
+
+```
+
+## Example test cases
+```
+Refer to the tests directory for documentation on how to add processes to TimeKeeper's control
+and how run them in virtual time.
+
+These tests illustrate how to create simple dilated experiments consisting of multiple processes running
+concurrently in virtual time and interacting with each other.
+
+For creating a dilated experiment consisting of n processes, each process must be started and the following sequence
+of steps followed:
+
+	1. Register each process's pid with TimeKeeper
+	2. Set experiment timeslice which is the duration (in virtual time) for which each process will be run during each round
+	3. Set the Time Dilation factor for each process.
+	4. Synchornize and Freeze all processes
+	5. Start Experiment.
+	6. Stop Experiment when desired.
+
+TimeKeeper provides python and C APIs for all of the above 6 steps. Refer to tests/timekeeper_functions.py for the python API.s
 ```

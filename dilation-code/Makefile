@@ -13,18 +13,14 @@ clean_all: clean_build clean_scripts
 
 build: clean_build timekeeper_scripts modules
 
-setup_4_4_kernel: timekeeper_4_4scripts download_4_4_kernel
+setup_4_4_kernel: timekeeper_scripts download_4_4_kernel
 
 download_4_4_kernel:
 	@cd src/kernel_changes/linux-4.4.5; ./setup.sh
 
-timekeeper_4_4scripts:	
-	@echo "Compiling TimeKeeper helper scripts ..."
-	@cd scripts; make;
+setup_3_1_kernel: timekeeper_scripts download_3_1_kernel
 
-setup_kernel: timekeeper_scripts download_kernel
-
-download_kernel:
+download_3_1_kernel:
 	@cd src/kernel_changes/linux-3.13.1; ./setup.sh;
 
 
