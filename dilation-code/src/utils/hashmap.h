@@ -2,9 +2,8 @@
 #define __HASHMAP_H
 
 #include "linkedlist.h"
-#include <linux/spinlock_types.h>
 
-#define DEFAULT_MAP_SIZE 1000
+#define DEFAULT_MAP_SIZE 10000
 
 typedef int (*hashFn)(void * item);
 typedef int (*equality_checker_fn)(void * key1, void * key2);
@@ -12,7 +11,6 @@ typedef int (*equality_checker_fn)(void * key1, void * key2);
 typedef struct hashmap_elem_struct{
 
 	void * key;
-	int key_val;
 	void * value;
 	equality_checker_fn equals;
 	
@@ -38,10 +36,5 @@ void hmap_remove(hashmap * h, void * key);
 void hmap_destroy(hashmap * h);
 int int_hash(int * val);
 int str_hash(char * s);
-
-void hmap_put_abs(hashmap * h, int key, void * value);
-void* hmap_get_abs(hashmap * h, int key);
-void hmap_remove_abs(hashmap * h, int key);
-
 
 #endif

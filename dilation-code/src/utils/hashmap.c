@@ -24,17 +24,6 @@ int default_key_comparer(void * key1, void * key2){
 
 int int_key_comparer(int * key1, int * key2){
 	
-	if(key1 == NULL || key2 == NULL) {
-		if(key1 == NULL && key2 != NULL) {
-			printk(KERN_INFO "LLIST Key1 NULL, Key2 = %d\n", *key2);
-		}
-		
-		if(key2 == NULL && key1 != NULL) {
-			printk(KERN_INFO "LLIST Key2 NULL, Key1 = %d\n", *key1);
-		}
-	
-		return 1;
-	}
 	
 	if(*key1 == *key2)
 		return 0;
@@ -78,7 +67,6 @@ int int_hash(int * val){
 
 	char buffer[33];
 	int hash;
-	memset(buffer,0,33);
 	sprintf(buffer,"%d", *val);
 	hash = str_hash(buffer);
 	return hash;
@@ -87,12 +75,7 @@ int int_hash(int * val){
 
 int hmap_elem_comparer(hashmap_elem * elem1, hashmap_elem * elem2){
 
-	if(elem1 != NULL && elem2 != NULL) {
-		return elem1->equals(elem1->key, elem2->key);
-	}
-	else {
-		return 1;
-	}
+	return elem1->equals(elem1->key, elem2->key);
 
 }
 
@@ -134,7 +117,6 @@ void hmap_init(hashmap * h, char * type , int m_size){
 			h->key_comparer = default_key_comparer;
 		}
 	}
-
 }
 
 void hmap_set_hash(hashmap * h, int (*hashfn) (void * item)){
@@ -149,11 +131,6 @@ void hmap_put(hashmap * h, void * key, void * value){
 	int index;
 	hashmap_elem * new_elem;
 	hashmap_elem * temp;
-
-	if(h == NULL || key == NULL)
-		return;
-
-	
 	
 	index = (abs(h->hash(key)) % h->size);
 	
@@ -162,7 +139,6 @@ void hmap_put(hashmap * h, void * key, void * value){
 	llist_elem * head;
 
 	new_elem = (hashmap_elem *) kmalloc(sizeof(hashmap_elem), GFP_KERNEL);
-	memset(new_elem,0,sizeof(hashmap_elem));
 	new_elem->key = key;
 	new_elem->value = value;
 	new_elem->equals = h->key_comparer;
@@ -170,7 +146,6 @@ void hmap_put(hashmap * h, void * key, void * value){
 	while(head != NULL){
 		if(list->equals(head->item,new_elem) == 0){
 			temp = (hashmap_elem *) head->item;
-			temp->key = key;
 			temp->value = value;
 			kfree(new_elem);
 			return;
@@ -182,43 +157,6 @@ void hmap_put(hashmap * h, void * key, void * value){
 	
 
 	
-
-}
-
-void hmap_put_abs(hashmap * h, int key, void * value){
-	int index;
-	hashmap_elem * new_elem;
-	hashmap_elem * temp;
-
-	if(h == NULL)
-		return;
-
-	
-	
-	index = key % h->size;
-	llist * list;	
-	list = h->head[index];
-	llist_elem * head;
-
-	new_elem = (hashmap_elem *) kmalloc(sizeof(hashmap_elem), GFP_KERNEL);
-	//new_elem->key = NULL;
-	new_elem->key_val = key;
-	new_elem->value = value;
-	new_elem->equals = NULL;
-	head = list->head;
-	while(head != NULL){
-		temp = (hashmap_elem *) head->item;
-		if(temp->key_val == key) {
-		
-			printk(KERN_INFO "HMAP: Updating existing value. Key: %d\n", key);
-			temp->value = value;
-			kfree(new_elem);
-			return;
-		}
-		head = head->next;
-	}
-
-	llist_append(list,new_elem);
 
 }
 
@@ -227,10 +165,6 @@ void* hmap_get(hashmap * h, void * key){
 	int index;
 	hashmap_elem * new_elem;	
 	hashmap_elem * temp;
-
-	if(h == NULL || key == NULL)
-		return NULL;
-
 	index = (abs(h->hash(key)) % h->size);
 	
 	llist * list;	
@@ -246,9 +180,6 @@ void* hmap_get(hashmap * h, void * key){
 		if(list->equals(head->item,new_elem) == 0){
 			kfree(new_elem);
 			temp = (hashmap_elem *) head->item;
-			
-			if(temp->value == NULL)
-				printk(KERN_INFO "HMAP: Value exists but is NULL\n");
 			return temp->value;
 		}
 		head = head->next;
@@ -258,47 +189,10 @@ void* hmap_get(hashmap * h, void * key){
 
 }
 
-void* hmap_get_abs(hashmap * h, int key){
-	
-	int index;
-	hashmap_elem * new_elem;	
-	hashmap_elem * temp;
-
-	if(h == NULL)
-		return NULL;
-
-	index = (key) % h->size;
-	
-	llist * list;	
-	list = h->head[index];
-	llist_elem * head = list->head;
-
-	while(head != NULL){
-		temp = (hashmap_elem *) head->item;
-		if(temp == NULL){
-			head = head->next;
-			printk(KERN_INFO "HMAP: Item is NULL. Key = %d\n", key);
-			continue;
-		}
-		if(temp->key_val ==key) {
-			if(temp->value == NULL)
-				printk(KERN_INFO "HMAP: Value exists but is NULL\n");
-			return temp->value;
-		}
-		head = head->next;
-	}
-
-	return NULL;
-
-}
-
-
 void hmap_remove(hashmap * h, void * key){
 
 	int index,i;
-	hashmap_elem * new_elem;
-	hashmap_elem * temp;
-		
+	hashmap_elem * new_elem;	
 	index = (abs(h->hash(key)) % h->size);
 	llist * list;	
 	list = h->head[index];
@@ -311,8 +205,7 @@ void hmap_remove(hashmap * h, void * key){
 	i = 0;
 	while(head != NULL){
 		if(list->equals(head->item,new_elem) == 0){
-			temp = llist_remove_at(list,i);
-			kfree(temp);
+			llist_remove_at(list,i);
 			kfree(new_elem);
 			return ;
 		}
@@ -322,36 +215,6 @@ void hmap_remove(hashmap * h, void * key){
 	kfree(new_elem);
 
 }
-
-void hmap_remove_abs(hashmap * h, int key){
-
-	int index,i;
-	hashmap_elem * new_elem;
-	hashmap_elem * temp;
-		
-	index = (key) % h->size;
-	llist * list;	
-	list = h->head[index];
-	llist_elem * head = list->head;
-	
-	if(h == NULL)
-		return;
-
-	i = 0;
-	while(head != NULL){
-		temp = (hashmap_elem *) head->item;
-		if(temp->key_val == key) {
-			//llist_remove_at(list,i);
-			//kfree(temp);
-			temp->key_val = 0;
-			return;			
-		}
-		i++;
-		head = head->next;
-	}
-}
-
-
 
 void hmap_destroy(hashmap * h){
 

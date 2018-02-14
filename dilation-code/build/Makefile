@@ -10,7 +10,7 @@ RM:=rm
 all: clean modules
 
 obj-m:= TimeKeeper.o
-TimeKeeper-objs := ../src/core/dilation_module.o ../src/core/general_commands.o ../src/core/sync_experiment.o ../src/core/s3f_sync_experiment.o ../src/core/common.o ../src/core/hooked_functions.o ../src/core/posix-timing.o ../src/utils/hashmap.o ../src/utils/linkedlist.o
+TimeKeeper-objs := ../src/core/dilation_module.o ../src/core/general_commands.o ../src/core/sync_experiment.o ../src/core/s3f_sync_experiment.o ../src/core/common.o ../src/core/hooked_functions.o ../src/utils/hashmap.o ../src/utils/linkedlist.o
 
 modules:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SUBDIR)/build modules 

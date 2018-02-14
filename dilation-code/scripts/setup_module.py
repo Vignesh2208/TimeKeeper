@@ -18,4 +18,3 @@ for line in f:
 f.close()
 tmp.close()
 os.system("mv tmp.c " + scriptDir + "/../src/core/dilation_module.h")
-os.system("sudo chmod 777 " + scriptDir + "/../src/core/dilation_module.h")
