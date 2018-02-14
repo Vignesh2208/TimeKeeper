@@ -223,6 +223,9 @@ extern struct task_group root_task_group;
 	.past_virtual_time 	= 0,					\
 	.wakeup_time	= 0,						\
 	.dialation_lock	= __SPIN_LOCK_UNLOCKED(tsk.dialation_lock),		\
+	.ptrace_mflags = 0,						\
+	.ptrace_msteps = 0,						\
+	.n_ints = 0,							\
 	.real_parent	= &tsk,						\
 	.parent		= &tsk,						\
 	.children	= LIST_HEAD_INIT(tsk.children),			\
