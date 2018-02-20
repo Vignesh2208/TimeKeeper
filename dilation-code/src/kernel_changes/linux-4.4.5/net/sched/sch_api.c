@@ -619,29 +619,7 @@ s64 get_current_dilated_time(struct task_struct *task)
 
 	if(virt_start_time > 0){
 	
-		s32 rem;
-		s64 real_running_time;
-		s64 dilated_running_time;
-		real_running_time = now - virt_start_time;
-		if (freeze_time != 0)
-			temp_past_physical_time = task_past_physical_time + (now - freeze_time);
-		else
-			temp_past_physical_time = task_past_physical_time;
-
-		if (dilation_factor > 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*1000 ,dilation_factor,&rem) + past_virtual_time;
-                    
-			now = dilated_running_time + virt_start_time;
-		}
-		else if (dilation_factor < 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*(dilation_factor*-1),1000,&rem) + past_virtual_time;
-			now =  dilated_running_time + virt_start_time;
-
-		}
-		else {
-			dilated_running_time = (real_running_time - temp_past_physical_time) + past_virtual_time;
-			now = dilated_running_time + virt_start_time;
-		}
+		return freeze_time;
 	
 	}
 

@@ -26,6 +26,7 @@
 #include <linux/netdevice.h>
 #include <asm/siginfo.h>
 #include <net/sock.h>
+#include <linux/errno.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock_types.h>
@@ -39,7 +40,7 @@
 /* user defined headers */
 #include "../utils/linkedlist.h"
 #include "../utils/hashmap.h"
-#include "../../scripts/TimeKeeper_definitions.h"
+#include "timekeeper_cmds.h"
 
 /* Define this macro to enable debug kernel logging in INFO mode*/
 #define TIMEKEEPER_DEBUG_INFO
@@ -50,6 +51,9 @@
 #define DEBUG_LEVEL_NONE 0
 #define DEBUG_LEVEL_INFO 1
 #define DEBUG_LEVEL_VERBOSE 2
+
+#define SUCESS 0
+#define FAIL -1
 
 
 
@@ -160,6 +164,11 @@
 	#endif
 
 #endif
+
+
+typedef unsigned long u32;
+typedef unsigned long long u64;
+typedef unsigned int uint32_t;
 
 
 #endif

@@ -1,24 +1,23 @@
-#include "dilation_module.h"
+#include "module.h"
 
 
-/*
-Contains the code for acquiring the syscall table, as well as the 4 system calls Timekeeper currently hooks.
-*/
-unsigned long **aquire_sys_call_table(void);
 
 
 asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp);
-asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
 asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
-asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
-asmlinkage int (*ref_sys_poll_dialated)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
 asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
-asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
-asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespec __user * tp);
+
+extern asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+extern asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
+extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
+extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
+
 
 
 extern struct list_head exp_list;
-//struct poll_list;
 extern struct poll_list {
     struct poll_list *next;
     int len;
@@ -31,22 +30,22 @@ extern hashmap poll_process_lookup;
 extern hashmap select_process_lookup;
 extern hashmap sleep_process_lookup;
 
-extern int find_children_info(struct task_struct* aTask, int pid);
-extern int kill(struct task_struct *killTask, int sig, struct dilation_task_struct* dilation_task);
+extern int kill(struct task_struct *killTask, int sig);
 extern int experiment_stopped;
 extern int experiment_type;
-extern s64 Sim_time_scale;
-extern s64 expected_increase;
 extern atomic_t n_active_syscalls;
 extern atomic_t experiment_stopping;
-
+extern s64 boottime;
+extern atomic_t is_boottime_set;
+extern wait_queue_head_t expstop_call_proc_wqueue;
 
 extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk);
 extern int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk);
 
+
+
 s64 get_dilated_time(struct task_struct * task)
 {
-	s64 temp_past_physical_time;
 	struct timeval tv;
 	do_gettimeofday(&tv);
 	s64 now = timeval_to_ns(&tv);
@@ -58,32 +57,7 @@ s64 get_dilated_time(struct task_struct * task)
            	task = task->group_leader;
         }
 	
-		s32 rem;
-		s64 real_running_time;
-		s64 dilated_running_time;
-		
-		real_running_time = now - task->virt_start_time;
-		
-		if (task->freeze_time != 0) {
-			temp_past_physical_time = task->past_physical_time + (now - task->freeze_time);		
-		}
-		else{
-		    temp_past_physical_time = task->past_physical_time;
-		    
-		}
-
-		if (task->dilation_factor > 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*1000 ,task->dilation_factor,&rem) + task->past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
-		else if (task->dilation_factor < 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*(task->dilation_factor*-1),1000,&rem) + task->past_virtual_time;
-			now =  dilated_running_time + task->virt_start_time;
-		}
-		else {
-			dilated_running_time = (real_running_time - temp_past_physical_time) + task->past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
+		return task->freeze_time;
 	
 	}
 
@@ -91,96 +65,208 @@ s64 get_dilated_time(struct task_struct * task)
 
 }
 
+
+
+/***
+Hook for system call clock nanosleep
+***/
+asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp) {
+
+	struct task_struct *current_task;
+	s64 now;	
+	s64 wakeup_time;
+	s64 difference;
+	unsigned long flag;
+	struct sleep_helper_struct helper;
+	struct sleep_helper_struct * sleep_helper = &helper;
+	tracer * curr_tracer;
+	current_task = current;
+
+	acquire_irq_lock(&current->dialation_lock,flag);
+	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
+	{		
+		atomic_inc(&n_active_syscalls);				
+		now = get_dilated_time(current);
+		if (flags & TIMER_ABSTIME)
+			wakeup_time = timespec_to_ns(rqtp);
+		else
+			wakeup_time = now + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec); 
+
+		set_current_state(TASK_INTERRUPTIBLE);
+		init_waitqueue_head(&sleep_helper->w_queue);
+		atomic_set(&sleep_helper->done,0);
+		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
+		release_irq_lock(&current->dialation_lock,flags);
+
+		if(wakeup_time > now)
+			difference = wakeup_time - now;
+		else
+			difference = 0;
+
+		curr_tracer = get_tracer_for_task(current);
+
+		if(curr_tracer && difference < curr_tracer->freeze_quantum)
+			goto skip;
+
+		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
+
+		while(now < wakeup_time) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
+			set_current_state(TASK_RUNNING);
+			atomic_set(&sleep_helper->done,0);
+			now = get_dilated_time(current);
+			
+			if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING){
+				kill(current,SIGKILL);
+		    	break;
+			}
+        }
+
+        skip:
+		acquire_irq_lock(&current->dialation_lock,flag);
+		hmap_remove_abs(&sleep_process_lookup, current->pid);
+		release_irq_lock(&current->dialation_lock,flag);
+		atomic_dec(&n_active_syscalls);
+
+		wake_up_interruptible(&expstop_call_proc_wqueue);
+		return 0;
+			
+	} 
+	release_irq_lock(&current->dialation_lock,flag);
+
+    return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
+
+}
+
+/***
+Hook for system call clock_gettime
+***/
+asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespec __user * tp){
+
+	
+	struct timeval ktv;
+	struct task_struct *current_task;
+	s64 now;
+	int ret;
+	struct timespec temp;
+	s64 mono_time;
+	unsigned long flags;
+	struct timeval curr_tv;
+	do_gettimeofday(&curr_tv);
+	s64 undialated_time_ns = timeval_to_ns(&curr_tv);
+	//s64 boottime = 0;
+
+	current_task = current;
+
+	if(which_clock != CLOCK_REALTIME && which_clock != CLOCK_MONOTONIC && which_clock != CLOCK_MONOTONIC_RAW && which_clock != CLOCK_REALTIME_COARSE && which_clock != CLOCK_MONOTONIC_COARSE)
+		return ref_sys_clock_gettime(which_clock,tp);
+
+
+	ret = ref_sys_clock_gettime(CLOCK_MONOTONIC,tp);
+	if(copy_from_user(&temp,tp,sizeof(tp)))
+		return -EFAULT;
+
+	mono_time = timespec_to_ns(&temp);
+	if(atomic_read(&is_boottime_set) == 0) {
+		atomic_set(&is_boottime_set,1);	
+		boottime = undialated_time_ns - mono_time;
+	}
+
+	acquire_irq_lock(&current->dialation_lock,flags);
+	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
+	{	
+
+		
+		release_irq_lock(&current->dialation_lock,flags);
+		now = get_dilated_time(current);
+		//now = now - boottime;
+		struct timespec tempStruct = ns_to_timespec(now);
+		if(copy_to_user(tp, &tempStruct, sizeof(tempStruct)))
+			return -EFAULT;
+		return 0;						
+	}
+	release_irq_lock(&current->dialation_lock,flags);
+
+	return ref_sys_clock_gettime(which_clock,tp);
+
+}
+
+
+
 /***
 Hooks the sleep system call, so the process will wake up when it reaches the experiment virtual time,
 not the system time
 ***/
 asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp) {
-	struct list_head *pos;
-	struct list_head *n;
-	struct dilation_task_struct* task;
-	struct dilation_task_struct *dilTask;
+	
 	struct timeval ktv;
 	struct task_struct *current_task;
 	s64 now;
-	s64 now_new;
-	s32 rem;
-	s64 real_running_time;
-	s64 dilated_running_time;
+	s64 difference, err;
 	current_task = current;
 	unsigned long flags;
 	int ret;
 	int is_dialated = 0;
 	struct sleep_helper_struct helper;	
 	struct sleep_helper_struct * sleep_helper = &helper;
-	struct list_head *list;
-    struct task_struct *taskRecurse;
-
+	tracer * curr_tracer;
 	
 
 	acquire_irq_lock(&current->dialation_lock,flags);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && atomic_read(&experiment_stopping) == 0)
 	{		
 		atomic_inc(&n_active_syscalls);
-		is_dialated = 1;
     	do_gettimeofday(&ktv);
-		now = timeval_to_ns(&ktv);			
-		now_new = get_dilated_time(current);
+		now = get_dilated_time(current);
 
 		init_waitqueue_head(&sleep_helper->w_queue);
 		atomic_set(&sleep_helper->done,0);
 		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 		
-		s64 wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale;
+		s64 wakeup_time = now + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec);
+
+
+		if(wakeup_time > now)
+			difference = wakeup_time - now;
+		else
+			difference = 0;
+
+		curr_tracer = get_tracer_for_task(current);
+
+		if(curr_tracer && difference < curr_tracer->freeze_quantum)
+			goto skip_sleep;
+
 		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, rqtp->tv_sec, rqtp->tv_nsec, wakeup_time); 
 		
-		while(now_new < wakeup_time) {
+		while(now < wakeup_time) {
 			set_current_state(TASK_INTERRUPTIBLE);
 			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&sleep_helper->done,0);
 			
-			now_new = get_dilated_time(current);
-			if(now_new < wakeup_time){  			
-			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0){
-					kill(current,SIGCONT,NULL);
-					list_for_each(list, &current->children)
- 		   			{
-            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
-						if (taskRecurse!= NULL &&taskRecurse->pid == 0) {
-							    continue;
-						}
-						//taskRecurse->freeze_time = 0;
-						/* Let other children use the cpu */
-						if(taskRecurse != NULL)
-						kill(taskRecurse, SIGCONT, NULL); 
-					}   
-				}
-			}
-
-		    
-		    if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING)
+			now = get_dilated_time(current);
+		    if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING){
+		    	kill(current, SIGKILL);
 		    	break;
+		    }
 		    
-			
         }
+
+        skip_sleep:
+
 		acquire_irq_lock(&current->dialation_lock,flags);
 		hmap_remove_abs(&sleep_process_lookup,current->pid);
 		release_irq_lock(&current->dialation_lock,flags);		
 
-		s64 diff = 0;
-		diff = now_new - wakeup_time;
-		PDEBUG_V("Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+		
+		err = now - wakeup_time;
+		PDEBUG_V("Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Overshoot error = %llu\n",current->pid, now, err );
 		
 		atomic_dec(&n_active_syscalls);
+		wake_up_interruptible(&expstop_call_proc_wqueue);
 		return 0; 
-		
-		revert_sleep:
-		release_irq_lock(&current->dialation_lock,flags);
-		atomic_dec(&n_active_syscalls);
-		
-		return 0;
 	} 
 	
 	
@@ -193,18 +279,9 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp){
 
 
-	struct list_head *pos;
-	struct list_head *n;
-	struct dilation_task_struct* task;
-	struct dilation_task_struct *dilTask;
 	struct timeval ktv;
 	struct task_struct *current_task;
 	s64 now;
-	s64 now_new;
-	s32 rem;
-	s64 real_running_time;
-	s64 dilated_running_time;
-	current_task = current;
 	struct timespec end_time, *to = NULL;
 	int ret;
 	int err = -EFAULT, fdcount, len, size;
@@ -221,8 +298,10 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	int is_dialated = 0;
 	struct select_helper_struct  helper;
 	struct select_helper_struct * select_helper = &helper;
-	struct list_head *list;
-    struct task_struct *taskRecurse;	
+	tracer * curr_tracer;
+
+
+	current_task = current;
 	
 	rcu_read_lock();
 	fdt = files_fdtable(current->files);
@@ -244,7 +323,11 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		secs_to_sleep = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
 		nsecs_to_sleep = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
 		time_to_sleep = (secs_to_sleep*1000000000) + nsecs_to_sleep;
-		if(experiment_type != CS && time_to_sleep < expected_increase)
+
+		curr_tracer = get_tracer_for_task(current);
+
+
+		if(curr_tracer && time_to_sleep < curr_tracer->freeze_quantum)
 			goto revert_select;
 		    
 
@@ -295,20 +378,17 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		release_irq_lock(&current->dialation_lock,flags);
 		
 		do_gettimeofday(&ktv);
-		now = timeval_to_ns(&ktv);	
-		now_new = get_dilated_time(current);
+		now = get_dilated_time(current);
 		s64 wakeup_time;
 		
 		
-		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 	
+		wakeup_time = now + ((secs_to_sleep*1000000000) + nsecs_to_sleep); 	
 		PDEBUG_V("Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
 		
 		while(1){
 			
 			set_current_state(TASK_INTERRUPTIBLE);
-			if(now_new < wakeup_time){
-			
-			
+			if(now < wakeup_time){
 				if(atomic_read(&select_helper->done) != 0) {							
 					atomic_set(&select_helper->done,0);	
 					ret = do_dialated_select(select_helper->n,&select_helper->fds,current);
@@ -319,49 +399,27 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 				}
 				wait_event(select_helper->w_queue,atomic_read(&select_helper->done) != 0);
 				set_current_state(TASK_RUNNING);		
-
-
 			}
-			
-			
-			now_new = get_dilated_time(current);
-			if(now_new < wakeup_time) {
-				acquire_irq_lock(&current->dialation_lock,flags);	
-			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0) {
-			        kill(current,SIGCONT,NULL);
-			        list_for_each(list, &current->children)
- 		   			{
-            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
-						if (taskRecurse != NULL && taskRecurse->pid == 0) {
-							    continue;
-						}
-						//taskRecurse->freeze_time = 0;
-						/* Let other children use the cpu */
-						if(taskRecurse != NULL)
-						kill(taskRecurse, SIGCONT, NULL); 
-					}
-			        
-				}
-			    release_irq_lock(&current->dialation_lock,flags);
-			}
-			else{
+			now = get_dilated_time(current);
+			if(now > wakeup_time){
 				select_helper->ret = 0;
 			    break;
 			}
-		}		
+		}
+
 		acquire_irq_lock(&current->dialation_lock,flags);	
 		hmap_remove_abs(&select_process_lookup, current->pid);
 		release_irq_lock(&current->dialation_lock,flags);
 		
 		s64 diff = 0;
-		if(wakeup_time >  now_new){
-			diff = wakeup_time - now_new; 
-			PDEBUG_V("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+		if(wakeup_time >  now){
+			diff = wakeup_time - now; 
+			PDEBUG_V("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Overshoot error = %llu\n",current->pid, now_new,diff );
 
 		}
 		else{
-			diff = now_new - wakeup_time;
-			PDEBUG_V("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			diff = now - wakeup_time;
+			PDEBUG_V("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Undershoot error = %llu\n",current->pid, now_new,diff );
 		}		 
 		
 		ret = select_helper->ret;
@@ -385,11 +443,16 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		out_nofds:
 		PDEBUG_V("Sys Select: Select finished PID %d\n",current->pid);
 		atomic_dec(&n_active_syscalls);
+		wake_up_interruptible(&expstop_call_proc_wqueue);
+		if(atomic_read(&experiment_stopping) == 1)
+			kill(current, SIGKILL);
 		return ret;
 		
 		revert_select:
 		release_irq_lock(&current->dialation_lock,flags);	
 		atomic_dec(&n_active_syscalls);
+
+		wake_up_interruptible(&expstop_call_proc_wqueue);
 		
 		return ref_sys_select(k,inp,outp,exp,tvp);
 	}
@@ -400,18 +463,10 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs){
 
-	struct list_head *pos;
-	struct list_head *n;
-	struct dilation_task_struct* task;
-	struct dilation_task_struct *dilTask;
 	struct timeval ktv;
 	struct task_struct *current_task;
 	s64 now;
-	s64 now_new;
-	s32 rem;
-	s64 real_running_time;
-	s64 dilated_running_time;
-	current_task = current;
+
 	struct timespec end_time, *to = NULL;
 	int ret;
 	int err = -EFAULT, fdcount, len, size;
@@ -424,11 +479,9 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	int is_dialated = 0;
 	struct poll_helper_struct helper;
 	struct poll_helper_struct * poll_helper =  &helper;
-	struct list_head *list;
-    struct task_struct *taskRecurse;
+	tracer * curr_tracer;
 	
-
-	
+	current_task = current;
 	acquire_irq_lock(&current->dialation_lock,flags);
 	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs >= 0 && atomic_read(&experiment_stopping) == 0){
 	
@@ -438,8 +491,11 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		secs_to_sleep = timeout_msecs / MSEC_PER_SEC;
 		nsecs_to_sleep = (timeout_msecs % MSEC_PER_SEC) * NSEC_PER_MSEC;
 		time_to_sleep = (secs_to_sleep*1000000000) + nsecs_to_sleep;
-		if(experiment_type != CS && time_to_sleep < expected_increase)
-	        goto revert_poll;
+		
+
+		curr_tracer = get_tracer_for_task(current);
+		if(curr_tracer && time_to_sleep < curr_tracer->freeze_quantum)
+			goto revert_poll;
 		    
 		if (nfds > RLIMIT_NOFILE){
 			PDEBUG_E("Sys Poll: Poll Process Invalid");
@@ -501,19 +557,16 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		}
 		poll_initwait(poll_helper->table);
 		do_gettimeofday(&ktv);
-		now = timeval_to_ns(&ktv);	
-		now_new = get_dilated_time(current);
+		now = get_dilated_time(current);
 		s64 wakeup_time;
-		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
+		wakeup_time = now + ((secs_to_sleep*1000000000) + nsecs_to_sleep); 
 		PDEBUG_V("Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
 		hmap_put_abs(&poll_process_lookup,current->pid,poll_helper);			
 		release_irq_lock(&current->dialation_lock,flags);
 
 		while(1){
             set_current_state(TASK_INTERRUPTIBLE);	
-			if(now_new < wakeup_time){
-			
-			
+			if(now < wakeup_time){			
 				if(atomic_read(&poll_helper->done) != 0){
 		            atomic_set(&poll_helper->done,0);	
 				    err = do_dialated_poll(poll_helper->nfds, poll_helper->head,poll_helper->table,current);
@@ -524,31 +577,11 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 				}		
     			wait_event(poll_helper->w_queue,atomic_read(&poll_helper->done) != 0);    			
 		        set_current_state(TASK_RUNNING);        
-		        
-
 			}
 		
 			
-			now_new = get_dilated_time(current);
-			if(now_new < wakeup_time) {
-				acquire_irq_lock(&current->dialation_lock,flags);
-			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0) {
-			        kill(current,SIGCONT,NULL);
-					list_for_each(list, &current->children)
- 		   			{
-            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
-						if (taskRecurse != NULL && taskRecurse->pid == 0) {
-							    continue;
-						}
-						//taskRecurse->freeze_time = 0;
-						/* Let other children use the cpu */
-						if(taskRecurse != NULL)
-						kill(taskRecurse, SIGCONT, NULL); 
-					}
-				}				
-			    release_irq_lock(&current->dialation_lock,flags);		
-			}
-			else{
+			now = get_dilated_time(current);
+			if(now > wakeup_time){
 			    poll_helper->err = 0;
 			    break;
 			}
@@ -560,13 +593,13 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		release_irq_lock(&current->dialation_lock,flags);
 
 		s64 diff = 0;
-		if(wakeup_time > now_new){
-			diff = wakeup_time - now_new; 
+		if(wakeup_time > now){
+			diff = wakeup_time - now; 
 			PDEBUG_V("Sys Poll: Resumed Poll Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 
 		}
 		else{
-			diff = now_new - wakeup_time;
+			diff = now - wakeup_time;
 			PDEBUG_V("Sys Poll: Resumed Poll Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 
 		}
@@ -593,13 +626,19 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		kfree(head);
 		kfree(poll_helper->table);		
 		PDEBUG_V("Sys Poll: Poll Process Finished %d",current->pid);
-		atomic_dec(&n_active_syscalls);			
+		atomic_dec(&n_active_syscalls);	
+
+		wake_up_interruptible(&expstop_call_proc_wqueue);
+		if(atomic_read(&experiment_stopping) == 1)
+			kill(current, SIGKILL);		
 		return err;
 		
 		
 		revert_poll:
 		release_irq_lock(&current->dialation_lock,flags);	
 		atomic_dec(&n_active_syscalls);
+
+		wake_up_interruptible(&expstop_call_proc_wqueue);
    			
    		return ref_sys_poll(ufds,nfds,timeout_msecs);
 
@@ -607,11 +646,8 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	
    	release_irq_lock(&current->dialation_lock,flags);	
     return ref_sys_poll(ufds,nfds,timeout_msecs);
-	
-
-
-
 }
+
 
 
 /***
@@ -631,4 +667,3 @@ unsigned long **aquire_sys_call_table(void)
         }
         return NULL;
 }
-

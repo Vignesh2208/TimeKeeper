@@ -170,64 +170,6 @@ union tpacket_uhdr {
 extern struct pid * find_vpid(int);
 extern s64 get_current_dilated_time(struct task_struct *);
 
-/*
-s64 get_current_dilated_time(struct task_struct *task)
-{
-	s64 temp_past_physical_time;
-	struct timeval tv;
-	s64 virt_start_time;
-	s64 freeze_time;
-	s64 task_past_physical_time;
-	s64 past_virtual_time;
-	int dilation_factor;
-	s64 now;
-
-	do_gettimeofday(&tv);
-	now = timeval_to_ns(&tv);
-
-	if(task == NULL)
-		return now;
-
-
-	virt_start_time = task->virt_start_time;
-	freeze_time = task->freeze_time;
-	task_past_physical_time = task->past_physical_time;
-	past_virtual_time = task->past_virtual_time;
-	dilation_factor = task->dilation_factor;
-	
-
-	if(virt_start_time > 0){
-	
-		s32 rem;
-		s64 real_running_time;
-		s64 dilated_running_time;
-		real_running_time = now - virt_start_time;
-		if (freeze_time != 0)
-			temp_past_physical_time = task_past_physical_time + (now - freeze_time);
-		else
-			temp_past_physical_time = task_past_physical_time;
-
-		if (dilation_factor > 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*1000 ,dilation_factor,&rem) + past_virtual_time;
-                    
-			now = dilated_running_time + virt_start_time;
-		}
-		else if (dilation_factor < 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*(dilation_factor*-1),1000,&rem) + past_virtual_time;
-			now =  dilated_running_time + virt_start_time;
-
-		}
-		else {
-			dilated_running_time = (real_running_time - temp_past_physical_time) + past_virtual_time;
-			now = dilated_running_time + virt_start_time;
-
-		}
-	
-	}
-
-	return now;
-
-}*/
 
 static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		int closing, int tx_ring);

@@ -1584,37 +1584,7 @@ s64 curr_dilated_time(void)
                        	task = task->group_leader;
                	}
 
-		s64 ppp = task->past_physical_time;
-		s64 past_virtual_time = task->past_virtual_time;
-		s64 freeze_time = task->freeze_time;
-
-		//spin_lock_irqsave(&task->dialation_lock,flags);
-		if(freeze_time == 0){
-			real_running_time = now - task->virt_start_time;
-			temp_past_physical_time = ppp;
-		}
-		else{
-			real_running_time = freeze_time - task->virt_start_time;	
-			temp_past_physical_time = ppp + (now - freeze_time);
-		}
-
-		//overriding
-		real_running_time = now - task->virt_start_time;
-
-		if (task->dilation_factor > 0) {
-			dilated_running_time = div_s64_rem((real_running_time - temp_past_physical_time)*1000 ,task->dilation_factor,&rem) + past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
-		else if (task->dilation_factor < 0) {
-			dilated_running_time = div_s64_rem((real_running_time - temp_past_physical_time)*(task->dilation_factor*-1),1000,&rem) + past_virtual_time;
-			now =  dilated_running_time + task->virt_start_time;
-		}
-		else {
-			dilated_running_time = (real_running_time - temp_past_physical_time) + past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
-
-		//spin_unlock_irqrestore(&task->dialation_lock,flags);
+		return task->freeze_time;
 	
 	}
 	return now;	
