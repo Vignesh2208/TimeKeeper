@@ -63,6 +63,7 @@ int * values;
 
 /***
 * Progress experiment for specified number of rounds
+* write_buffer: <number of rounds>
 ***/
 int progress_exp_fixed_rounds(char * write_buffer){
 
@@ -245,7 +246,9 @@ int cleanup_experiment_components(){
 
 }
 
-
+/***
+*	write_buffer: <expected number of registered tracers>
+**/ 
 int sync_and_freeze(char * write_buffer) {
 
 	int i;

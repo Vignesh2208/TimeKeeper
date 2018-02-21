@@ -240,6 +240,9 @@ void refresh_tracer_schedule_queue(tracer * tracer_entry){
 }
 
 
+/**
+* write_buffer: <dilation_factor>,<tracer freeze_quantum>
+**/
 int register_tracer_process(char * write_buffer){
 	//Tracer will register itself by specifying the dilation factor
 	u32 dilation_factor = 0;
@@ -318,6 +321,10 @@ int register_tracer_process(char * write_buffer){
 
 
 }
+
+/**
+* write_buffer: <tracer_pid>,<dilation_factor>,<tracer freeze_quantum>
+**/
 
 int update_tracer_params(char * write_buffer){
 
@@ -442,6 +449,10 @@ void update_all_tracers_virtual_time(int cpuID){
 }
 
 
+/**
+* write_buffer: comma separated list of ignored pids or zero if none
+**/
+
 int handle_tracer_results(char * write_buffer){
 
 	int result = 0 ;
@@ -459,18 +470,18 @@ int handle_tracer_results(char * write_buffer){
 		result = atoi(buffer + next_idx);
 		next_idx = get_next_value(buffer + next_idx);
 
-		if(result == 0)
+		if(result <= 0)
 			break;
 
-		curr_elem = hmap_get_abs(&curr_tracer->valid_children, current->pid);
+		curr_elem = hmap_get_abs(&curr_tracer->valid_children, result);
 		if(curr_elem){
 
 			pid_struct = find_get_pid(curr_elem->pid); 	 
 			task = pid_task(pid_struct,PIDTYPE_PID); 
 
 			if(task != NULL)
-				hmap_put_abs(&curr_tracer->ignored_children, current->pid, task);
-			hmap_remove_abs(&curr_tracer->valid_children, current->pid);
+				hmap_put_abs(&curr_tracer->ignored_children, result, task);
+			hmap_remove_abs(&curr_tracer->valid_children, result);
 		}
 
 	}
@@ -478,6 +489,8 @@ int handle_tracer_results(char * write_buffer){
 	signal_cpu_worker_resume(curr_tracer);
 	return SUCCESS;
 }
+
+
 
 int handle_stop_exp_cmd(){
 
@@ -488,6 +501,10 @@ int handle_stop_exp_cmd(){
 	return cleanup_experiment_components();
 }
 
+
+/**
+* write_buffer: <tracer_pid>,network device name
+**/
 int handle_set_netdevice_owner_cmd(char * write_buffer){
 
 
@@ -561,6 +578,9 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
 	return SUCCESS;
 }
 
+/**
+* write_buffer: <pid> of process
+**/
 int handle_getttimepid(char * write_buffer){
 
 	struct pid *pid_struct;
@@ -573,7 +593,6 @@ int handle_getttimepid(char * write_buffer){
 	    if(task != NULL) {
 	        if(task->pid == pid) {
 	        	 return get_dilated_time(task);
-	     	     break;
 	        }
 	    }
 	}
