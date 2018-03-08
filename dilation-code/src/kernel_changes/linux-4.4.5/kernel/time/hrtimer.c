@@ -56,12 +56,22 @@
 
 #include "tick-internal.h"
 
+ktime_t get_curr_dilated_time(void);
+
 /** TK specific code begin **/
 //From init task freeze_time which is expected to be updated by TK after every round
-ktime_t get_current_dilated_time(){
+ktime_t get_curr_dilated_time(void){
 
+	struct timeval ktv;
 	ktime_t tmp;
-	tmp.tv64 = init_task->freeze_time;
+
+	do_gettimeofday(&ktv);
+	if(init_task.freeze_time == 0){
+		tmp.tv64 = timeval_to_ns(&ktv);;
+	}
+	else{
+		tmp.tv64 = init_task.freeze_time;
+	}
 	return tmp;
 }
 
@@ -84,7 +94,7 @@ EXPORT_SYMBOL_GPL(get_cpu_base);
 
 static ktime_t __dilated_hrtimer_get_next_event(struct hrtimer_cpu_base *cpu_base)
 {
-	struct hrtimer_dilated_clock_base *base = cpu_base->dilated_clock_base;
+	struct hrtimer_dilated_clock_base *base = &cpu_base->dilated_clock_base;
 	ktime_t expires_next = { .tv64 = KTIME_MAX };
 	unsigned int active = base->clock_active;
 
@@ -96,7 +106,7 @@ static ktime_t __dilated_hrtimer_get_next_event(struct hrtimer_cpu_base *cpu_bas
 
 	next = timerqueue_getnext(&base->active);
 	timer = container_of(next, struct hrtimer_dilated, node);
-	expires_next = timer._softexpires;
+	expires_next = timer->_softexpires;
 	
 	if (expires_next.tv64 < 0)
 		expires_next.tv64 = 0;
@@ -203,7 +213,7 @@ void dilated_hrtimer_start_range_ns(struct hrtimer_dilated *timer, ktime_t expir
 	unsigned long flags;
 	int leftmost;
 	struct hrtimer_cpu_base * cpu_base = base->cpu_base;
-	ktimet_t expires_next;
+	ktime_t expires_next;
 
 	
 	raw_spin_lock_irqsave(&cpu_base->lock, flags);
@@ -214,7 +224,7 @@ void dilated_hrtimer_start_range_ns(struct hrtimer_dilated *timer, ktime_t expir
 	if (mode & HRTIMER_MODE_REL)
 		expiry_time = ktime_add_safe(expiry_time, base->get_time());
 
-	timer._softexpires = expiry_time;
+	timer->_softexpires = expiry_time;
 	leftmost = enqueue_dilated_hrtimer(timer, base);
 	if (!leftmost)
 		goto unlock;
@@ -280,7 +290,7 @@ EXPORT_SYMBOL_GPL(dilated_hrtimer_try_to_cancel);
 int dilated_hrtimer_cancel(struct hrtimer_dilated *timer)
 {
 	for (;;) {
-		int ret = hrtimer_try_to_cancel(timer);
+		int ret = dilated_hrtimer_try_to_cancel(timer);
 
 		if (ret >= 0)
 			return ret;
@@ -295,7 +305,7 @@ static void __run_dilated_hrtimer(struct hrtimer_cpu_base *cpu_base,
 			  struct hrtimer_dilated_clock_base *base,
 			  struct hrtimer_dilated *timer)
 {
-	enum hrtimer_restart (*fn)(struct hrtimer *);
+	enum hrtimer_restart (*fn)(struct hrtimer_dilated *);
 	int restart;
 
 	lockdep_assert_held(&cpu_base->lock);
@@ -314,7 +324,7 @@ static void __run_dilated_hrtimer(struct hrtimer_cpu_base *cpu_base,
 	    !(timer->state & HRTIMER_STATE_ENQUEUED))
 		enqueue_dilated_hrtimer(timer, base);
 
-	cpu->base->running_dilated_timer = NULL;
+	cpu_base->running_dilated_timer = NULL;
 }
 
 static void __dilated_hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktime_t now)
@@ -363,7 +373,7 @@ void dilated_hrtimer_run_queues(int cpu)
 	curr_virt_time = cpu_base->dilated_clock_base.get_time();
 	raw_spin_lock(&cpu_base->lock);
 
-	if(cpu_base->nxt_dilated_expiry && cpu_base->nxt_dilated_expiry.tv64 > curr_virt_time.tv64)
+	if(cpu_base->nxt_dilated_expiry.tv64 != 0 && cpu_base->nxt_dilated_expiry.tv64 > curr_virt_time.tv64)
 		goto skip;
 
 	__dilated_hrtimer_run_queues(cpu_base, curr_virt_time);
@@ -417,17 +427,12 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 		},
 	},
 	.dilated_clock_base = 
-	{
-		{
-			.clock_active = 0;
-			.get_time = &get_current_dilated_time,
-
-		}
+	{	
+		.clock_active = 0,
+		.get_time = &get_curr_dilated_time,
 	},
 	.nxt_dilated_expiry =  {
-		{
-			.tv64 = 0;
-		}
+			.tv64 = 0,
 	},
 	.running_dilated_timer = NULL,
 };
@@ -1955,7 +1960,7 @@ static void init_hrtimers_cpu(int cpu)
 	timerqueue_init_head(&cpu_base->dilated_clock_base.active);
 	cpu_base->dilated_clock_base.cpu_base = cpu_base;
 	cpu_base->nxt_dilated_expiry.tv64 = 0;
-	cpu_base->nxt_dilated_timer = NULL;
+	cpu_base->running_dilated_timer = NULL;
 
 }
 

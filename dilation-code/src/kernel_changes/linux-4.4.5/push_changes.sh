@@ -12,3 +12,5 @@ echo Copying $SRC_FILE to $DST_DIR
 mkdir -p $DST_DIR
 cp -v $SRC_FILE $DST_DIR
 done
+
+echo "" > differences.txt

@@ -120,6 +120,7 @@ struct hrtimer_dilated {
 	struct hrtimer_dilated_clock_base	*base;
 	u8 active;
 	u8	is_rel;
+	u8 state;
 
 };
 

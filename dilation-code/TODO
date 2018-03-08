@@ -1,0 +1,15 @@
+
+1. There is some weird nvidid-384 module build error during compilation  which can be read in this file:
+/var/lib/dkms/nvidia-384/384.111/build/make.log
+
+The error states:
+
+DKMS make.log for nvidia-384-384.111 for kernel 4.4.5-dilated (x86_64)
+Thu Mar  8 16:38:44 CST 2018
+Makefile:19: /Kbuild: No such file or directory
+make[3]: *** No rule to make target '/Kbuild'.  Stop
+
+
+
+2. There is also a forking problem which occurs during compilation. It causes fork() resource to be temporarily unavailable sometimes. 
+Need to check if this is because of any of the kernel modifications.
