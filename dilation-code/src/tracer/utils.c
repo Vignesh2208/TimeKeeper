@@ -1,16 +1,54 @@
 #include "utils.h"
 
+
+
+
+
+
+/***
+ Convert string to integer
+***/
+int str_to_i(char *s)
+{
+        int i,n;
+        n = 0;
+        for(i = 0; *(s+i) >= '0' && *(s+i) <= '9'; i++)
+                n = 10*n + *(s+i) - '0';
+        return n;
+}
+
+/***
+Used when reading the input from a userland process -> the TimeKeeper. Will basically return the next number in a string
+***/
+int get_next_value (char *write_buffer)
+{
+        int i;
+        for(i = 1; *(write_buffer+i) >= '0' && *(write_buffer+i) <= '9'; i++)
+        {
+                continue;
+        }
+
+        if(write_buffer[i] == '\0')
+        	return -1;
+
+        if(write_buffer[i+1] == '\0')
+        	return -1;
+
+        return (i + 1);
+}
+
+
 void print_tracee_list(llist * tracee_list) {
 
 	llist_elem * head = tracee_list->head;
 	tracee_entry * tracee;
-	printf("Active tracees: ");
+	LOG("Active tracees: ");
 	while(head != NULL) {
 		tracee = (tracee_entry *) head->item;
-		printf("%d->",tracee->pid);
+		LOG("%d->",tracee->pid);
 		head = head->next;
 	}
-	printf("\n");
+	LOG("\n");
 }
 
 
@@ -42,7 +80,7 @@ void print_curr_time(char * str) {
   tm_info = localtime(&tv.tv_sec);
 
   strftime(buffer, 26, "%Y:%m:%d %H:%M:%S", tm_info);
-  fprintf(stderr, "%s.%03d >> %s\n", buffer, millisec, str);
+  LOG("%s.%03d >> %s\n", buffer, millisec, str);
   fflush(stdout);
 
 
@@ -79,7 +117,7 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 	args = malloc(sizeof(char *)*(n_tokens + 2));
 	
 	if(!args) {
-		printf("Malloc error\n");
+		LOG("Malloc error in run_command\n");
 		exit(-1);
 	}
 	args[n_tokens + 1] = NULL;
@@ -111,7 +149,7 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 	
 	child = fork();
     	if (child == (pid_t)-1) {
-        	fprintf(stderr, "fork() failed: %s.\n", strerror(errno));
+        	LOG("fork() failed in run_command: %s.\n", strerror(errno));
         	exit(-1);
     	}
 
@@ -143,7 +181,7 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 
 
 
-
+#ifdef TEST
 void get_next_command(int sockfd, struct sockaddr_nl* dst_addr, struct msghdr* msg, struct nlmsghdr* nlh, pid_t* pid, u32* n_insns){
 
 	char * payload = NULL;
@@ -167,14 +205,52 @@ void get_next_command(int sockfd, struct sockaddr_nl* dst_addr, struct msghdr* m
 				payload[i] = '\0';
 				*pid = atoi(payload);
 				*n_insns = atoi(payload + i + 1);
-				//printf("Pid = %d, n_insns = %d\n", *pid, *n_insns);
 				break;
 			}
 			i = i + 1;
 		}
 	}
 	else{
-		printf("No payload received\n");	
+		LOG("No payload received\n");
+	}
+
+}
+#endif
+
+int get_next_command_tuple(char * buffer, int resume_ptr, pid_t * pid, u32 * n_insns){
+
+
+	int i = resume_ptr;
+	int nxt_idx = 0;
+	if(strcmp(buffer + resume_ptr, "STOP") == 0 || resume_ptr < 0){
+		*pid = -1;
+		*n_insns = 0;
+		return -1;
+	}
+
+	*pid = 0;
+	*n_insns = 0;
+
+	if(buffer[i] != '|' || buffer[i] == '\0')
+		return -1;
+
+	*pid = str_to_i(buffer + i + 1);
+
+	nxt_idx = get_next_value(buffer + i);
+
+	if(nxt_idx == -1){
+		*pid = 0;
+		*n_insns = 0;
+		return -1;
+	}
+	else{
+		nxt_idx = nxt_idx + i;
+		*n_insns = str_to_i(buffer + nxt_idx);
+
+		resume_ptr = nxt_idx + get_next_value(buffer + nxt_idx);
+		resume_ptr = resume_ptr - 1;
+		return resume_ptr;
+	
 	}
 
 }

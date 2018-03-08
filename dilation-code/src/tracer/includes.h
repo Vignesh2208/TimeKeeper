@@ -31,11 +31,13 @@
 #include <poll.h>
 #include <linux/perf_event.h>
 #include "libperf/src/libperf.h"
+#include <stdarg.h>
 
 
 #define NETLINK_USER 31
 #define MAX_PAYLOAD 1024 /* maximum payload size*/
 #define EBREAK_SYSCALL 35
+#define MAX_FNAME_SIZ 100
 
 #define TID_EXITED 0
 #define TID_SYSCALL_ENTER 1
@@ -76,6 +78,17 @@ typedef struct tracee_entry_struct {
 	struct tracee_entry_struct * vfork_parent;
 
 } tracee_entry;
+
+
+void printLog(const char *fmt, ...);
+
+
+#if defined DEBUG
+#define LOG(...)    printLog(__VA_ARGS__)
+#else
+#define LOG(...)	printLog(__VA_ARGS__)
+#endif
+
 
 
 #endif

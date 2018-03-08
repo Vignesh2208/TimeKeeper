@@ -7,33 +7,21 @@ RM:=rm
 .PHONY : clean
 nCpus=$(shell lscpu | grep "CPU(s):" | awk -F ' ' '{print $$2}')
 
-all: clean_all modules timekeeper_scripts
+all: clean_all modules
 
-clean_all: clean_build clean_scripts
+clean_all: clean_build clean_core clean_utils clean_api clean_tracer
 
-build: clean_build timekeeper_scripts modules
+build: clean_all modules
 
-setup_4_4_kernel: timekeeper_scripts download_4_4_kernel
+setup_4_4_kernel: download_4_4_kernel
 
 download_4_4_kernel:
-	@cd src/kernel_changes/linux-4.4.5; ./setup.sh
+	pushd src/kernel_changes/linux-4.4.5
+	./setup.sh
+	popd
+	
 
-setup_3_1_kernel: timekeeper_scripts download_3_1_kernel
-
-download_3_1_kernel:
-	@cd src/kernel_changes/linux-3.13.1; ./setup.sh;
-
-
-timekeeper_scripts:
-	@echo "Compiling TimeKeeper helper scripts ..."
-	@cd scripts; make;
-
-clean_scripts:
-	@echo "Cleaning old TimeKeeper helper scripts ..."
-	@cd scripts; make clean;	
-
-modules:
-	@python scripts/setup_module.py $(nCpus); 
+modules: 
 	$(MAKE) -C $(KERNEL_SRC) M=$(SUBDIR)/build modules 
 
 install:
@@ -45,7 +33,25 @@ uninstall:
 
 clean_build:
 	@echo "Cleaning old TimeKeeper build files ..."
-	@$(RM) -f build/*.ko build/*.o src/core/*.o src/utils/*.o build/*.mod.c build/Module.symvers build/modules.order;
+	@$(RM) -f build/*.ko build/*.o build/*.mod.c build/Module.symvers build/modules.order ;
 
 
+clean_core:
+	@echo "Cleaning old TimeKeeper core files ..."
+	@$(RM) -f src/core/*.o 	
+
+clean_utils:
+	@echo "Cleaning old TimeKeeper utils files ..."
+	@$(RM) -f src/utils/*.o 	
+
+clean_api:
+	@echo "Cleaning old TimeKeeper api files ..."
+	@$(RM) -f src/api/*.o 	
+
+clean_tracer:
+	@echo "Cleaning tracer files ..."
+	@$(RM) -f src/tracer/*.o src/tracer/utils/*.o src/tracer/tests/*.o
+	pushd src/tracer/libperf
+	make clean
+	popd
 

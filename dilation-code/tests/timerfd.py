@@ -41,7 +41,7 @@ if args.sec:
 	time_sec = int(args.sec)
 
 print >>sys.stderr, '\n**** Time Slice :',  time_sec
-curr_cmd =  "./ttimerfd " + str(time_sec) + " "+ str(time_nsec)
+curr_cmd =  "./bin/ttimerfd " + str(time_sec) + " "+ str(time_nsec)
 print >>sys.stderr,   curr_cmd
 
 #os.system(curr_cmd)

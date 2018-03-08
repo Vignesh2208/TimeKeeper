@@ -26,7 +26,7 @@
 #include "libperf.h"  /* standard libperf include */
 #include <poll.h>
 #include <linux/perf_event.h>
-#include "../libperf/src/libperf.h"
+#include "../../libperf/src/libperf.h"
 #include <stdlib.h>
 struct sched_param param;
 

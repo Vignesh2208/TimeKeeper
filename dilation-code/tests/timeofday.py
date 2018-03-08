@@ -35,7 +35,7 @@ print >>sys.stderr, '\n**** Time Slice :',  time_slice
 while 1:
 	time.sleep(time_slice)
 	
-	os.system("./gtod > /tmp/tm")
+	os.system("./bin/gtod > /tmp/tm")
 	if log_file == None :
 		print datetime.now()
 	else:

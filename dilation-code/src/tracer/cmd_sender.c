@@ -33,9 +33,9 @@ void init_msg_buffer(struct nlmsghdr *nlh, struct sockaddr_nl * dst_addr) {
 }
 
 
-void send_command(int sockfd, struct msghdr * msg, struct nlmsghdr * nlh, int ptrace_loader_pid, int n_instructions){
+void send_command(int sockfd, struct msghdr * msg, struct nlmsghdr * nlh, int tracer_pid, int child_process_pid, int n_instructions){
 
-	sprintf(NLMSG_DATA(nlh),"%d", n_instructions);
+	sprintf(NLMSG_DATA(nlh),"%d %d", child_process_pid, n_instructions);
         sendmsg(sockfd, msg, 0);
 	printf("Sent command\n");
         exit(0);
@@ -46,26 +46,27 @@ void send_command(int sockfd, struct msghdr * msg, struct nlmsghdr * nlh, int pt
 
 int main(int argc, char * argv[]){
 
-        int ptrace_loader_pid = 0;
-	int process_pid = 0;
+        int tracer_pid = 0;
+	int child_process_pid = 0;
 	int n_instructions = 0;
 
 
 
-        if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+        if (argc < 4 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
                 fprintf(stderr, "\n");
                 fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
-                fprintf(stderr, "       %s PTRACE_LOADER_PID N_INSTRUCTIONS\n", argv[0]);
+                fprintf(stderr, "       %s TRACER_PID CHILD_PROCESS_PID N_INSTRUCTIONS\n", argv[0]);
                 fprintf(stderr, "\n");
-                fprintf(stderr, "This program sends a command to PTRACE LOADER to advance all processes under its control by the specified number of instructions\n");
+                fprintf(stderr, "This program sends a command to PTRACE LOADER to advance a process specified by PROCESS PID by the specified number of instructions\n");
                 fprintf(stderr, "\n");
                 return 1;
         }
 
-	ptrace_loader_pid = atoi(argv[1]);
-	n_instructions = atoi(argv[2]);
+	tracer_pid = atoi(argv[1]);
+	child_process_pid = atoi(argv[2]);
+	n_instructions = atoi(argv[3]);
 
-	printf("Ptrace loader: %d, number of instructions: %d\n", ptrace_loader_pid, n_instructions);
+	printf("Sending command to Tracer : %d, Process to control: %d, number of instructions: %d\n", tracer_pid, child_process_pid, n_instructions);
 
 
         sockfd = socket(AF_NETLINK, SOCK_RAW, NETLINK_USERSOCK);
@@ -84,7 +85,7 @@ int main(int argc, char * argv[]){
         memset(&dest_addr, 0, sizeof(dest_addr));
         memset(&dest_addr, 0, sizeof(dest_addr));
         dest_addr.nl_family = AF_NETLINK;
-        dest_addr.nl_pid = ptrace_loader_pid; /* For Linux Kernel */
+        dest_addr.nl_pid = tracer_pid; /* For Linux Kernel */
         dest_addr.nl_groups = 0; /* unicast */
 
         nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
@@ -93,7 +94,7 @@ int main(int argc, char * argv[]){
                 exit(-1);
         }
 	init_msg_buffer(nlh, &dest_addr);
-	send_command(sockfd, &msg,nlh, ptrace_loader_pid, n_instructions); 
+	send_command(sockfd, &msg,nlh, tracer_pid, child_process_pid, n_instructions); 
 
 	return 0;
 }

@@ -34,22 +34,14 @@ unsigned long fibonacci(unsigned long curr, unsigned long prev) {
 }
 
 void main() {
-	//fprintf(stderr, "Hello World\n");
-	//fflush(stdout);
 	int i = 1;
 	unsigned long prev = 0, curr = 1;
 	int delay = 1000;
 	unsigned long ret = 1;
-	//fprintf(stderr, "Sleeping ...\n");
-	//usleep(delay*1000);
-	//print_curr_time();
 	while(i < 500000000) {		
 		ret = fibonacci(curr, prev);
 		prev = curr;
 		curr = ret;
 		i++;
 	}
-	//print_curr_time();
-	//fprintf(stderr, "%lu\n", curr);
-
 }

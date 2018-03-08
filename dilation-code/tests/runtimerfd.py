@@ -34,7 +34,7 @@ if( loop_cnt < k) :
 
 	print >>sys.stderr, '\n**** Len : Loop Count :',  k, loop_cnt
 
-	curr_cmd = "./ttimerfd " + str(tmr_array[loop_cnt][0]) + " " +  str(tmr_array[loop_cnt][1]) + " > "+log_file
+	curr_cmd = "./bin/ttimerfd " + str(tmr_array[loop_cnt][0]) + " " +  str(tmr_array[loop_cnt][1]) + " > "+log_file
 
 	print >>sys.stderr, '\n cmd is :',  curr_cmd
 	os.system(curr_cmd)

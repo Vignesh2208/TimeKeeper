@@ -833,7 +833,7 @@ lxc_schedule_elem * get_next_runnable_task(tracer * curr_tracer){
 
 void add_task_to_tracer_run_queue(tracer * curr_tracer, lxc_schedule_elem * elem){
 
-	sprintf(curr_tracer->run_q_buffer + curr_tracer->buf_tail_ptr , "/%d,%d", elem->pid, elem->n_insns_curr_round);
+	sprintf(curr_tracer->run_q_buffer + curr_tracer->buf_tail_ptr , "|%d,%d", elem->pid, elem->n_insns_curr_round);
 	curr_tracer->buf_tail_ptr = strlen(curr_tracer->run_q_buffer);
 }
 
