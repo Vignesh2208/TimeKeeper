@@ -9,7 +9,7 @@ nCpus=$(shell nproc --all)
 
 all: clean_all modules
 
-clean_all: clean_build clean_core clean_utils clean_api clean_tracer
+clean: clean_build clean_core clean_utils clean_api clean_tracer
 
 build: clean_all build_scripts build_core build_api build_tracer
 
