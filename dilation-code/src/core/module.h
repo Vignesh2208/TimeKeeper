@@ -25,6 +25,7 @@ This needs to be >= 2 and your system needs to have at least 4 vCPUs
 */
 
 
+#define NOTSET 0 	//not set yet
                           
 
 #define NETLINK_USER 31
@@ -38,7 +39,6 @@ This needs to be >= 2 and your system needs to have at least 4 vCPUs
 #define NOT_INITIALIZED -1
 #define INITIALIZED 1
 
-#define REFERENCE_CPU_SPEED	1000	//Number of Instructions per uSec or 1 instruction per nano sec
 #define BUF_MAX_SIZE 200
 
 
@@ -75,5 +75,39 @@ typedef struct tracer_struct {
 } tracer;
 
 
+
+struct poll_helper_struct
+{
+	pid_t process_pid;
+	struct poll_list *head;
+ 	struct poll_list *walk;
+	struct poll_wqueues *table;
+	unsigned int nfds;
+	int err;
+	wait_queue_head_t w_queue;
+	atomic_t done;
+
+};
+
+struct select_helper_struct
+{
+	pid_t process_pid;
+	fd_set_bits fds;
+	void *bits;
+	unsigned long n;
+	wait_queue_head_t w_queue;
+	int ret;
+	atomic_t done;
+};
+
+struct sleep_helper_struct
+{
+	pid_t process_pid;
+	wait_queue_head_t w_queue;
+	atomic_t done;
+};
+
+
+extern int handle_gettimepid(char *);
 
 #endif

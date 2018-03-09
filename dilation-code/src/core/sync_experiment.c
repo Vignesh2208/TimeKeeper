@@ -6,8 +6,11 @@ extern int tracer_num; 					// number of TRACERS in the experiment
 extern int n_processed_tracers;			// number of tracers for which a spinner has already been spawned
 extern int EXP_CPUS;
 extern int TOTAL_CPUS;
-extern struct task_struct *round_sync_task; 		// the main synchronization kernel thread for experiments
 extern int experiment_stopped; 			 		// flag to determine state of the experiment
+extern int experiment_status;
+extern unsigned long orig_cr0; 
+extern struct task_struct *loop_task;
+extern struct task_struct * round_task;
 					 		
 extern struct mutex exp_lock;
 extern int *per_cpu_chain_length;
@@ -18,7 +21,7 @@ extern hashmap select_process_lookup;
 extern hashmap sleep_process_lookup;
 extern hashmap get_tracer_by_id;			//hashmap of <TRACER_NUMBER, TRACER_STRUCT> 
 extern hashmap get_tracer_by_pid;			//hashmap of <TRACER_PID, TRACER_STRUCT>
-extern unsigned long original_cr0; 
+extern unsigned long orig_cr0; 
 extern unsigned long **sys_call_table; 
 extern atomic_t n_waiting_tracers;
 
@@ -53,12 +56,14 @@ atomic_t experiment_stopping = ATOMIC_INIT(0);
 
 static wait_queue_head_t sync_worker_wqueue;
 static wait_queue_head_t progress_call_proc_wqueue;
-static wait_queue_head_t progress_sync_proc_wqueue;
-static wait_queue_head_t expstop_call_proc_wqueue;
+wait_queue_head_t progress_sync_proc_wqueue;
+wait_queue_head_t expstop_call_proc_wqueue;
 
 struct task_struct ** chaintask;
 int * values;
 
+int per_cpu_worker(void *data);
+int round_sync_task(void *data);
 
 
 /***
@@ -137,6 +142,8 @@ void start_exp(){
 
 int initialize_experiment_components(){
 
+	int i;
+
 	if(experiment_status == INITIALIZED){
 		PDEBUG_E("Experiment Already initialized\n");
 		return FAIL;
@@ -172,16 +179,16 @@ int initialize_experiment_components(){
       	return -EPERM;
 
 
-	original_cr0 = read_cr0();
-	write_cr0(original_cr0 & ~0x00010000);
+	orig_cr0 = read_cr0();
+	write_cr0(orig_cr0 & ~0x00010000);
 	ref_sys_sleep = (void *)sys_call_table[__NR_nanosleep];        
 	ref_sys_poll = (void *)sys_call_table[__NR_poll];
 	ref_sys_select = (void *) sys_call_table[NR_select];
 	ref_sys_clock_gettime = (void *)sys_call_table[__NR_clock_gettime];
 	ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
-	write_cr0(original_cr0 | 0x00010000);
+	write_cr0(orig_cr0 | 0x00010000);
 
-	round_sync_task = kthread_create(&round_sync_func, NULL, "round_sync_task");
+	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
 	if(!IS_ERR(round_sync_task)) {
 	    wake_up_process(round_sync_task);
 	}
@@ -199,6 +206,8 @@ int initialize_experiment_components(){
 
 int cleanup_experiment_components(){
 
+	int i = 0;
+
 	if(experiment_status == NOT_INITIALIZED){
 		PDEBUG_E("Experiment Already Cleaned up ...\n");
 		return FAIL;
@@ -213,14 +222,14 @@ int cleanup_experiment_components(){
 	if(sys_call_table){
 
 		/* Resetting just in case experiment does not finish properly */
-		original_cr0 = read_cr0();
-		write_cr0(original_cr0 & ~0x00010000);
+		orig_cr0 = read_cr0();
+		write_cr0(orig_cr0 & ~0x00010000);
 		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
 		sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
 		sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
 		sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
 		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
-		write_cr0(original_cr0 | 0x00010000);
+		write_cr0(orig_cr0 | 0x00010000);
 
 	}
 
@@ -291,7 +300,7 @@ int sync_and_freeze(char * write_buffer) {
 
 
 	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
-	PDEBUG_A("Round Sync Task Pid = %d\n", round_sync_task->pid);
+	PDEBUG_A("Round Sync Task Pid = %d\n", round_task->pid);
 
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
@@ -318,7 +327,7 @@ int sync_and_freeze(char * write_buffer) {
 	for (i = 0; i < EXP_CPUS; i++)
 	{
 		PDEBUG_A("Sync And Freeze: Adding Worker Thread %d\n", i);	
-		chaintask[i] = kthread_create(&per_cpu_worker, &values[i], "worker");
+		chaintask[i] = kthread_create(&per_cpu_worker, &values[i], "per_cpu_worker");
 		if(!IS_ERR(chaintask[i])) {
             kthread_bind(chaintask[i],i % (TOTAL_CPUS - EXP_CPUS));
             wake_up_process(chaintask[i]);
@@ -406,7 +415,7 @@ int per_cpu_worker(void *data)
 
 		while(head != NULL){
 
-			curr_tracer = (tracer_entry *)head->item;
+			curr_tracer = (tracer *)head->item;
 
 			if (schedule_list_size(curr_tracer) > 0) {
 				PDEBUG_V("per_cpu_worker: Called  UnFreeze Proc Recurse on CPU: %d\n", cpuID);					
@@ -496,7 +505,7 @@ int round_sync_task(void *data)
 				atomic_set(&progress_n_enabled,0);
 
 				set_current_state(TASK_INTERRUPTIBLE);
-				for(i = 1; i <= tracer_num, i++){
+				for(i = 1; i <= tracer_num; i++){
 					curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
 					if(curr_tracer){
 						set_current_state(TASK_INTERRUPTIBLE);
@@ -633,15 +642,18 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask){
 			}
 		}while_each_thread(me, t);
 
-	
+	}
+
+	if(aTask && curr_tracer){
 	    list_for_each(list, &aTask->children)
 	    {
 			taskRecurse = list_entry(list, struct task_struct, sibling);
 	        if (taskRecurse->pid == 0) {
 	            continue;
 	        }
-		    resume_all(taskRecurse,lxc);
+		    resume_all(curr_tracer,taskRecurse);
 	    }
+	
 	}
 
 }
@@ -822,7 +834,7 @@ lxc_schedule_elem * get_next_runnable_task(tracer * curr_tracer){
 		requeue_schedule_list(curr_tracer);
 		n_checked_processes ++;
 		if(curr_elem->n_insns_curr_round)
-			return curr_elem
+			return curr_elem;
 		
 			 
 	}
@@ -901,7 +913,7 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 
 	resume_all_syscall_blocked_processes(curr_tracer);
 
-	return SUCESS;
+	return SUCCESS;
 }
 
 #else
@@ -974,7 +986,7 @@ void clean_exp(){
 	set_current_state(TASK_INTERRUPTIBLE);
 	wait_event_interruptible(progress_sync_proc_wqueue, atomic_read(&n_waiting_tracers) == tracer_num);
 			
-	PDEBUG_I("Clean exp: Cleaning up ...")
+	PDEBUG_I("Clean exp: Cleaning up ...");
 	mutex_lock(&exp_lock);
 	for(i = 1; i <= tracer_num; i++){
 

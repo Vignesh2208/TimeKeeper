@@ -22,7 +22,7 @@ compile_4_4_kernel:
 	@cd /src/linux-4.4.5 && sudo cp -v /boot/config-`uname -r` .config && $(MAKE) menuconfig && $(MAKE) -j$(nCpus) && $(MAKE) modules_install && $(MAKE) install;
 	
 build_scripts:
-	@cd srcipts && $(MAKE) clean && $(MAKE);
+	@cd scripts && $(MAKE) clean && $(MAKE);
 
 build_core: 
 	$(MAKE) -C $(KERNEL_SRC) M=$(SUBDIR)/build modules

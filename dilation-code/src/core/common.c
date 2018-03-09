@@ -9,6 +9,7 @@ extern int EXP_CPUS;
 extern int TOTAL_CPUS;
 extern struct task_struct *round_sync_task; 		// the main synchronization kernel thread for experiments
 extern int experiment_stopped; 			 			// flag to determine state of the experiment
+extern int experiment_status;
 					 		
 extern struct mutex exp_lock;
 extern int *per_cpu_chain_length;
@@ -25,6 +26,16 @@ extern wait_queue_head_t expstop_call_proc_wqueue;
 extern int run_usermode_tracer_spin_process(char *path, char **argv, char **envp, int wait);
 extern void signal_cpu_worker_resume(tracer * curr_tracer);
 extern s64 get_dilated_time(struct task_struct * task);
+
+
+extern struct poll_list {
+    struct poll_list *next;
+    int len;
+    struct pollfd entries[0];
+};
+extern struct poll_helper_struct;
+extern hashmap poll_process_lookup;
+
 
 
 
@@ -116,7 +127,7 @@ void update_tracer_schedule_queue_elem(tracer * tracer_entry, struct task_struct
 
 		#else
 			if(tracee->static_prio <= 120){
-	    		base_time_quanta = (140 - new_element->static_priority)* 10000;     		
+	    		base_time_quanta = (140 - tracee->static_prio)* 10000;     		
 	    	}
 			else{
 				/* 200 us for now for all lower priority process. TODO */		
@@ -169,7 +180,7 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 
 	#else
 		if(tracee->static_prio <= 120){
-    		base_time_quanta = (140 - new_element->static_priority)* 10000;     		
+    		base_time_quanta = (140 - tracee->static_prio)* 10000;     		
     	}
 		else{
 			/* 200 us for now for all lower priority process. TODO */		
@@ -213,14 +224,12 @@ void add_process_to_schedule_queue_recurse(tracer * tracer_entry, struct task_st
 		// Do not add any of the threads of the tracer itself because they are not dilated.
 		/* set policy for all threads as well */
 		do {
-			if (t->pid != aTask->pid) {
 				add_to_tracer_schedule_queue(tracer_entry, t);
-			}
 		} while_each_thread(me, t);
 
 	}
 
-	list_for_each(list, &aTask->children)
+	list_for_each(list, &tsk->children)
 	{
 		taskRecurse = list_entry(list, struct task_struct, sibling);
 		if (taskRecurse->pid == 0) {
@@ -263,14 +272,14 @@ int register_tracer_process(char * write_buffer){
 	}
 
 	if(dilation_factor <= 0)
-		dilation_factor = REFERENCE_CPU_SPEED;	//no dilation
+		dilation_factor = REF_CPU_SPEED;	//no dilation
 
 
-	mutex_lock(&exp_lock)
+	mutex_lock(&exp_lock);
 	tracer_id = ++tracer_num;
-	mutex_unlock(&exp_lock)
+	mutex_unlock(&exp_lock);
 
-	new_tracer = alloc_tracer_entry(tracer_id, dilation_factor)
+	new_tracer = alloc_tracer_entry(tracer_id, dilation_factor);
 
 	if(!new_tracer)
 		return -ENOMEM;
@@ -294,11 +303,11 @@ int register_tracer_process(char * write_buffer){
 	new_tracer->quantum_n_insns = div_s64_rem(new_tracer->dilation_factor*tracer_ref_quantum_n_insns,REF_CPU_SPEED,&rem);
 	new_tracer->quantum_n_insns += rem;
 
-	mutex_lock(&exp_lock)
+	mutex_lock(&exp_lock);
 	hmap_put_abs(&get_tracer_by_id, tracer_id, new_tracer);
 	hmap_put_abs(&get_tracer_by_pid, current->pid, new_tracer);
 	llist_append(&per_cpu_tracer_list[best_cpu], new_tracer);
-	mutext_unlock(&exp_lock);
+	mutex_unlock(&exp_lock);
 
 
 	bitmap_zero((&current->cpus_allowed)->bits, 8);
@@ -347,7 +356,7 @@ int update_tracer_params(char * write_buffer){
 	new_tracer_freeze_quantum = atoi(write_buffer + nxt_idx);
 
 	if(new_dilation_factor <= 0)
-		new_dilation_factor = REFERENCE_CPU_SPEED;	//no dilation
+		new_dilation_factor = REF_CPU_SPEED;	//no dilation
 
 	if(new_tracer_freeze_quantum < REF_CPU_SPEED ) //freeze quantum must be at-least 1000 ns or 1 uS
 		return -EFAULT;
@@ -433,17 +442,17 @@ void update_all_tracers_virtual_time(int cpuID){
 
 	while(head != NULL){
 
-		curr_tracer = (tracer_entry *)head->item;
+		curr_tracer = (tracer*)head->item;
 
 		if (schedule_list_size(curr_tracer) == 0) {			
-			update_task_virtual_time(tracer_entry, tracer_entry->spinner_task, tracer_entry->quantum_n_insns);
+			update_task_virtual_time(curr_tracer, curr_tracer->spinner_task, curr_tracer->quantum_n_insns);
 		}
 		else{
            	update_all_children_virtual_time(curr_tracer);
 
 		}
 
-		curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + tracer_entry->freeze_quantum;
+		curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + curr_tracer->freeze_quantum;
 		head = head->next;
 	}	
 }
@@ -453,11 +462,11 @@ void update_all_tracers_virtual_time(int cpuID){
 * write_buffer: comma separated list of ignored pids or zero if none
 **/
 
-int handle_tracer_results(char * write_buffer){
+int handle_tracer_results(char * buffer){
 
 	int result = 0 ;
 	tracer * curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
-	int buf_len = strlen(write_buffer);
+	int buf_len = strlen(buffer);
 	int next_idx = 0;
 	lxc_schedule_elem * curr_elem;
 	struct pid *pid_struct;
@@ -530,7 +539,6 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
     PDEBUG_A("Set Net Device Owner: Received Pid: %d, Dev Name: %s\n", pid, dev_name);
 
 	struct net_device * dev;
-	int found = 0;
 	
 	for_each_process(task) {
 	    if(task != NULL) {
@@ -581,7 +589,7 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
 /**
 * write_buffer: <pid> of process
 **/
-int handle_getttimepid(char * write_buffer){
+int handle_gettimepid(char * write_buffer){
 
 	struct pid *pid_struct;
 	struct task_struct * task;
@@ -597,4 +605,242 @@ int handle_getttimepid(char * write_buffer){
 	    }
 	}
 	return FAIL;
+}
+
+
+
+/*** Wrappers for performing dialated poll and select system calls ***/
+
+static inline unsigned int do_dialated_pollfd(struct pollfd *pollfd, poll_table *pwait, bool *can_busy_poll, unsigned int busy_flag,struct task_struct * tsk)
+{
+	unsigned int mask;
+	int fd;
+
+	mask = 0;
+	fd = pollfd->fd;
+	if (fd >= 0) {
+		struct fd f = fdget(fd);
+		mask = POLLNVAL;
+		if (f.file) {
+			mask = DEFAULT_POLLMASK;
+			if (f.file->f_op->poll) {
+				pwait->_key = pollfd->events|POLLERR|POLLHUP;
+				pwait->_key |= busy_flag;
+				mask = f.file->f_op->poll(f.file, pwait);
+				if (mask & busy_flag)
+					*can_busy_poll = true;
+			}
+			/* Mask out unneeded events. */
+			mask &= pollfd->events | POLLERR | POLLHUP;
+			fdput(f);
+		}
+	}
+	pollfd->revents = mask;
+
+	return mask;
+}
+
+int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk)
+{
+	poll_table* pt = &wait->pt;
+	int count = 0;
+	unsigned int busy_flag = 0;
+	unsigned long busy_end = 0;
+	
+
+	struct poll_list *walk;
+	bool can_busy_loop = false;
+
+	for (walk = list; walk != NULL; walk = walk->next) {
+		struct pollfd * pfd, * pfd_end;
+		pfd = walk->entries;
+		pfd_end = pfd + walk->len;
+		for (; pfd != pfd_end; pfd++) {
+			/*
+			 * Fish for events. If we found one, record it
+			 * and kill poll_table->_qproc, so we don't
+			 * needlessly register any other waiters after
+			 * this. They'll get immediately deregistered
+			 * when we break out and return.
+			 */
+			if (do_dialated_pollfd(pfd, pt, &can_busy_loop,
+				      busy_flag,tsk)) {
+				count++;
+				pt->_qproc = NULL;
+				/* found something, stop busy polling */
+				busy_flag = 0;
+				can_busy_loop = false;
+			}
+		}
+	}
+	/*
+	 * All waiters have already been registered, so don't provide
+	 * a poll_table->_qproc to them on the next loop iteration.
+	 */
+	pt->_qproc = NULL;
+		
+	
+	return count;
+}
+
+
+int max_sel_fd(unsigned long n, fd_set_bits *fds,struct task_struct * tsk)
+{
+	unsigned long *open_fds;
+	unsigned long set;
+	int max;
+	struct fdtable *fdt;
+
+	/* handle last in-complete long-word first */
+	set = ~(~0UL << (n & (BITS_PER_LONG-1)));
+	n /= BITS_PER_LONG;
+	fdt = files_fdtable(current->files);
+	open_fds = fdt->open_fds + n;
+	//PDEBUG_A(" max_sel_fd : Pid = %d, n = %lu\n",current->pid, n);
+
+	max = 0;
+	if (set) {
+		set &= BITS(fds, n);
+		if (set) {
+			if (!(set & ~*open_fds))
+				goto get_max;
+			return -EBADF;
+		}
+	}
+	while (n) {
+		open_fds--;
+		n--;
+		set = BITS(fds, n);
+		if (!set)
+			continue;
+		if (set & ~*open_fds)
+			return -EBADF;
+		if (max)
+			continue;
+get_max:
+		do {
+			max++;
+			set >>= 1;
+		} while (set);
+		max += n * BITS_PER_LONG;
+	}
+
+	return max;
+}
+
+void wait_k_set(poll_table *wait, unsigned long in,unsigned long out, unsigned long bit, unsigned int ll_flag)
+{
+         wait->_key = POLLEX_SET | ll_flag;
+         if (in & bit)
+                 wait->_key |= POLLIN_SET;
+         if (out & bit)
+                 wait->_key |= POLLOUT_SET;
+}
+
+
+int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk)
+{
+	ktime_t expire, *to = NULL;
+	struct poll_wqueues table;
+	poll_table *wait;
+	int retval, i, timed_out = 0;
+	unsigned long slack = 0;
+	unsigned int busy_flag = 0;
+	unsigned long busy_end = 0;
+
+
+	//PDEBUG_A(" Do dialated Select: Entered. Pid = %d\n", current->pid);
+
+	rcu_read_lock();
+	retval = max_sel_fd(n, fds,tsk);
+	rcu_read_unlock();
+
+	
+	//PDEBUG_A(" Do dialated Select: Returned from Max_Sel_fd. Pid = %d\n", current->pid);
+
+	if (retval < 0)
+		return retval;
+	n = retval;
+
+	poll_initwait(&table);
+	wait = &table.pt;
+	retval = 0;
+
+	unsigned long *rinp, *routp, *rexp, *inp, *outp, *exp;
+	bool can_busy_loop = false;
+	inp = fds->in; outp = fds->out; exp = fds->ex;
+	rinp = fds->res_in; routp = fds->res_out; rexp = fds->res_ex;
+	for (i = 0; i < n; ++rinp, ++routp, ++rexp) {
+		unsigned long in, out, ex, all_bits, bit = 1, mask, j;
+		unsigned long res_in = 0, res_out = 0, res_ex = 0;
+
+		in = *inp++; out = *outp++; ex = *exp++;
+		all_bits = in | out | ex;
+		if (all_bits == 0) {
+			i += BITS_PER_LONG;
+			continue;
+		}
+
+		for (j = 0; j < BITS_PER_LONG; ++j, ++i, bit <<= 1) {
+			struct fd f;
+			if (i >= n)
+				break;
+			if (!(bit & all_bits))
+				continue;
+			f = fdget(i);
+			if (f.file) {
+				const struct file_operations *f_op;
+				f_op = f.file->f_op;
+				mask = DEFAULT_POLLMASK;
+				if (f_op->poll) {
+					wait_k_set(wait, in, out,
+						     bit, busy_flag);
+					mask = (*f_op->poll)(f.file, wait);
+				}
+				//fdput(f);
+				if ((mask & POLLIN_SET) && (in & bit)) {
+					res_in |= bit;
+					retval++;
+					wait->_qproc = NULL;
+				}
+				if ((mask & POLLOUT_SET) && (out & bit)) {
+					res_out |= bit;
+					retval++;
+					wait->_qproc = NULL;
+				}
+				if ((mask & POLLEX_SET) && (ex & bit)) {
+					res_ex |= bit;
+					retval++;
+					wait->_qproc = NULL;
+				}
+				/* got something, stop busy polling */
+				if (retval) {
+					can_busy_loop = false;
+					busy_flag = 0;
+					/*
+				 * only remember a returned
+				 * POLL_BUSY_LOOP if we asked for it
+				 */
+				} else if (busy_flag & mask)
+					can_busy_loop = true;
+			}
+		}
+		if (res_in)
+			*rinp = res_in;
+		if (res_out)
+			*routp = res_out;
+		if (res_ex)
+			*rexp = res_ex;
+	}
+	wait->_qproc = NULL;
+
+	if (table.error) {
+		retval = table.error;
+	}
+
+
+	poll_freewait(&table);
+	//PDEBUG_A(" Do dialated Select: Returned function. Pid = %d\n", current->pid);
+
+	return retval;
 }

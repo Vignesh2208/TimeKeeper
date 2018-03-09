@@ -70,7 +70,7 @@ tracer * alloc_tracer_entry(uint32_t tracer_id, u32 dilation_factor){
 	hmap_init(&new_tracer->ignored_children,"int",0);
 	init_waitqueue_head(&new_tracer->w_queue);
 
-	new_tracer->w_queue_control = ATOMIC_INIT(1);
+	atomic_set(&new_tracer->w_queue_control,1);
 
 	new_tracer->last_run = NULL;
 

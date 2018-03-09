@@ -20,7 +20,6 @@ int tracer_num = 0; 					// number of TRACERS in the experiment
 int n_processed_tracers = 0;			// number of tracers for which a spinner has already been spawned
 int EXP_CPUS = 0;
 int TOTAL_CPUS = 0;
-struct task_struct *round_sync_task; 		// the main synchronization kernel thread for experiments
 int experiment_stopped; 			 		// flag to determine state of the experiment
 int experiment_status;						// INTIALIZED/NOT INITIALIZED
 
@@ -47,13 +46,14 @@ unsigned long **sys_call_table;
 int TOTAL_CPUS; 
 
 //The register to hijack sys_call_table
-unsigned long original_cr0; 
+unsigned long orig_cr0; 
 
 //the socket to send data from kernel to userspace
 extern struct sock *nl_sk; 
 
 //task that loops endlessly (64-bit)
-extern struct task_struct *loop_task;
+struct task_struct *loop_task;
+struct task_struct * round_task;
 extern wait_queue_head_t progress_sync_proc_wqueue;
 
 /***
@@ -162,7 +162,7 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 		return resume_exp_progress();
 	}
 	else if(write_buffer[0] == PROGRESS_N_ROUNDS){
-		return progress_exp_fixed_rounds(write_buffer + 2)
+		return progress_exp_fixed_rounds(write_buffer + 2);
 	}
 	else if(write_buffer[0] == START_EXP){
 		return start_exp();
@@ -217,7 +217,7 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 			hmap_remove_abs(&get_tracer_by_pid, current->pid);
 
 			kfree(curr_tracer);
-			mutex_unlock(&exp_lock)
+			mutex_unlock(&exp_lock);
 
 		}
 
@@ -266,13 +266,13 @@ int __init my_module_init(void)
 	#endif
 
 	/* Set up socket so Kernel can send message to userspace */
-	struct netlink_kernel_cfg cfg = { .input = send_a_message, };
+	/*struct netlink_kernel_cfg cfg = { .input = send_a_message, };
 	nl_sk = netlink_kernel_create(&init_net, NETLINK_USER, &cfg);
 	if (!nl_sk)
 	{
     	PDEBUG_E("Error creating socket.\n");
     	return -ENOMEM;
-	}
+	}*/
 
 	/* Acquire number of CPUs on system */
 	TOTAL_CPUS = num_online_cpus();
@@ -300,7 +300,7 @@ int __init my_module_init(void)
     }
 	#endif
 
-  	return SUCEESS;
+  	return SUCCESS;
 }
 
 /***
@@ -312,7 +312,7 @@ void __exit my_module_exit(void)
 	s64 i;
 
 
-	netlink_kernel_release(nl_sk);
+	//netlink_kernel_release(nl_sk);
 
 	remove_proc_entry(DILATION_FILE, dilation_dir);
    	PDEBUG_A(" /proc/%s/%s deleted\n", DILATION_DIR, DILATION_FILE);

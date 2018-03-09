@@ -52,8 +52,11 @@
 #define DEBUG_LEVEL_INFO 1
 #define DEBUG_LEVEL_VERBOSE 2
 
-#define SUCESS 0
+#define SUCCESS 0
 #define FAIL -1
+
+#define REF_CPU_SPEED	1000	//Number of Instructions per uSec or 1 instruction per nano sec
+
 
 
 
@@ -166,7 +169,7 @@
 #endif
 
 
-typedef unsigned long u32;
+//typedef unsigned int u32;
 typedef unsigned long long u64;
 typedef unsigned int uint32_t;
 
