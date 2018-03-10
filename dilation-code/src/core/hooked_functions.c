@@ -38,6 +38,8 @@ extern atomic_t experiment_stopping;
 extern s64 boottime;
 extern atomic_t is_boottime_set;
 extern wait_queue_head_t expstop_call_proc_wqueue;
+extern wait_queue_head_t* syscall_control_queue;
+extern int * syscall_running; 
 
 extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk);
 extern int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk);
@@ -81,6 +83,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	struct sleep_helper_struct * sleep_helper = &helper;
 	tracer * curr_tracer;
 	current_task = current;
+	int cpu;
 
 	acquire_irq_lock(&current->dialation_lock,flag);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET)
@@ -108,6 +111,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 		if(curr_tracer && difference < curr_tracer->freeze_quantum)
 			goto skip;
 
+		cpu = curr_tracer->cpu_assignment - 2;
 		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
 
 		while(now < wakeup_time) {
@@ -115,12 +119,16 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&sleep_helper->done,0);
+			syscall_running[cpu] = 0;
+
 			now = get_dilated_time(current);
 			
 			if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING){
+				wake_up_interruptible(&syscall_control_queue[cpu]);
 				kill(current,SIGKILL);
 		    	break;
 			}
+			wake_up_interruptible(&syscall_control_queue[cpu]);
         }
 
         skip:
@@ -211,6 +219,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	struct sleep_helper_struct helper;	
 	struct sleep_helper_struct * sleep_helper = &helper;
 	tracer * curr_tracer;
+	int cpu;
 	
 
 	acquire_irq_lock(&current->dialation_lock,flags);
@@ -235,8 +244,11 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 		curr_tracer = get_tracer_for_task(current);
 
+
 		if(curr_tracer && difference < curr_tracer->freeze_quantum)
 			goto skip_sleep;
+
+		cpu = curr_tracer->cpu_assignment - 2;
 
 		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, rqtp->tv_sec, rqtp->tv_nsec, wakeup_time); 
 		
@@ -245,13 +257,16 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&sleep_helper->done,0);
+			syscall_running[cpu] = 0;
 			
 			now = get_dilated_time(current);
 		    if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING){
+		    	wake_up_interruptible(&syscall_control_queue[cpu]);
 		    	kill(current, SIGKILL);
 		    	break;
 		    }
-		    
+		  
+		  	wake_up_interruptible(&syscall_control_queue[cpu]);  
         }
 
         skip_sleep:
@@ -299,6 +314,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	struct select_helper_struct  helper;
 	struct select_helper_struct * select_helper = &helper;
 	tracer * curr_tracer;
+	int cpu;
 
 
 	current_task = current;
@@ -329,6 +345,10 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 		if(curr_tracer && time_to_sleep < curr_tracer->freeze_quantum)
 			goto revert_select;
+
+		if(curr_tracer){
+			cpu = curr_tracer->cpu_assignment - 2;
+		}
 		    
 
 		ret = -EINVAL;
@@ -394,8 +414,13 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 					ret = do_dialated_select(select_helper->n,&select_helper->fds,current);
 					if(ret || select_helper->ret == FINISHED || atomic_read(&experiment_stopping) == 1){
 						select_helper->ret = ret;
+						syscall_running[cpu] = 0;
+						wake_up_interruptible(&syscall_control_queue[cpu]);
 						break;
 					}
+
+					syscall_running[cpu] = 0;
+					wake_up_interruptible(&syscall_control_queue[cpu]);
 				}
 				wait_event(select_helper->w_queue,atomic_read(&select_helper->done) != 0);
 				set_current_state(TASK_RUNNING);		
@@ -480,6 +505,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	struct poll_helper_struct helper;
 	struct poll_helper_struct * poll_helper =  &helper;
 	tracer * curr_tracer;
+	int cpu;
 	
 	current_task = current;
 	acquire_irq_lock(&current->dialation_lock,flags);
@@ -496,6 +522,9 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		curr_tracer = get_tracer_for_task(current);
 		if(curr_tracer && time_to_sleep < curr_tracer->freeze_quantum)
 			goto revert_poll;
+
+		if(curr_tracer)
+			cpu = curr_tracer->cpu_assignment - 2;
 		    
 		if (nfds > RLIMIT_NOFILE){
 			PDEBUG_E("Sys Poll: Poll Process Invalid");
@@ -572,8 +601,13 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 				    err = do_dialated_poll(poll_helper->nfds, poll_helper->head,poll_helper->table,current);
 				    if(err || poll_helper->err == FINISHED || atomic_read(&experiment_stopping) == 1){
 					    poll_helper->err = err; 
+					    syscall_running[cpu] = 0;
+						wake_up_interruptible(&syscall_control_queue[cpu]);
 					    break;
 				    }
+
+				    syscall_running[cpu] = 0;
+					wake_up_interruptible(&syscall_control_queue[cpu]);
 				}		
     			wait_event(poll_helper->w_queue,atomic_read(&poll_helper->done) != 0);    			
 		        set_current_state(TASK_RUNNING);        
@@ -655,15 +689,15 @@ Finds us the location of the system call table
 ***/
 unsigned long **aquire_sys_call_table(void)
 {
-        unsigned long int offset = PAGE_OFFSET;
-        unsigned long **sct;
-        while (offset < ULLONG_MAX) {
-                sct = (unsigned long **)offset;
+    unsigned long int offset = PAGE_OFFSET;
+    unsigned long **sct;
+    while (offset < ULLONG_MAX) {
+            sct = (unsigned long **)offset;
 
-                if (sct[__NR_close] == (unsigned long *) sys_close)
-                        return sct;
+            if (sct[__NR_close] == (unsigned long *) sys_close)
+                    return sct;
 
-                offset += sizeof(void *);
-        }
-        return NULL;
+            offset += sizeof(void *);
+    }
+    return NULL;
 }

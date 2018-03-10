@@ -5,4 +5,6 @@ all:
 	
 
 clean:
-	@rm -f bin/x64_synchronizer
+	@rm -f bin/*
+	@touch bin/README
+	@chmod 777 bin/README

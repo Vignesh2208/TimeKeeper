@@ -205,7 +205,7 @@ void print_schedule_list(tracer* tracer_entry)
 		for(i = 0; i < schedule_list_size(tracer_entry); i++){
 			curr = llist_get(&tracer_entry->schedule_queue, i);
 			if(curr != NULL) {
-				PDEBUG_V("Schedule List Item No: %d, TRACEE PID: %d, TRACER PID: %d, Size OF SCHEDULE QUEUE: %d\n",i, curr->pid, tracer_entry->tracer_task->pid,schedule_list_size(tracer_entry));
+				PDEBUG_V("Schedule List Item No: %d, TRACER PID: %d, TRACEE PID: %d, N_insns_curr_round: %d, N_insns_left: %d, Size OF SCHEDULE QUEUE: %d\n",i, tracer_entry->tracer_task->pid,curr->pid, curr->n_insns_curr_round, curr->n_insns_left, schedule_list_size(tracer_entry));
 			}
 		}	
 	}

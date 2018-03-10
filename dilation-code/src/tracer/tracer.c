@@ -1,4 +1,6 @@
 #include "tracer.h"
+#define TRACER_RESULTS 'J'
+#define MAX_BUF_SIZ 1024
 
 #ifdef TEST
 struct sockaddr_nl src_addr, dest_addr;
@@ -270,7 +272,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 
 }
 
-int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32 n_insns){
+int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32 n_insns, int cpu_assigned){
 
 
 	int i = 0;
@@ -317,7 +319,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 
 		if(singlestepmode) {
 			errno = 0;
-			pd = libperf_initialize((int)pid,0); /* init lib */
+			pd = libperf_initialize((int)pid,cpu_assigned); /* init lib */
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
@@ -329,7 +331,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 		else{
 			errno = 0;
 			n_insns = n_insns - 500;
-			pd = libperf_initialize((int)pid,0); /* init lib */
+			pd = libperf_initialize((int)pid,cpu_assigned); /* init lib */
 			libperf_ioctlrefresh(pd, LIBPERF_COUNT_HW_INSTRUCTIONS, (uint64_t )n_insns);
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
@@ -437,6 +439,11 @@ int main(int argc, char * argv[]){
 	char * nxt_cmd[MAX_PAYLOAD];
 	int tail_ptr;
 	int tracer_id = 0;
+	int count = 0;
+	float rel_cpu_speed;
+	u32 n_round_insns;
+	int cpu_assigned;
+	char command[MAX_BUF_SIZ];
 
 	
 
@@ -445,10 +452,10 @@ int main(int argc, char * argv[]){
 	llist_set_equality_checker(&tracee_list,llist_elem_comparer);
  
 	
-	if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+	if (argc < 5 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
 	        fprintf(stderr, "\n");
         	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
-        	fprintf(stderr,	"		%s TRACER_ID CMDS_FILE_PATH\n", argv[0]);
+        	fprintf(stderr,	"		%s TRACER_ID CMDS_FILE_PATH RELATIVE_CPU_SPEED N_ROUND_INSTRUCTIONS\n", argv[0]);
         	fprintf(stderr, "\n");
         	fprintf(stderr, "This program executes all COMMANDs specified in the CMD file path in trace mode\n");
         	fprintf(stderr, "\n");
@@ -458,6 +465,8 @@ int main(int argc, char * argv[]){
 
     tracer_id = atoi(argv[1]);
 	cmd_file_path = argv[2];
+	rel_cpu_speed = atof(argv[3]);
+	n_round_insns = (u32) atoi(argv[4]);
 
 
 	#ifdef DEBUG
@@ -470,14 +479,15 @@ int main(int argc, char * argv[]){
 	#endif
 
 
-	LOG("Tracer Pid: %d, Tracer ID: %d, CMDS_FILE_PATH: %s\n", (pid_t)getpid(), tracer_id, cmd_file_path);
+	LOG("Tracer Pid: %d, Tracer ID: %d, CMDS_FILE_PATH: %s, REL_CPU_SPEED: %f, N_ROUND_INSNS: %lu\n", (pid_t)getpid(), tracer_id, cmd_file_path, rel_cpu_speed, n_round_insns);
 
 	fp = fopen(cmd_file_path,"r");
 	if(fp == NULL) 
 		exit(-1);
 
 	while ((read = getline(&line, &len, fp)) != -1) {
-       	LOG("Running Command: %s", line);
+		count ++;
+       	LOG("Running Command no: %d: %s", count, line);
 		run_command(line, &new_cmd_pid);
 		new_entry = alloc_new_tracee_entry(new_cmd_pid);
 		llist_append(&tracee_list, new_entry);
@@ -492,7 +502,7 @@ int main(int argc, char * argv[]){
 		sock_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_USERSOCK);
 		if (sock_fd < 0){
 			LOG("SOCKET Error\n");
-	    	return -1;
+	    	exit(-1);
 		}
 
 
@@ -518,7 +528,7 @@ int main(int argc, char * argv[]){
 			if(new_cmd_pid == -1 )
 				break;
 
-			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns);
+			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, 0);
 		}
 		close(sock_fd);
 
@@ -529,8 +539,10 @@ int main(int argc, char * argv[]){
 
 		if(fp == NULL){
 			LOG("PROC file open error\n");
-			return -1;
+			exit(-1);;
 		}
+
+		cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
 
 		while(1){
 			flush_buffer(nxt_cmd, MAX_PAYLOAD);
@@ -538,16 +550,25 @@ int main(int argc, char * argv[]){
 			new_cmd_pid = 0;
 			n_insns = 0;
 			fread(nxt_cmd, sizeof(char), MAX_PAYLOAD, fp);
+			LOG("Tracer: %d, Received Command: %s\n", tracer_id, nxt_cmd);
 			while(tail_ptr != -1){
 				tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);
 
 				if(tail_ptr == -1 && new_cmd_pid == -1){
-					LOG("STOP command received. Stopping tracer\n");
+					LOG("Tracer: %d, STOP command received. Stopping tracer\n", tracer_id);
 					break;
 				}
-				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns);
+				LOG("Tracer: %d, Running Child: %d for %d instructions", tracer_id, new_cmd_pid, n_insns);
+				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
 			}
+
+			flush_buffer(command,MAX_BUF_SIZ);
+			sprintf(command, "%c,%s", TRACER_RESULTS,"0");
+			LOG("Tracer: %d: Writing Cmd Results", tracer_id);
+			fprintf(fp, "%s", command);
 		}
+
+		fclose(fp);
 
 	#endif
 

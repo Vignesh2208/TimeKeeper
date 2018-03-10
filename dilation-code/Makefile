@@ -7,11 +7,11 @@ RM:=rm
 .PHONY : clean
 nCpus=$(shell nproc --all)
 
-all: clean_all modules
+all: clean build
 
-clean: clean_build clean_core clean_utils clean_api clean_tracer
+clean: clean_build clean_core clean_utils clean_api clean_tracer clean_tests clean_scripts
 
-build: clean_all build_scripts build_core build_api build_tracer
+build: build_scripts build_core build_api build_tracer build_tests
 
 setup_kernel: compile_4_4_kernel
 
@@ -21,6 +21,10 @@ download_4_4_kernel:
 compile_4_4_kernel:
 	@cd /src/linux-4.4.5 && sudo cp -v /boot/config-`uname -r` .config && $(MAKE) menuconfig && $(MAKE) -j$(nCpus) && $(MAKE) modules_install && $(MAKE) install;
 	
+
+build_tests: 
+	@cd tests && $(MAKE) build
+
 build_scripts:
 	@cd scripts && $(MAKE) clean && $(MAKE);
 
@@ -39,6 +43,13 @@ install:
 uninstall:
 	sudo rmmod build/TimeKeeper.ko
 
+clean_scripts:
+	@echo "Cleaning old TimeKeeper script files ..."
+	@cd scripts && $(MAKE) clean
+
+clean_tests:
+	@echo "Cleaning TimeKeeper test files ..."
+	@cd tests && $(MAKE) clean
 
 clean_build:
 	@echo "Cleaning old TimeKeeper build files ..."

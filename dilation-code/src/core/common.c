@@ -139,8 +139,8 @@ void update_tracer_schedule_queue_elem(tracer * tracer_entry, struct task_struct
 
 
 			elem->n_insns_share = base_quanta_n_insns;
-			elem->n_insns_left = base_quanta_n_insns;
-			elem->n_insns_curr_round = 0;
+			//elem->n_insns_left = base_quanta_n_insns;
+			//elem->n_insns_curr_round = 0;
 		#endif
 
 	}
@@ -157,16 +157,24 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 	if(!tracee || hmap_get_abs(&tracer_entry->ignored_children, tracee->pid) != NULL || hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL){
 
 		if(tracee && hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL){
+			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d is already present. Updating its attributes\n", tracer_entry->tracer_id, tracee->pid);
 			update_tracer_schedule_queue_elem(tracer_entry, tracee);
 		}
 		else if(tracee){
 			PDEBUG_A("Tracee: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
 		}
+		else{
+			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee is NULL \n", tracer_entry->tracer_id);
+		}
+
+		return;
 	}
 
 	new_elem = (lxc_schedule_elem *)kmalloc(sizeof(lxc_schedule_elem), GFP_KERNEL);
-	if(new_elem == NULL)
+	if(new_elem == NULL){
+		PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d. Failed to alot Memory\n", tracer_entry->tracer_id, tracee->pid);
 		return;
+	}
 
 	new_elem->pid = tracee->pid;
 	new_elem->curr_task = tracee;
@@ -205,6 +213,8 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 	hmap_put_abs(&tracer_entry->valid_children,new_elem->pid, new_elem);
 	llist_append(&tracer_entry->schedule_queue, new_elem); 
 
+	PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d. Succeeded.\n", tracer_entry->tracer_id, tracee->pid);
+
 
 
 
@@ -236,7 +246,7 @@ void add_process_to_schedule_queue_recurse(tracer * tracer_entry, struct task_st
 			return;
 		}
 
-		add_to_tracer_schedule_queue(tracer_entry, taskRecurse);
+		//add_to_tracer_schedule_queue(tracer_entry, taskRecurse);
 		add_process_to_schedule_queue_recurse(tracer_entry, taskRecurse);
 	}
 
@@ -279,6 +289,8 @@ int register_tracer_process(char * write_buffer){
 	tracer_id = ++tracer_num;
 	mutex_unlock(&exp_lock);
 
+	PDEBUG_I("Register Tracer: Starting ...\n");
+
 	new_tracer = alloc_tracer_entry(tracer_id, dilation_factor);
 
 	if(!new_tracer)
@@ -302,6 +314,8 @@ int register_tracer_process(char * write_buffer){
 	tracer_ref_quantum_n_insns = tracer_freeze_quantum;
 	new_tracer->quantum_n_insns = div_s64_rem(new_tracer->dilation_factor*tracer_ref_quantum_n_insns,REF_CPU_SPEED,&rem);
 	new_tracer->quantum_n_insns += rem;
+
+	PDEBUG_I("Register Tracer: Pid: %d, ID: %d, dilation factor: %d, freeze_quantum: %d, assigned cpu: %d, quantum_n_insns: %d\n", current->pid, new_tracer->tracer_id, new_tracer->dilation_factor, new_tracer->freeze_quantum, new_tracer->cpu_assignment, new_tracer->quantum_n_insns);
 
 	mutex_lock(&exp_lock);
 	hmap_put_abs(&get_tracer_by_id, tracer_id, new_tracer);
@@ -347,12 +361,19 @@ int update_tracer_params(char * write_buffer){
 	int tracer_pid = 0;
 	struct task_struct * task = NULL;
 	int found = 0;
+
+
+	if(experiment_status != INITIALIZED){
+		PDEBUG_E("Experiment must be initialized first before tracer update params\n");
+		return FAIL;	
+	}
+
 	
 
 	tracer_pid = atoi(write_buffer);
 	nxt_idx = get_next_value(write_buffer);
 	new_dilation_factor = atoi(write_buffer+nxt_idx);
-	nxt_idx = get_next_value(write_buffer);
+	nxt_idx = nxt_idx + get_next_value(write_buffer + nxt_idx);
 	new_tracer_freeze_quantum = atoi(write_buffer + nxt_idx);
 
 	if(new_dilation_factor <= 0)
@@ -387,7 +408,7 @@ int update_tracer_params(char * write_buffer){
 		tracer_entry->quantum_n_insns += rem;
 		refresh_tracer_schedule_queue(tracer_entry);
 
-		PDEBUG_V("Updated params for tracer: %d, ID: %d\n", tracer_pid, tracer_entry->tracer_id);
+		PDEBUG_V("Updated params for tracer: %d, ID: %d, freeze_quantum: %d, dilation_factor: %d, quantum_n_insns: %d\n", tracer_pid, tracer_entry->tracer_id, tracer_entry->freeze_quantum, tracer_entry->dilation_factor, tracer_entry->quantum_n_insns);
 
 	
 	}
@@ -477,8 +498,9 @@ int handle_tracer_results(char * buffer){
 
 	while(next_idx < buf_len){
 		result = atoi(buffer + next_idx);
-		next_idx = get_next_value(buffer + next_idx);
+		next_idx += get_next_value(buffer + next_idx);
 
+		PDEBUG_V("Handle tracer results: Pid: %d, Tracer ID: %d, Curr Result: %d, All results: %s\n", current->pid, curr_tracer->tracer_id, result, buffer);
 		if(result <= 0)
 			break;
 
@@ -512,7 +534,8 @@ int handle_stop_exp_cmd(){
 
 
 /**
-* write_buffer: <tracer_pid>,network device name
+* write_buffer: <tracer_pid>,network device name\
+* Can be called after successfull synchronize and freeze command
 **/
 int handle_set_netdevice_owner_cmd(char * write_buffer){
 
@@ -596,6 +619,8 @@ int handle_gettimepid(char * write_buffer){
 	int pid;
 
 	pid = atoi(write_buffer);
+
+	PDEBUG_V("Handle gettimepid: Received Pid = %d\n", pid);
 
 	for_each_process(task) {
 	    if(task != NULL) {

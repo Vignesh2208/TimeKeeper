@@ -102,9 +102,11 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 	pid_t child;
 	
 
+	#ifdef TEST
 	cpu_set_t set;
 	CPU_ZERO(&set);
 	CPU_SET(0, &set);
+	#endif
 
 	while(full_command_str[i] != '\0'){
 		
@@ -170,9 +172,10 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 	//if(ret == 0)
 	//	printf("Priority set successfull\n");
 
-	
+	#ifdef TEST
 	sched_setaffinity(child, sizeof(set), &set);
 	sched_setaffinity((pid_t)getpid(), sizeof(set), &set);
+	#endif
 
 	return 0;
 

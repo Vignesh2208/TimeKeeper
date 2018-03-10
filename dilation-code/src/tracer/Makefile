@@ -10,7 +10,7 @@ libs:
 	
 
 build_tracer:
-	 @gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer -lperf
+	 @gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer -lperf -ltkapi
 	 @gcc  cmd_sender.c -o cmd_sender
 	 @chmod 777 tracer
 	 @chmod 777 cmd_sender
@@ -18,7 +18,7 @@ build_tracer:
 	 @mv cmd_sender /usr/bin
 
 build_tracer_debug:
-	@gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D DEBUG tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer -lperf
+	@gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D DEBUG tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer -lperf -ltkapi
 	@gcc  cmd_sender.c -o cmd_sender
 	@chmod 777 tracer
 	@chmod 777 cmd_sender
@@ -26,7 +26,7 @@ build_tracer_debug:
 	@mv cmd_sender /usr/bins
 
 build_tracer_test: 
-	@gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D TEST tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer_test -lperf
+	@gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D TEST tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer_test -lperf -ltkapi
 	@gcc  cmd_sender.c -o cmd_sender
 	@chmod 777 tracer_test
 	@chmod 777 cmd_sender

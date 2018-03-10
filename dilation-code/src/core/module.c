@@ -55,6 +55,7 @@ extern struct sock *nl_sk;
 struct task_struct *loop_task;
 struct task_struct * round_task;
 extern wait_queue_head_t progress_sync_proc_wqueue;
+extern int initialize_experiment_components();
 
 /***
 Gets the PID of our synchronizer spinner task (only in 64 bit)
@@ -114,7 +115,7 @@ int run_usermode_tracer_spin_process(char *path, char **argv, char **envp, int w
 	struct subprocess_info *info;
         gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
 
-        info = call_usermodehelper_setup(path, argv, envp, gfp_mask, getSpinnerPid, NULL, NULL);
+        info = call_usermodehelper_setup(path, argv, envp, gfp_mask, get_tracer_spinner_pid, NULL, NULL);
         if (info == NULL)
                 return -ENOMEM;
 
@@ -179,6 +180,9 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 	else if(write_buffer[0] == GETTIMEPID){
 		return handle_gettimepid(write_buffer + 2);
 	}
+	else if(write_buffer[0] == INITIALIZE_EXP){
+		return initialize_experiment_components();
+	}
 
 	return FAIL;
 
@@ -199,7 +203,7 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
 		if(!curr_tracer)
 			return -EIO;
-
+		PDEBUG_I("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
 		set_current_state(TASK_INTERRUPTIBLE);
 		atomic_inc(&n_waiting_tracers);
 		wake_up_interruptible(&progress_sync_proc_wqueue);
@@ -212,12 +216,15 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 
 		if(strcmp(curr_tracer->run_q_buffer, "STOP") == 0){
 			// free up memory
+			PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
 			mutex_lock(&exp_lock);
 			hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
 			hmap_remove_abs(&get_tracer_by_pid, current->pid);
-
+			ret = curr_tracer->buf_tail_ptr;
 			kfree(curr_tracer);
 			mutex_unlock(&exp_lock);
+
+			return ret;
 
 		}
 
