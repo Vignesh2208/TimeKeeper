@@ -15,5 +15,6 @@ build:
 	@gcc testtimerfd.c -o bin/ttimerfd
 	@gcc gtod.c -o bin/gtod
 	@cd integration_test && make build
+	@chmod -R 777 bin/
 
 
