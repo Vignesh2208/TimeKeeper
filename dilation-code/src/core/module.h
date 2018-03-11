@@ -12,6 +12,7 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 static const struct file_operations proc_file_fops = {
  .read = status_read,
  .write = status_write,
+ .owner = THIS_MODULE,
 };
 
 
@@ -36,7 +37,7 @@ This needs to be >= 2 and your system needs to have at least 4 vCPUs
 #define FROZEN 1
 #define STOPPING 2
 
-#define NOT_INITIALIZED -1
+#define NOT_INITIALIZED 0
 #define INITIALIZED 1
 
 #define BUF_MAX_SIZE 200

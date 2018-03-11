@@ -36,8 +36,8 @@ hashmap get_tracer_by_pid;		//hashmap of <PID, TRACER_STRUCT>
 atomic_t n_waiting_tracers = ATOMIC_INIT(0);
 
 // Proc file declarations
-static struct proc_dir_entry *dilation_dir;
-static struct proc_dir_entry *dilation_file;
+static struct proc_dir_entry *dilation_dir = NULL;
+static struct proc_dir_entry *dilation_file = NULL;
 
 //address of the sys_call_table, so we can hijack certain system calls
 unsigned long **sys_call_table; 
@@ -62,6 +62,7 @@ Gets the PID of our synchronizer spinner task (only in 64 bit)
 ***/
 int getSpinnerPid(struct subprocess_info *info, struct cred *new) {
         loop_task = current;
+        printk(KERN_INFO "TimeKeeper: Loop Task Started. Pid: %d\n", current->pid);
         return 0;
 }
 
@@ -151,38 +152,46 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 
 
 	if(write_buffer[0] == REGISTER_TRACER){
-		return register_tracer_process(write_buffer + 2);
+		ret =  register_tracer_process(write_buffer + 2);
 	}
 	else if(write_buffer[0] == SYNC_AND_FREEZE){
-		return sync_and_freeze(write_buffer + 2);
+		ret =  sync_and_freeze(write_buffer + 2);
 	}
 	else if(write_buffer[0] == UPDATE_TRACER_PARAMS){
-		return update_tracer_params(write_buffer + 2);
+		ret =  update_tracer_params(write_buffer + 2);
 	}
 	else if(write_buffer[0] == PROGRESS){
-		return resume_exp_progress();
+		ret =  resume_exp_progress();
 	}
 	else if(write_buffer[0] == PROGRESS_N_ROUNDS){
-		return progress_exp_fixed_rounds(write_buffer + 2);
+		ret =  progress_exp_fixed_rounds(write_buffer + 2);
 	}
 	else if(write_buffer[0] == START_EXP){
-		return start_exp();
+		ret = start_exp();
 	}
 	else if(write_buffer[0] == STOP_EXP){
-		return handle_stop_exp_cmd();
+		ret = handle_stop_exp_cmd();
 	}
 	else if(write_buffer[0] == TRACER_RESULTS){
-		return handle_tracer_results(write_buffer + 2);
+		ret = handle_tracer_results(write_buffer + 2);
 	}
 	else if(write_buffer[0] == SET_NETDEVICE_OWNER){
-		return handle_set_netdevice_owner_cmd(write_buffer + 2);
+		ret = handle_set_netdevice_owner_cmd(write_buffer + 2);
 	}
 	else if(write_buffer[0] == GETTIMEPID){
-		return handle_gettimepid(write_buffer + 2);
+		ret = handle_gettimepid(write_buffer + 2);
 	}
 	else if(write_buffer[0] == INITIALIZE_EXP){
-		return initialize_experiment_components();
+		ret = initialize_experiment_components();
 	}
+	else{
+		printk(KERN_INFO "TIMEKEEPER: Unknown command Received. Command: %s. Buffer size: %zu.\n", write_buffer, count);
+	}
+
+	if(ret < 0)
+		return ret;
+	else
+		return count;
 
 	return FAIL;
 
@@ -244,7 +253,7 @@ int __init my_module_init(void)
    	PDEBUG_A(" Loading TimeKeeper MODULE\n");
 
 	/* Set up TimeKeeper status file in /proc */
-  	dilation_dir = proc_mkdir(DILATION_DIR, NULL);
+  	dilation_dir = proc_mkdir_mode(DILATION_DIR, 0555, NULL);
   	if(dilation_dir == NULL){
 	    remove_proc_entry(DILATION_DIR, NULL);
    		PDEBUG_E(" Error: Could not initialize /proc/%s\n", DILATION_DIR);
@@ -252,8 +261,8 @@ int __init my_module_init(void)
   	}
 
   	PDEBUG_A(" /proc/%s created\n", DILATION_DIR);
-	dilation_file = proc_create(DILATION_FILE, 0660, dilation_dir,&proc_file_fops);
-
+  	//dilation_file = proc_create(DILATION_FILE, 0660, dilation_dir,&proc_file_fops);
+	dilation_file = proc_create(DILATION_FILE, 0666, NULL,&proc_file_fops);
 
 	if(dilation_file == NULL){
 	    remove_proc_entry(DILATION_FILE, dilation_dir);
@@ -281,6 +290,7 @@ int __init my_module_init(void)
     	return -ENOMEM;
 	}*/
 
+
 	/* Acquire number of CPUs on system */
 	TOTAL_CPUS = num_online_cpus();
 	PDEBUG_A(" Number of CPUS: %d\n", num_online_cpus());
@@ -290,24 +300,17 @@ int __init my_module_init(void)
 	else
 		EXP_CPUS = 1;
 
+	EXP_CPUS = 1;
+	PDEBUG_A(" Number of EXP_CPUS: %d\n", EXP_CPUS);
+
+
 	experiment_status = NOT_INITIALIZED;
 	experiment_stopped = NOTRUNNING;
 
-	
-	/* Wait to stop loop_task */
-	#ifdef __x86_64
-	if (loop_task != NULL) {
-    	kill(loop_task, SIGSTOP, NULL);
-    	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
-		cpumask_set_cpu(1,&loop_task->cpus_allowed);
-		kill(loop_task, SIGCONT, NULL);
-    }
-	else {
-        PDEBUG_E(" Loop_task is null\n");
-    }
-	#endif
+	PDEBUG_A(" TIMEKEEPER MODULE LOADED SUCCESSFULLY \n");
 
-  	return SUCCESS;
+
+  	return 0;
 }
 
 /***
@@ -321,10 +324,13 @@ void __exit my_module_exit(void)
 
 	//netlink_kernel_release(nl_sk);
 
-	remove_proc_entry(DILATION_FILE, dilation_dir);
+	//remove_proc_entry(DILATION_FILE, dilation_dir);
+	remove_proc_entry(DILATION_FILE, NULL);
    	PDEBUG_A(" /proc/%s/%s deleted\n", DILATION_DIR, DILATION_FILE);
    	remove_proc_entry(DILATION_DIR, NULL);
    	PDEBUG_A(" /proc/%s deleted\n", DILATION_DIR);
+
+   	cleanup_experiment_components();
 	
 
 	/* Kill the looping task */

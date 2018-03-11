@@ -14,6 +14,7 @@
 #define STOP_EXP 'I'
 
 #define TRACER_RESULTS 'J'
+#define INITIALIZE_EXP 'K'
 
 
 #endif

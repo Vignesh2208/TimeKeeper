@@ -153,6 +153,7 @@ int initialize_experiment_components(){
 
 	int i;
 
+	PDEBUG_V("Entering Experiment Initialization\n");
 	if(experiment_status == INITIALIZED){
 		PDEBUG_E("Experiment Already initialized\n");
 		return FAIL;
@@ -197,6 +198,7 @@ int initialize_experiment_components(){
 	atomic_set(&n_workers_running,0);
 	atomic_set(&n_active_syscalls,0);
 
+	PDEBUG_V("Init experiment components: Initialized Variables\n");
 
 
 	/* Acquire sys_call_table, hook system calls */
@@ -213,9 +215,11 @@ int initialize_experiment_components(){
 	ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
 	write_cr0(orig_cr0 | 0x00010000);
 
+	PDEBUG_V("Init experiment components: Hooked syscalls\n");
+
 	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
 	if(!IS_ERR(round_sync_task)) {
-	    wake_up_process(round_sync_task);
+	    wake_up_process(round_task);
 	}
 	else{
 		PDEBUG_E("Error Starting Round Sync Task\n");
@@ -224,6 +228,22 @@ int initialize_experiment_components(){
 
 	experiment_stopped = NOTRUNNING;
 	experiment_status = INITIALIZED;
+
+
+	/* Wait to stop loop_task */
+	#ifdef __x86_64
+	if (loop_task != NULL) {
+    	kill(loop_task, SIGSTOP, NULL);
+    	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
+		cpumask_set_cpu(1,&loop_task->cpus_allowed);
+		kill(loop_task, SIGCONT, NULL);
+    }
+	else {
+        PDEBUG_E(" Loop_task is null\n");
+    }
+	#endif
+
+	PDEBUG_V("Init experiment components: Finished\n");
 
 	return SUCCESS;
 
@@ -482,7 +502,9 @@ int round_sync_task(void *data)
         struct timeval now;
 	    s64 start_ns;
 	    tracer * curr_tracer;
-	
+		int run_cpu;
+				
+
 	 	set_current_state(TASK_INTERRUPTIBLE);
 	 	PDEBUG_I("round_sync_task: Started.\n");
                 
@@ -545,6 +567,7 @@ int round_sync_task(void *data)
 			
 
 			set_current_state(TASK_INTERRUPTIBLE);
+			run_cpu = get_cpu();
 			PDEBUG_V("round_sync_task: Waiting for progress sync proc queue to resume. Run_cpu %d\n",run_cpu);
 			wait_event_interruptible(progress_sync_proc_wqueue, ((atomic_read(&progress_n_enabled) == 1 && atomic_read(&progress_n_rounds) > 0) || atomic_read(&progress_n_enabled) == 0) && atomic_read(&n_waiting_tracers) == tracer_num);
 			
@@ -568,7 +591,6 @@ int round_sync_task(void *data)
 					}
 				}
 
-				int run_cpu;
 				run_cpu = get_cpu();
 				PDEBUG_V("round_sync_task: Waiting for per_cpu_workers to finish. Run_cpu %d\n",run_cpu);
             

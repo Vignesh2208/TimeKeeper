@@ -58,6 +58,7 @@ int main(int argc, char * argv[]){
 	char * tracer_args[3];
 	int j = 0;
 	int child_pids[N_MAX_TRACERS];
+	int ret;
 
 	if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "\n");
@@ -133,7 +134,16 @@ int main(int argc, char * argv[]){
 
    
 
-   
+   printf("Initializing Exp ...\n");
+
+   ret = initializeExp();
+   if(ret <= FAIL){
+   		printf("Initialize Exp Failed !\n");
+   		exit(-1);
+   }
+
+   printf("Initialized Exp ...\n");
+   exit(-1);
 
    
    pid_t child;
@@ -177,10 +187,13 @@ int main(int argc, char * argv[]){
    		printf("Exiting due to Error. Some Tracers died!\n");
    		return -1;
    }
+   
    printf("Synchronize and Freezing ... \n");
 
-   while(synchronizeAndFreeze(n_tracers) < 0){
+   while(synchronizeAndFreeze(n_tracers) <= FAIL){
+   		printf("Sync and Freeze Failed \n");
    		usleep(10000);
+   		exit(-1);
    }
 
    printf("Synchronize and Freeze succeeded !\n");

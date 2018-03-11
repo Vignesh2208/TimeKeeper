@@ -43,6 +43,7 @@
 #include "timekeeper_cmds.h"
 
 /* Define this macro to enable debug kernel logging in INFO mode*/
+#define TIMEKEEPER_DEBUG_VERBOSE
 #define TIMEKEEPER_DEBUG_INFO
 
 /* Define this macro to enable debug kernel logging in VERBOSE mode*/
@@ -52,7 +53,7 @@
 #define DEBUG_LEVEL_INFO 1
 #define DEBUG_LEVEL_VERBOSE 2
 
-#define SUCCESS 0
+#define SUCCESS 1
 #define FAIL -1
 
 #define REF_CPU_SPEED	1000	//Number of Instructions per uSec or 1 instruction per nano sec
@@ -94,26 +95,18 @@
 #define NR_select __NR_select
 #define ENABLE_LOCKING
 
-#ifdef TIMEKEEPER_DEBUG_VERBOSE
-	#define DEBUG_LEVEL DEBUG_LEVEL_VERBOSE
-#else
-	#define DEBUG_LEVEL DEBUG_LEVEL_NONE
-#endif
+
+
 
 #ifdef TIMEKEEPER_DEBUG_INFO
-	#define DEBUG_LEVEL DEBUG_LEVEL_INFO
-#else
-	#define DEBUG_LEVEL DEBUG_LEVEL_NONE
-#endif
-
-
-#if DEBUG_LEVEL != DEBUG_LEVEL_NONE
 	#define PDEBUG_I(fmt, args...) printk(KERN_INFO "TimeKeeper: <INFO> " fmt, ## args)
 #else
 	#define PDEBUG_I(fmt,args...)
 #endif
 
-#if DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE
+
+
+#ifdef TIMEKEEPER_DEBUG_VERBOSE
 	#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
 #else
 	#define PDEBUG_V(fmt,args...)

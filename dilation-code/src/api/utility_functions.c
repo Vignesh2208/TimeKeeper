@@ -4,8 +4,8 @@
 #include <sys/syscall.h>
 #include "utility_functions.h"
 
-const char *FILENAME = "/proc/dilation/status"; //where TimeKeeper LKM is reading commands
-
+//const char *FILENAME = "/proc/dilation/status"; //where TimeKeeper LKM is reading commands
+const char *FILENAME = "/proc/status";
 /*
 Sends a specific command to the TimeKeeper Kernel Module. To communicate with the TLKM, you send messages to the location specified by FILENAME
 */
@@ -17,6 +17,7 @@ int send_to_timekeeper(char * cmd) {
         //printf("Error communicating with TimeKeeper\n");
         return -1;
     }
+    printf("Sending Command: %s\n", cmd);
     ret = fprintf(fp, "%s,", cmd); //add comma to act as last character
     fclose(fp);
     return ret;

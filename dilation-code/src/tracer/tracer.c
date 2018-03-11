@@ -535,7 +535,8 @@ int main(int argc, char * argv[]){
 	#else
 
 
-		fp = fopen("/proc/dilation/status","w+");
+		//fp = fopen("/proc/dilation/status","a");
+		fp = fopen("/proc/status","a");
 
 		if(fp == NULL){
 			LOG("PROC file open error\n");
@@ -544,12 +545,20 @@ int main(int argc, char * argv[]){
 
 		cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
 
+		if(cpu_assigned <= 0){
+			LOG("Registration Error\n");
+			exit(-1);
+		}
+
 		while(1){
 			flush_buffer(nxt_cmd, MAX_PAYLOAD);
 			tail_ptr = 0;
 			new_cmd_pid = 0;
 			n_insns = 0;
-			fread(nxt_cmd, sizeof(char), MAX_PAYLOAD, fp);
+			while(strlen(nxt_cmd) <= 1){
+				fread(nxt_cmd, sizeof(char), MAX_PAYLOAD, fp);
+				usleep(10000);
+			}
 			LOG("Tracer: %d, Received Command: %s\n", tracer_id, nxt_cmd);
 			while(tail_ptr != -1){
 				tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);

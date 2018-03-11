@@ -21,6 +21,7 @@ int gettimepid(int pid);
 
 int startExp();
 int stopExp();
+int initializeExp();
 
 
 int progress_n_rounds(int n_rounds);

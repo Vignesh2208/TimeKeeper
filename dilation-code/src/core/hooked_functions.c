@@ -439,12 +439,12 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		s64 diff = 0;
 		if(wakeup_time >  now){
 			diff = wakeup_time - now; 
-			PDEBUG_V("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Overshoot error = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Overshoot error = %llu\n",current->pid, now,diff );
 
 		}
 		else{
 			diff = now - wakeup_time;
-			PDEBUG_V("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Undershoot error = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Undershoot error = %llu\n",current->pid, now,diff );
 		}		 
 		
 		ret = select_helper->ret;
@@ -629,12 +629,12 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		s64 diff = 0;
 		if(wakeup_time > now){
 			diff = wakeup_time - now; 
-			PDEBUG_V("Sys Poll: Resumed Poll Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Poll: Resumed Poll Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now,diff );
 
 		}
 		else{
 			diff = now - wakeup_time;
-			PDEBUG_V("Sys Poll: Resumed Poll Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_V("Sys Poll: Resumed Poll Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now,diff );
 
 		}
 		

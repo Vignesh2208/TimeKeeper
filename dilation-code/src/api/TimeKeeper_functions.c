@@ -59,6 +59,18 @@ int startExp() {
     return -1;
 }
 
+int initializeExp() {
+
+	if (is_root() && isModuleLoaded()) {
+		char command[100];
+		flush_buffer(command,100);
+		sprintf(command, "%c", INITIALIZE_EXP);
+		return send_to_timekeeper(command);
+    }
+    return -1;
+
+}
+
 /*
 Given all Pids added to experiment, will set all their virtual times to be the same, then freeze them all (CBE and CS)
 */
