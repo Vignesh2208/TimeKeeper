@@ -131,10 +131,15 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 	flush_buffer(buffer, 100);
 	errno = 0;
 	do{
+		#ifdef DEBUG_VERBOSE
 		print_curr_time("Entering waitpid");
 		ret = waitpid(pid, &status, WTRACE_DESCENDENTS | __WALL);
 		sprintf(buffer, "Ret waitpid = %d, errno = %d", ret, errno);
 		print_curr_time(buffer);
+		#else
+		ret = waitpid(pid, &status, WTRACE_DESCENDENTS | __WALL);
+		#endif
+
 	} while(ret == (pid_t) - 1 && errno == EINTR);
 
 	if((pid_t)ret != pid){
@@ -248,8 +253,10 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
           		libperf_finalize(pd, 0); 	
 			ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
 
+			#ifdef DEBUG_VERBOSE
 			LOG("Single step completed for Process : %d. Status = %lX. Rip: %lX\n\n ", pid, status, regs.rip);
-			
+			#endif
+
 			if(ret == -1){
 				LOG("ERROR in GETREGS.\n");
 			}
@@ -327,8 +334,12 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
+
+			#ifdef DEBUG_VERBOSE
 			sprintf(buffer, "PTRACE RESUMING MULTI-STEPPING OF process. ret = %d, error_code = %d",ret,errno);
 			print_curr_time(buffer);	
+			#endif
+
 			ret = ptrace(PTRACE_MULTISTEP, pid, 0, (u32*)&n_insns);
 				
 		}
@@ -340,8 +351,12 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
+
+			#ifdef DEBUG_VERBOSE
 			sprintf(buffer, "PTRACE RESUMING process. ret = %d, error_code = %d",ret, errno);
 			print_curr_time(buffer);
+			#endif
+
 			ret = ptrace(PTRACE_CONT, pid, 0, 0);
 			
 
@@ -591,13 +606,20 @@ int main(int argc, char * argv[]){
 				if(new_cmd_pid == 0)
 					break;
 
+				#ifdef DEBUG_VERBOSE
 				LOG("Tracer: %d, Running Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
+				#endif
+
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
 			}
 
 			flush_buffer(command,MAX_BUF_SIZ);
 			sprintf(command, "%c,%s,", TRACER_RESULTS,"0");
+
+			#ifdef DEBUG_VERBOSE
 			LOG("Tracer: %d: Writing Cmd Results\n", tracer_id);
+			#endif
+			
 			write(fp,command, strlen(command));
 		}
 		end:

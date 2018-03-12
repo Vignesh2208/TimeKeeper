@@ -197,6 +197,7 @@ int initialize_experiment_components(){
 	atomic_set(&experiment_stopping,0);
 	atomic_set(&n_workers_running,0);
 	atomic_set(&n_active_syscalls,0);
+	atomic_set(&n_waiting_tracers,0);
 
 	PDEBUG_V("Init experiment components: Initialized Variables\n");
 
@@ -346,11 +347,14 @@ int sync_and_freeze(char * write_buffer) {
 	if (tracer_num <= 0) {
 		PDEBUG_E("Sync And Freeze: Nothing added to experiment, dropping out\n");
 		return FAIL;
-	}else if(tracer_num != n_expected_tracers){
+	}
+	
+	if(tracer_num != n_expected_tracers){
 		PDEBUG_E("Sync And Freeze: Expected number of tracers: %d not present. Actual number of registered tracers: %d\n", n_expected_tracers, tracer_num);
 		return FAIL;
 	}
-	else if(n_processed_tracers != n_expected_tracers){
+
+	if(n_processed_tracers != n_expected_tracers){
 		PDEBUG_E("Sync And Freeze: Expected number of tracer spinner tasks: %d not present. Actual number of registered tracer spinners: %d\n", n_expected_tracers, n_processed_tracers);
 		return FAIL;	
 	}
@@ -584,9 +588,9 @@ int round_sync_task(void *data)
 
 			
 
-			set_current_state(TASK_INTERRUPTIBLE);
+			set_current_state(TASK_INTERRUPTIBLE);			
 			run_cpu = get_cpu();
-			PDEBUG_V("round_sync_task: Waiting for progress sync proc queue to resume. Run_cpu %d\n",run_cpu);
+			PDEBUG_V("round_sync_task: Waiting for progress sync proc queue to resume. Run_cpu %d. N_waiting tracers = %d\n",run_cpu, atomic_read(&n_waiting_tracers));
 			wait_event_interruptible(progress_sync_proc_wqueue, ((atomic_read(&progress_n_enabled) == 1 && atomic_read(&progress_n_rounds) > 0) || atomic_read(&progress_n_enabled) == 0) && atomic_read(&n_waiting_tracers) == tracer_num);
 			if(atomic_read(&experiment_stopping) == 1){
 				continue;
@@ -596,7 +600,7 @@ int round_sync_task(void *data)
 			/* wait up each synchronization worker thread, then wait til they are all done */
 			if (EXP_CPUS > 0 && tracer_num  > 0) {
 
-				PDEBUG_V("round_sync_task: Round finished. Waking up worker threads\n");
+				PDEBUG_V("round_sync_task: Round Starting. Waking up worker threads\n");
 				atomic_set(&n_workers_running, EXP_CPUS);
 			
 				for (i=0; i < EXP_CPUS; i++) {
@@ -606,7 +610,9 @@ int round_sync_task(void *data)
 						PDEBUG_V("round_sync_task: Sync thread %d wake up\n",i);
 					}
 					else{
-					    while(wake_up_process(chaintask[i]) != 1);
+					    while(wake_up_process(chaintask[i]) != 1){
+					    	msleep(50);
+					    }
 						PDEBUG_V("round_sync_task: Sync thread %d already running\n",i);
 					}
 				}
@@ -654,6 +660,7 @@ int round_sync_task(void *data)
 				
 				schedule();			
 			}
+			set_current_state(TASK_INTERRUPTIBLE);
 			PDEBUG_V("round_sync_task: Resumed\n");
         }
         return 0;
@@ -811,6 +818,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 	llist* schedule_queue = &curr_tracer->schedule_queue;
 	llist_elem* head = schedule_queue->head;
 	lxc_schedule_elem* curr_elem;
+	lxc_schedule_elem* tmp;
 
 	struct poll_helper_struct * task_poll_helper = NULL;
 	struct select_helper_struct * task_select_helper = NULL;
@@ -848,18 +856,20 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 				curr_elem->n_insns_curr_round = total_insns;
 				//n_alotted_insns = total_insns;
 			#else
-				if(n_alotted_insns + curr_elem->n_insns_left > total_insns){
-					curr_elem->n_insns_curr_round = total_insns - n_alotted_insns;
-					curr_elem->n_insns_left = curr_elem->n_insns_left - curr_elem->n_insns_curr_round;
-					n_alotted_insns = total_insns;
-				}
-				else{
-
-					if(curr_elem->n_insns_left > 0){ // there should exist only one element like this
+				if(curr_elem->n_insns_left > 0) { // there should exist only one element like this
+					if(n_alotted_insns + curr_elem->n_insns_left > total_insns){
+						curr_elem->n_insns_curr_round = total_insns - n_alotted_insns;
+						curr_elem->n_insns_left = curr_elem->n_insns_left - curr_elem->n_insns_curr_round;
+						n_alotted_insns = total_insns;
+					}
+					else{					
 						curr_elem->n_insns_curr_round = curr_elem->n_insns_left;
 						curr_elem->n_insns_left = 0;
-						n_alotted_insns += curr_elem->n_insns_curr_round;
+						n_alotted_insns += curr_elem->n_insns_curr_round;						
 					}
+
+					curr_tracer->last_run = curr_elem;
+
 				}
 
 			#endif
@@ -878,11 +888,30 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 	#ifndef __TK_MULTI_CORE_MODE
 		if(n_alotted_insns < total_insns && no_task_runnable == 0){
 
-			repeat:
-			head = schedule_queue->head;
-			while(head != NULL && n_alotted_insns < total_insns){
-				curr_elem = (lxc_schedule_elem *)head->item;
+			
+			if(curr_tracer->last_run == NULL)
+				head = schedule_queue->head;
+			else{
+				head = schedule_queue->head;
+				while(head != NULL){
+					tmp = (lxc_schedule_elem *)head->item;
+					if(tmp == curr_tracer->last_run){
+						head = head->next;
+						break;
+					}
+					head = head->next;
+				}
 
+				if(head == NULL){
+					//last run task no longer exists in schedule queue
+					head = schedule_queue->head; //reset to head of schedule queue for now.
+				}
+			}
+
+			while(n_alotted_insns < total_insns){
+
+
+				curr_elem = (lxc_schedule_elem *)head->item;
 				if(!curr_elem)
 					return;
 
@@ -909,6 +938,11 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 							n_alotted_insns += curr_elem->n_insns_share;
 						}
 
+						if(n_alotted_insns == total_insns){
+							curr_tracer->last_run = curr_elem;
+							release_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
+							return;
+						}
 					
 				}
 				else{
@@ -918,10 +952,12 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 
 				release_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
 				head = head->next;
+
+				if(head == NULL){
+					head = schedule_queue->head;
+				}
 			}
 
-			if(n_alotted_insns < total_insns)
-				goto repeat;
 		}
 
 

@@ -61,6 +61,9 @@ int main(int argc, char * argv[]){
 	int j = 0;
 	int child_pids[N_MAX_TRACERS];
 	int ret;
+	pid_t ret_val;
+	int n_exited_tracers = 0;
+	int status;
 
 	if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "\n");
@@ -192,9 +195,9 @@ int main(int argc, char * argv[]){
    printf("Synchronize and Freezing ... \n");
 
    while(synchronizeAndFreeze(n_tracers) <= FAIL){
-   		printf("Sync and Freeze Failed \n");
-   		usleep(10000);
-   		exit(-1);
+   		printf("Sync and Freeze Failed. Retrying in 1 sec\n");
+   		usleep(1000000);
+   		//exit(-1);
    }
 
    printf("Synchronize and Freeze succeeded !\n");
@@ -205,7 +208,26 @@ int main(int argc, char * argv[]){
    printf("Stopping Experiment ... \n");
    stopExp();
 
-   printf("Finishing Test ... \n");
+   printf("Waiting for tracers to exit ...\n");
+
+   while(n_exited_tracers < n_tracers){
+	   for(i = 0; i < n_tracers; i++){
+			status = 0;
+			if(child_pids[i]){
+				ret_val = waitpid((pid_t)child_pids[i], &status,0);
+
+				if(ret_val == (pid_t)child_pids[i] && WIFEXITED(status)){
+					child_pids[i] = 0;
+					n_exited_tracers ++;
+				}
+
+			}
+		}
+	}	
+
+
+
+   printf("Test Succeeded !\n");
 
    return 0;
 

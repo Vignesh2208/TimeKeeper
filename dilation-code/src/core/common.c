@@ -96,8 +96,15 @@ void clean_up_schedule_list(tracer * tracer_entry){
 		if(pid){
 			pid_struct = find_get_pid(pid); 	 
 			task = pid_task(pid_struct,PIDTYPE_PID); 
-			if(task != NULL)
+			if(task != NULL){
+				task->virt_start_time = 0;
+				task->past_physical_time = 0;
+				task->dilation_factor = 0;
+				task->freeze_time = 0;
+				task->past_virtual_time = 0;
+				task->wakeup_time = 0;
 				kill(task, SIGKILL);
+			}
 		}
 		else
 			break;
@@ -296,9 +303,7 @@ int register_tracer_process(char * write_buffer){
 		dilation_factor = REF_CPU_SPEED;	//no dilation
 
 
-	mutex_lock(&exp_lock);
-	tracer_id = ++tracer_num;
-	mutex_unlock(&exp_lock);
+	
 
 	PDEBUG_I("Register Tracer: Starting ...\n");
 
@@ -315,6 +320,9 @@ int register_tracer_process(char * write_buffer){
 			i = best_cpu;
 	}
 
+	mutex_lock(&exp_lock);
+	tracer_id = ++tracer_num;
+	
 	per_cpu_chain_length[best_cpu] ++;
 
 	new_tracer->tracer_id = tracer_id;
@@ -326,13 +334,13 @@ int register_tracer_process(char * write_buffer){
 	new_tracer->quantum_n_insns = div_s64_rem(new_tracer->dilation_factor*tracer_ref_quantum_n_insns,REF_CPU_SPEED,&rem);
 	new_tracer->quantum_n_insns += rem;
 
-	PDEBUG_I("Register Tracer: Pid: %d, ID: %d, dilation factor: %d, freeze_quantum: %d, assigned cpu: %d, quantum_n_insns: %d\n", current->pid, new_tracer->tracer_id, new_tracer->dilation_factor, new_tracer->freeze_quantum, new_tracer->cpu_assignment, new_tracer->quantum_n_insns);
-
-	mutex_lock(&exp_lock);
+	
 	hmap_put_abs(&get_tracer_by_id, tracer_id, new_tracer);
 	hmap_put_abs(&get_tracer_by_pid, current->pid, new_tracer);
 	llist_append(&per_cpu_tracer_list[best_cpu], new_tracer);
 	mutex_unlock(&exp_lock);
+
+	PDEBUG_I("Register Tracer: Pid: %d, ID: %d, dilation factor: %d, freeze_quantum: %d, assigned cpu: %d, quantum_n_insns: %d\n", current->pid, new_tracer->tracer_id, new_tracer->dilation_factor, new_tracer->freeze_quantum, new_tracer->cpu_assignment, new_tracer->quantum_n_insns);
 
 
 	bitmap_zero((&current->cpus_allowed)->bits, 8);
@@ -452,7 +460,7 @@ void update_all_children_virtual_time(tracer * tracer_entry){
 
 	s64 dilated_run_time;
 	s64 curr_virtual_time;
-	if(tracer_entry){
+	if(tracer_entry && tracer_entry->spinner_task && tracer_entry->tracer_task){
 		dilated_run_time = tracer_entry->freeze_quantum;
 		tracer_entry->spinner_task->freeze_time = tracer_entry->round_start_virt_time  + dilated_run_time;
 		curr_virtual_time = tracer_entry->round_start_virt_time  + dilated_run_time;

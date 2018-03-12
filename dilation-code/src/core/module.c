@@ -241,8 +241,8 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 			// free up memory
 			PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
 			mutex_lock(&exp_lock);
-			hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
-			hmap_remove_abs(&get_tracer_by_pid, current->pid);
+			//hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
+			//hmap_remove_abs(&get_tracer_by_pid, current->pid);
 			ret = curr_tracer->buf_tail_ptr;
 			kfree(curr_tracer);
 			mutex_unlock(&exp_lock);
