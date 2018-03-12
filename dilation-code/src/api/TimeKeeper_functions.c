@@ -40,7 +40,7 @@ int addToExp(float relative_cpu_speed, u32 n_round_instructions) {
     if (is_root() && isModuleLoaded()) {
         char command[100];
         flush_buffer(command,100);
-		sprintf(command, "%c,%d,%d", REGISTER_TRACER, rel_cpu_speed,(int)n_round_instructions);
+		sprintf(command, "%c,%d,%d,", REGISTER_TRACER, rel_cpu_speed,(int)n_round_instructions);
 		return send_to_timekeeper(command);
 	}
     return -1;
@@ -53,7 +53,7 @@ int startExp() {
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c", START_EXP);
+		sprintf(command, "%c,", START_EXP);
 		return send_to_timekeeper(command);
     }
     return -1;
@@ -64,7 +64,7 @@ int initializeExp() {
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c", INITIALIZE_EXP);
+		sprintf(command, "%c,", INITIALIZE_EXP);
 		return send_to_timekeeper(command);
     }
     return -1;
@@ -81,7 +81,7 @@ int synchronizeAndFreeze(int n_expected_tracers) {
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d", SYNC_AND_FREEZE,n_expected_tracers);
+		sprintf(command, "%c,%d,", SYNC_AND_FREEZE,n_expected_tracers);
 		return send_to_timekeeper(command);
 	}
 	return -1;
@@ -95,7 +95,7 @@ int stopExp() {
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c", STOP_EXP);
+		sprintf(command, "%c,", STOP_EXP);
 		return send_to_timekeeper(command);
 	}
 	return -1;
@@ -112,7 +112,7 @@ int update_tracer_params(int tracer_pid, float relative_cpu_speed, u32 n_round_i
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d,%d,%d", UPDATE_TRACER_PARAMS,tracer_pid, rel_cpu_speed, (int)n_round_instructions);
+		sprintf(command, "%c,%d,%d,%d,", UPDATE_TRACER_PARAMS,tracer_pid, rel_cpu_speed, (int)n_round_instructions);
 		return send_to_timekeeper(command);
 	}
 	return -1;
@@ -126,7 +126,7 @@ int set_netdevice_owner(int tracer_pid, char * intf_name){
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d,%s", SET_NETDEVICE_OWNER,tracer_pid, intf_name);
+		sprintf(command, "%c,%d,%s,", SET_NETDEVICE_OWNER,tracer_pid, intf_name);
 		return send_to_timekeeper(command);
 	}
 
@@ -142,7 +142,7 @@ int gettimepid(int pid){
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d", GETTIMEPID,pid);
+		sprintf(command, "%c,%d,", GETTIMEPID,pid);
 		return send_to_timekeeper(command);
 	}
 
@@ -158,7 +158,7 @@ int progress_n_rounds(int n_rounds){
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d", PROGRESS_N_ROUNDS,n_rounds);
+		sprintf(command, "%c,%d,", PROGRESS_N_ROUNDS,n_rounds);
 		return send_to_timekeeper(command);
 	}
 
@@ -168,7 +168,7 @@ int progress(){
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c", PROGRESS);
+		sprintf(command, "%c,", PROGRESS);
 		return send_to_timekeeper(command);
     }
     return -1;
@@ -184,7 +184,7 @@ int write_tracer_results(char * result){
 	if (is_root() && isModuleLoaded()) {
 		char command[MAX_BUF_SIZ];
 		flush_buffer(command,MAX_BUF_SIZ);
-		sprintf(command, "%c,%s", TRACER_RESULTS,result);
+		sprintf(command, "%c,%s,", TRACER_RESULTS,result);
 		return send_to_timekeeper(command);
 	}
 

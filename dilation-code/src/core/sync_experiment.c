@@ -61,8 +61,8 @@ wait_queue_head_t expstop_call_proc_wqueue;
 wait_queue_head_t* syscall_control_queue;
 
 struct task_struct ** chaintask;
-int * values;
-int * syscall_running; 
+int* values;
+int* syscall_running; 
 
 int per_cpu_worker(void *data);
 int round_sync_task(void *data);
@@ -93,7 +93,7 @@ int progress_exp_fixed_rounds(char * write_buffer){
 	if(experiment_stopped == FROZEN){
 		experiment_stopped = RUNNING;
 		PDEBUG_A("progress exp n rounds: Waking up round_sync_task\n");
-		while(wake_up_process(round_sync_task) != 1);
+		while(wake_up_process(round_task) != 1);
 		PDEBUG_A("progress exp n rounds: Woke up round_sync_task\n");
 	}
 
@@ -140,7 +140,7 @@ void start_exp(){
 		wake_up_interruptible(&progress_sync_proc_wqueue);
 		experiment_stopped = RUNNING;
 		PDEBUG_A("start exp: Waking up round_sync_task\n");
-		while(wake_up_process(round_sync_task) != 1);
+		while(wake_up_process(round_task) != 1);
 		PDEBUG_A("start exp: Woke up round_sync_task\n");
 	}
 
@@ -218,7 +218,7 @@ int initialize_experiment_components(){
 	PDEBUG_V("Init experiment components: Hooked syscalls\n");
 
 	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
-	if(!IS_ERR(round_sync_task)) {
+	if(!IS_ERR(round_task)) {
 	    wake_up_process(round_task);
 	}
 	else{
@@ -265,6 +265,20 @@ int cleanup_experiment_components(){
 	hmap_destroy(&sleep_process_lookup);
 	hmap_destroy(&get_tracer_by_id);
 	hmap_destroy(&get_tracer_by_pid);
+
+	tracer_num = 0;
+	n_processed_tracers = 0;
+	//loop_task = NULL;
+	round_task = NULL;
+
+	atomic_set(&progress_n_enabled,0);
+	atomic_set(&progress_n_rounds,0);
+	atomic_set(&experiment_stopping,0);
+	atomic_set(&n_workers_running,0);
+	atomic_set(&n_active_syscalls,0);
+	atomic_set(&n_waiting_tracers,0);
+
+
 
 	if(sys_call_table){
 
@@ -382,20 +396,22 @@ int sync_and_freeze(char * write_buffer) {
 	do_gettimeofday(&now_timeval);
     now = timeval_to_ns(&now_timeval);
 
-    for(i = 0; i < tracer_num; i++){
+    for(i = 1; i <= tracer_num; i++){
     	curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
     	if(curr_tracer){
+
+    		PDEBUG_A("Sync And Freeze: Setting Virt time for Tracer %d and its children\n", i);	
     		set_children_time(curr_tracer, curr_tracer->tracer_task, now);
-    	}
+    	
+	    	curr_tracer->round_start_virt_time = now;
+	    	if(curr_tracer->spinner_task){
+	    		curr_tracer->spinner_task->virt_start_time = now;
+	    		curr_tracer->spinner_task->freeze_time = now;
+	    		curr_tracer->spinner_task->past_physical_time = 0;
+		        curr_tracer->spinner_task->past_virtual_time = 0;
+				curr_tracer->spinner_task->wakeup_time = 0;
 
-    	curr_tracer->round_start_virt_time = now;
-    	if(curr_tracer->spinner_task){
-    		curr_tracer->spinner_task->virt_start_time = now;
-    		curr_tracer->spinner_task->freeze_time = now;
-    		curr_tracer->spinner_task->past_physical_time = 0;
-	        curr_tracer->spinner_task->past_virtual_time = 0;
-			curr_tracer->spinner_task->wakeup_time = 0;
-
+	    	}
     	}
     }
 
@@ -432,13 +448,15 @@ int per_cpu_worker(void *data)
 	set_current_state(TASK_INTERRUPTIBLE);
 
 		
-	PDEBUG_I("#### per_cpu_worker: Started per cpu worker Thread for lxcs on CPU = %d\n",cpuID);
+	PDEBUG_I("#### per_cpu_worker: Started per cpu worker Thread for Tracers alotted to CPU = %d\n",cpuID + 2);
 	tracer_list =  &per_cpu_tracer_list[cpuID];
 
 	
 	/* if it is the very first round, don't try to do any work, just rest */
-	if (round == 0)
+	if (round == 0){
+		PDEBUG_I("#### per_cpu_worker: For Tracers alotted to CPU = %d. Waiting to be woken up !\n",cpuID + 2);
 		goto startWork;
+	}
 	
 	while (!kthread_should_stop())
 	{
@@ -448,7 +466,7 @@ int per_cpu_worker(void *data)
             set_current_state(TASK_INTERRUPTIBLE);
 		    atomic_dec(&n_workers_running);
 		    run_cpu = get_cpu();   
-			PDEBUG_V("#### per_cpu_worker: Stopping. Sending wake up from worker Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
+			PDEBUG_V("#### per_cpu_worker: Stopping. Sending wake up from worker Thread for lxcs on CPU = %d. My Run cpu = %d\n",cpuID + 2,run_cpu);
 		    wake_up_interruptible(&sync_worker_wqueue);
         	return 0;
         }
@@ -461,20 +479,20 @@ int per_cpu_worker(void *data)
 			curr_tracer = (tracer *)head->item;
 
 			if (schedule_list_size(curr_tracer) > 0) {
-				PDEBUG_V("per_cpu_worker: Called  UnFreeze Proc Recurse on CPU: %d\n", cpuID);					
+				PDEBUG_V("per_cpu_worker: Called  UnFreeze Proc Recurse on CPU: %d\n", cpuID +  2);					
 				unfreeze_proc_exp_recurse(curr_tracer);
-				PDEBUG_V("per_cpu_worker: Finished Unfreeze Proc on CPU: %d\n", cpuID);
+				PDEBUG_V("per_cpu_worker: Finished Unfreeze Proc on CPU: %d\n", cpuID + 2);
 	           	
 			}
 			head = head->next;
 		}
-		PDEBUG_V("per_cpu_worker: Thread done with on %d\n",cpuID);
+		PDEBUG_V("per_cpu_worker: Thread done with on %d\n",cpuID + 2);
 		/* when the first task has started running, signal you are done working, and sleep */
 		round++;
 		set_current_state(TASK_INTERRUPTIBLE);
 		atomic_dec(&n_workers_running);
 		run_cpu = get_cpu();
-		PDEBUG_V("#### per_cpu_worker: Sending wake up from per_cpu_worker on behalf of all Tracers on CPU = %d. My Run cpu = %d\n",cpuID,run_cpu);
+		PDEBUG_V("#### per_cpu_worker: Sending wake up from per_cpu_worker on behalf of all Tracers on CPU = %d. My Run cpu = %d\n",cpuID + 2,run_cpu);
 		wake_up_interruptible(&sync_worker_wqueue);
 		
 
@@ -482,7 +500,7 @@ int per_cpu_worker(void *data)
 		schedule();
 		set_current_state(TASK_RUNNING);
 		run_cpu = get_cpu();
-		PDEBUG_V("~~~~ per_cpu_worker: I am woken up for Tracers on CPU =  %d. My Run cpu = %d\n",cpuID,run_cpu);
+		PDEBUG_V("~~~~ per_cpu_worker: Woken up for Tracers on CPU =  %d. My Run cpu = %d\n",cpuID + 2,run_cpu);
 		
 	}
 	return 0;
@@ -570,7 +588,9 @@ int round_sync_task(void *data)
 			run_cpu = get_cpu();
 			PDEBUG_V("round_sync_task: Waiting for progress sync proc queue to resume. Run_cpu %d\n",run_cpu);
 			wait_event_interruptible(progress_sync_proc_wqueue, ((atomic_read(&progress_n_enabled) == 1 && atomic_read(&progress_n_rounds) > 0) || atomic_read(&progress_n_enabled) == 0) && atomic_read(&n_waiting_tracers) == tracer_num);
-			
+			if(atomic_read(&experiment_stopping) == 1){
+				continue;
+			}		
             do_gettimeofday(&ktv);
 
 			/* wait up each synchronization worker thread, then wait til they are all done */
@@ -628,8 +648,10 @@ int round_sync_task(void *data)
                 set_current_state(TASK_INTERRUPTIBLE);	
 		
 			if(experiment_stopped == NOTRUNNING){
-				PDEBUG_I("round_sync_task: Waiting to be woken up\n");
 				set_current_state(TASK_INTERRUPTIBLE);	
+				round_count++;
+				PDEBUG_I("round_sync_task: Waiting to be woken up\n");
+				
 				schedule();			
 			}
 			PDEBUG_V("round_sync_task: Resumed\n");
@@ -731,25 +753,34 @@ void resume_all_syscall_blocked_processes(tracer * curr_tracer){
 void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 
 	struct pid *pid_struct;
-	struct task_Struct * task;
-	llist * schedule_queue = &curr_tracer->schedule_queue;
-	llist_elem * head = schedule_queue->head;
-	lxc_schedule_elem * curr_elem;
+	struct task_struct *task;
+	llist *schedule_queue ;
+	llist_elem *head ;
+	lxc_schedule_elem *curr_elem;
 	int n_checked_processes = 0;
 	int n_scheduled_processes = 0;
 	
 
 	if(!curr_tracer)
-		return NULL;
+		return;
 
+	curr_elem = NULL;
+
+	//schedule_queue = &curr_tracer->schedule_queue;
+	//head = schedule_queue->head;
+	PDEBUG_V("Clean up irrelevant processes: Entered.\n");
 	n_scheduled_processes = schedule_list_size(curr_tracer);
+	PDEBUG_V("Clean up irrelevant processes: Entered. n_scheduled_processes: %d\n", n_scheduled_processes);
 
 	while(n_checked_processes < n_scheduled_processes){
 
-		curr_elem = schedule_list_get_head(curr_tracer);
-
+		//curr_elem = (lxc_schedule_elem *) schedule_list_get_head(curr_tracer);
+		curr_elem = (lxc_schedule_elem *)llist_get(&curr_tracer->schedule_queue, 0);
+		PDEBUG_V("Clean up irrelevant processes: Got head.\n");
 		if(!curr_elem)
 			return;	
+
+		PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. n_scheduled_processes: %d\n", curr_elem->pid, n_scheduled_processes);
 		pid_struct = find_get_pid(curr_elem->pid); 	 
 		task = pid_task(pid_struct,PIDTYPE_PID); 
 
@@ -758,9 +789,11 @@ void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 			if(task == NULL){ // task is dead
 				//hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
 				//hmap_remove_abs(&curr_tracer->ignored_children, curr_elem->pid);
+				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is dead\n", curr_elem->pid);
 				pop_schedule_list(curr_tracer);
 			}
 			else{ // task is ignored
+				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is ignored\n", curr_elem->pid);
 				hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
 			}
 
@@ -775,15 +808,15 @@ void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 
 
 void update_all_runnable_task_timeslices(tracer * curr_tracer){
-	llist * schedule_queue = &curr_tracer->schedule_queue;
-	llist_elem * head = schedule_queue->head;
-	lxc_schedule_elem * curr_elem;
+	llist* schedule_queue = &curr_tracer->schedule_queue;
+	llist_elem* head = schedule_queue->head;
+	lxc_schedule_elem* curr_elem;
 
 	struct poll_helper_struct * task_poll_helper = NULL;
 	struct select_helper_struct * task_select_helper = NULL;
 	struct sleep_helper_struct * task_sleep_helper = NULL;
 
-	u32 flags;
+	unsigned long flags;
 	s64 total_insns = curr_tracer->quantum_n_insns;
 	s64 n_alotted_insns = 0;
 	int no_task_runnable = 1;
@@ -795,15 +828,20 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 	#endif
 		curr_elem = (lxc_schedule_elem *)head->item;
 
-		if(!curr_elem)
+		if(!curr_elem){
+			PDEBUG_V("Update all runnable task timeslices: Curr elem is NULL\n");
 			return;
+		}
+
+		PDEBUG_V("Update all runnable task timeslices: Processing Curr elem Left\n");
+		PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
 
 		acquire_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
 		task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
 		task_select_helper = hmap_get_abs(&select_process_lookup,curr_elem->pid);
 		task_sleep_helper = hmap_get_abs(&sleep_process_lookup, curr_elem->pid);
 
-		if(task_poll_helper != NULL && task_select_helper != NULL && task_sleep_helper != NULL){
+		if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
 
 			no_task_runnable = 0;
 			#ifdef __TK_MULTI_CORE_MODE
@@ -848,12 +886,16 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 				if(!curr_elem)
 					return;
 
+				PDEBUG_V("Update all runnable task timeslices: Processing Curr elem Share\n");
+				PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
+
+
 				acquire_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
 				task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
 				task_select_helper = hmap_get_abs(&select_process_lookup,curr_elem->pid);
 				task_sleep_helper = hmap_get_abs(&sleep_process_lookup, curr_elem->pid);
 
-				if(task_poll_helper != NULL && task_select_helper != NULL && task_sleep_helper != NULL){
+				if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
 					
 						
 						if(n_alotted_insns + curr_elem->n_insns_share > total_insns){
@@ -890,9 +932,9 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 
 lxc_schedule_elem * get_next_runnable_task(tracer * curr_tracer){
 
-	llist * schedule_queue = &curr_tracer->schedule_queue;
-	llist_elem * head = schedule_queue->head;
-	lxc_schedule_elem * curr_elem;
+	//llist * schedule_queue = &curr_tracer->schedule_queue;
+	//llist_elem * head = schedule_queue->head;
+	lxc_schedule_elem * curr_elem =NULL;
 	int n_checked_processes = 0;
 	int n_scheduled_processes = 0;
 	
@@ -904,7 +946,7 @@ lxc_schedule_elem * get_next_runnable_task(tracer * curr_tracer){
 
 	while(n_checked_processes < n_scheduled_processes){
 
-		curr_elem = schedule_list_get_head(curr_tracer);
+		curr_elem = (lxc_schedule_elem *)llist_get(&curr_tracer->schedule_queue, 0);
 
 		if(!curr_elem)
 			return NULL;	
@@ -1078,7 +1120,7 @@ void clean_exp(){
 		if(curr_tracer){
 			clean_up_schedule_list(curr_tracer);
 			flush_buffer(curr_tracer->run_q_buffer, BUF_MAX_SIZE);
-			curr_tracer->buf_tail_ptr = 0;
+			curr_tracer->buf_tail_ptr = 4;
 			sprintf(curr_tracer->run_q_buffer,"STOP");
 			atomic_set(&curr_tracer->w_queue_control,0);
 			wake_up_interruptible(&curr_tracer->w_queue);

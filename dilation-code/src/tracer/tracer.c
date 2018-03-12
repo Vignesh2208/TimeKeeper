@@ -1,4 +1,8 @@
 #include "tracer.h"
+#include <sys/sysinfo.h>
+#include <fcntl.h> // for open
+#include <unistd.h> // for close
+
 #define TRACER_RESULTS 'J'
 #define MAX_BUF_SIZ 1024
 
@@ -422,9 +426,9 @@ void init_msg_buffer(struct nlmsghdr *nlh, struct sockaddr_nl * dst_addr) {
 int main(int argc, char * argv[]){
 
 	char * cmd_file_path = NULL;
-	FILE * fp;
+	int fp;
 	char * line;
-	size_t read;
+	size_t line_read;
 	size_t len = 0;
 	
 	u32 n_insns;
@@ -444,6 +448,8 @@ int main(int argc, char * argv[]){
 	u32 n_round_insns;
 	int cpu_assigned;
 	char command[MAX_BUF_SIZ];
+	int n_cpus = get_nprocs();
+	int read_ret = -1;
 
 	
 
@@ -479,13 +485,13 @@ int main(int argc, char * argv[]){
 	#endif
 
 
-	LOG("Tracer Pid: %d, Tracer ID: %d, CMDS_FILE_PATH: %s, REL_CPU_SPEED: %f, N_ROUND_INSNS: %lu\n", (pid_t)getpid(), tracer_id, cmd_file_path, rel_cpu_speed, n_round_insns);
+	LOG("Tracer Pid: %d, Tracer ID: %d, CMDS_FILE_PATH: %s, REL_CPU_SPEED: %f, N_ROUND_INSNS: %lu, N_CPUS: %d\n", (pid_t)getpid(), tracer_id, cmd_file_path, rel_cpu_speed, n_round_insns, n_cpus);
 
 	fp = fopen(cmd_file_path,"r");
 	if(fp == NULL) 
 		exit(-1);
 
-	while ((read = getline(&line, &len, fp)) != -1) {
+	while ((line_read = getline(&line, &len, fp)) != -1) {
 		count ++;
        	LOG("Running Command no: %d: %s", count, line);
 		run_command(line, &new_cmd_pid);
@@ -535,28 +541,42 @@ int main(int argc, char * argv[]){
 	#else
 
 
-		//fp = fopen("/proc/dilation/status","a");
-		fp = fopen("/proc/status","a");
+		
+		cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
 
-		if(fp == NULL){
+		if(cpu_assigned <= 0){
+
+			if((255 - errno) > 0 && (255 - errno) < n_cpus){
+				cpu_assigned = 255 - errno;
+				LOG("Tracer: %d, Assigned CPU = %d\n", tracer_id, cpu_assigned);
+				errno = 0;	
+			}
+			else{
+				LOG("Registration Error. errno = %d\n", errno);
+				exit(-1);
+			}
+		}
+		else{
+			LOG("Tracer: %d, Assigned cpu = %d\n", tracer_id, cpu_assigned);
+		}
+
+		//fp = fopen("/proc/dilation/status","a");
+		fp = open("/proc/status", O_RDWR);
+
+		if(fp == -1){
 			LOG("PROC file open error\n");
 			exit(-1);;
 		}
 
-		cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
-
-		if(cpu_assigned <= 0){
-			LOG("Registration Error\n");
-			exit(-1);
-		}
 
 		while(1){
 			flush_buffer(nxt_cmd, MAX_PAYLOAD);
 			tail_ptr = 0;
 			new_cmd_pid = 0;
 			n_insns = 0;
-			while(strlen(nxt_cmd) <= 1){
-				fread(nxt_cmd, sizeof(char), MAX_PAYLOAD, fp);
+			read_ret = -1;
+			while(read_ret == -1){
+				read_ret = read(fp, nxt_cmd,fp);
 				usleep(10000);
 			}
 			LOG("Tracer: %d, Received Command: %s\n", tracer_id, nxt_cmd);
@@ -565,19 +585,23 @@ int main(int argc, char * argv[]){
 
 				if(tail_ptr == -1 && new_cmd_pid == -1){
 					LOG("Tracer: %d, STOP command received. Stopping tracer\n", tracer_id);
-					break;
+					goto end;
 				}
-				LOG("Tracer: %d, Running Child: %d for %d instructions", tracer_id, new_cmd_pid, n_insns);
+
+				if(new_cmd_pid == 0)
+					break;
+
+				LOG("Tracer: %d, Running Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
 			}
 
 			flush_buffer(command,MAX_BUF_SIZ);
-			sprintf(command, "%c,%s", TRACER_RESULTS,"0");
-			LOG("Tracer: %d: Writing Cmd Results", tracer_id);
-			fprintf(fp, "%s", command);
+			sprintf(command, "%c,%s,", TRACER_RESULTS,"0");
+			LOG("Tracer: %d: Writing Cmd Results\n", tracer_id);
+			write(fp,command, strlen(command));
 		}
-
-		fclose(fp);
+		end:
+		close(fp);
 
 	#endif
 

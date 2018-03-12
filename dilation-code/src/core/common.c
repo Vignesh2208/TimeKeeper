@@ -7,7 +7,7 @@ extern int tracer_num; 					// number of TRACERS in the experiment
 extern int n_processed_tracers;			// number of tracers for which a spinner has already been spawned
 extern int EXP_CPUS;
 extern int TOTAL_CPUS;
-extern struct task_struct *round_sync_task; 		// the main synchronization kernel thread for experiments
+extern struct task_struct *round_task; 		// the main synchronization kernel thread for experiments
 extern int experiment_stopped; 			 			// flag to determine state of the experiment
 extern int experiment_status;
 					 		
@@ -35,6 +35,9 @@ extern struct poll_list {
 };
 extern struct poll_helper_struct;
 extern hashmap poll_process_lookup;
+extern atomic_t progress_n_rounds ;
+extern atomic_t progress_n_enabled ;
+extern wait_queue_head_t progress_sync_proc_wqueue;
 
 
 
@@ -67,7 +70,7 @@ lxc_schedule_elem * schedule_list_get_head(tracer * tracer_entry){
 		PDEBUG_V("Get Head: TRACER ENTRY is Null\n");
 		return NULL;
 	}
-	return llist_get(&tracer_entry->schedule_queue, 0);
+	return (lxc_schedule_elem *)llist_get(&tracer_entry->schedule_queue, 0);
 }
 
 /***
@@ -112,7 +115,7 @@ int schedule_list_size(tracer * tracer_entry){
 
 void update_tracer_schedule_queue_elem(tracer * tracer_entry, struct task_struct * tracee){
 
-	lxc_schedule_elem * elem = hmap_get_abs(&tracer_entry->valid_children, tracee->pid);
+	lxc_schedule_elem * elem = (lxc_schedule_elem *)hmap_get_abs(&tracer_entry->valid_children, tracee->pid);
 	s64 base_time_quanta;	//represents base time allotted to each process by the TimeKeeper scheduler. Only useful in single core mode.
 	s64 base_quanta_n_insns = 0;
 	s32 rem = 0;
@@ -139,6 +142,7 @@ void update_tracer_schedule_queue_elem(tracer * tracer_entry, struct task_struct
 
 
 			elem->n_insns_share = base_quanta_n_insns;
+			PDEBUG_V("Update tracer schedule queue elem: Pid: %d, n_insns_share: %d\n", elem->pid, elem->n_insns_share);
 			//elem->n_insns_left = base_quanta_n_insns;
 			//elem->n_insns_curr_round = 0;
 		#endif
@@ -169,6 +173,8 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 
 		return;
 	}
+
+	PDEBUG_V("Add to tracer schedule queue: Tracer %d, Adding new tracee %d. \n", tracer_entry->tracer_id, tracee->pid);
 
 	new_elem = (lxc_schedule_elem *)kmalloc(sizeof(lxc_schedule_elem), GFP_KERNEL);
 	if(new_elem == NULL){
@@ -205,13 +211,15 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 
 	#endif
 
+	llist_append(&tracer_entry->schedule_queue, new_elem); 
+
 
 	bitmap_zero((&tracee->cpus_allowed)->bits, 8);
     cpumask_set_cpu(tracer_entry->cpu_assignment,&tracee->cpus_allowed);
 	sp.sched_priority = 99;
 	sched_setscheduler(tracee, SCHED_RR, &sp);
 	hmap_put_abs(&tracer_entry->valid_children,new_elem->pid, new_elem);
-	llist_append(&tracer_entry->schedule_queue, new_elem); 
+	
 
 	PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d. Succeeded.\n", tracer_entry->tracer_id, tracee->pid);
 
@@ -233,6 +241,9 @@ void add_process_to_schedule_queue_recurse(tracer * tracer_entry, struct task_st
 	if(tracer_entry->tracer_task != tsk){
 		// Do not add any of the threads of the tracer itself because they are not dilated.
 		/* set policy for all threads as well */
+		me = tsk;
+		t = me;
+
 		do {
 				add_to_tracer_schedule_queue(tracer_entry, t);
 		} while_each_thread(me, t);
@@ -526,7 +537,10 @@ int handle_tracer_results(char * buffer){
 int handle_stop_exp_cmd(){
 
 	set_current_state(TASK_INTERRUPTIBLE);
+	atomic_set(&progress_n_enabled, 0);
+	atomic_set(&progress_n_rounds, 0);
 	atomic_set(&experiment_stopping,1);
+	wake_up_interruptible(&progress_sync_proc_wqueue);
 	wait_event_interruptible(expstop_call_proc_wqueue, atomic_read(&experiment_stopping) == 0);
 
 	return cleanup_experiment_components();

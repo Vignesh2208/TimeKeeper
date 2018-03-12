@@ -29,13 +29,15 @@ void flush_buffer(char * buf, int size){
 int check_tracers_status(int * tracer_pids, int n_tracers){
 	int i;
 	int status = 0;
+	pid_t ret;
 	for(i = 0; i < n_tracers; i++){
 		status = 0;
-		if(kill((pid_t)tracer_pids[i],0) == -1)
+		/*if(kill((pid_t)tracer_pids[i],0) == -1)
 			return FAIL;
-		waitpid((pid_t)tracer_pids[i], &status,WNOHANG);
+		*/
+		ret = waitpid((pid_t)tracer_pids[i], &status,WNOHANG);
 
-		if(WIFEXITED(status))
+		if(ret == (pid_t)tracer_pids[i] && WIFEXITED(status))
 			return FAIL;
 	}
 
@@ -143,7 +145,6 @@ int main(int argc, char * argv[]){
    }
 
    printf("Initialized Exp ...\n");
-   exit(-1);
 
    
    pid_t child;

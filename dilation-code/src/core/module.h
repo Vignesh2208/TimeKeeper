@@ -111,4 +111,25 @@ struct sleep_helper_struct
 
 extern int handle_gettimepid(char *);
 
+extern int pop_schedule_list(tracer * tracer_entry);
+extern lxc_schedule_elem * schedule_list_get_head(tracer * tracer_entry);
+extern void requeue_schedule_list(tracer * tracer_entry);
+extern void clean_up_schedule_list(tracer * tracer_entry);
+extern int schedule_list_size(tracer * tracer_entry);
+extern void update_tracer_schedule_queue_elem(tracer * tracer_entry, struct task_struct * tracee);
+extern void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tracee);
+extern void add_process_to_schedule_queue_recurse(tracer * tracer_entry, struct task_struct * tsk);
+extern void refresh_tracer_schedule_queue(tracer * tracer_entry);
+extern int register_tracer_process(char * write_buffer);
+extern int update_tracer_params(char * write_buffer);
+extern void update_task_virtual_time(tracer * tracer_entry, struct task_struct * tsk, s64 n_insns_run);
+extern void update_all_children_virtual_time(tracer * tracer_entry);
+extern void update_all_tracers_virtual_time(int cpuID);
+extern int handle_tracer_results(char * buffer);
+extern int handle_stop_exp_cmd();
+extern int handle_set_netdevice_owner_cmd(char * write_buffer);
+extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait,struct task_struct * tsk);
+extern int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk);
+
+
 #endif

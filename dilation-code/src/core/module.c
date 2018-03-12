@@ -153,6 +153,9 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 
 	if(write_buffer[0] == REGISTER_TRACER){
 		ret =  register_tracer_process(write_buffer + 2);
+		PDEBUG_I("Register Tracer : %d, Return value = %d\n", current->pid, ret);
+		if(ret > 0)
+			ret = -255 + ret;
 	}
 	else if(write_buffer[0] == SYNC_AND_FREEZE){
 		ret =  sync_and_freeze(write_buffer + 2);
@@ -206,22 +209,33 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		int ret;
 		tracer * curr_tracer;
 
-		if(experiment_stopped != RUNNING)
-			return -EFAULT;
+		PDEBUG_V("Status Read: Tracer : %d, Entered.\n", current->pid);
+		if(experiment_status != INITIALIZED){
+			PDEBUG_I("Status Read: Tracer : %d, Returning because experiment was not initialized\n", current->pid);
+			return -1;
+		}
 
 		curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
-		if(!curr_tracer)
-			return -EIO;
-		PDEBUG_I("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
+		if(!curr_tracer){
+			PDEBUG_I("Status Read: Tracer : %d, not registered\n", current->pid);
+			return -1;
+		}
+		PDEBUG_V("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
+		
 		set_current_state(TASK_INTERRUPTIBLE);
 		atomic_inc(&n_waiting_tracers);
 		wake_up_interruptible(&progress_sync_proc_wqueue);
 		wait_event_interruptible(curr_tracer->w_queue, atomic_read(&curr_tracer->w_queue_control) == 0);
 		atomic_dec(&n_waiting_tracers);
 
+		PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
 		
-		if(copy_to_user(pBuf, curr_tracer->run_q_buffer, BUF_MAX_SIZE))
+
+		
+		if(copy_to_user(pBuf, curr_tracer->run_q_buffer, curr_tracer->buf_tail_ptr + 1 )){
+			PDEBUG_I("Status Read: Tracer : %d, Resuming from wait. Error copying to user buf\n", current->pid);	
 			return -EFAULT;
+		}
 
 		if(strcmp(curr_tracer->run_q_buffer, "STOP") == 0){
 			// free up memory
@@ -238,7 +252,7 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		}
 
 		ret = curr_tracer->buf_tail_ptr;
-		
+		PDEBUG_V("Status Read: Tracer: %d, Returning value: %d\n", current->pid, ret);
         return ret;
 }
 

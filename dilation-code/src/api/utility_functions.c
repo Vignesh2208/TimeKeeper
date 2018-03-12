@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
+#include <fcntl.h> // for open
+#include <unistd.h> // for close
 #include <sys/syscall.h>
 #include "utility_functions.h"
 
@@ -10,16 +13,19 @@ const char *FILENAME = "/proc/status";
 Sends a specific command to the TimeKeeper Kernel Module. To communicate with the TLKM, you send messages to the location specified by FILENAME
 */
 int send_to_timekeeper(char * cmd) {
-    FILE *fp;
-    fp = fopen(FILENAME, "a");
-    int ret;
-    if (fp == NULL) {
-        //printf("Error communicating with TimeKeeper\n");
+    //FILE *fp;
+    //fp = fopen(FILENAME, "a");
+    int fp = open(FILENAME, O_RDWR);
+    int ret = 0;
+    if (fp < 0) {
+        printf("Error communicating with TimeKeeper\n");
         return -1;
     }
     printf("Sending Command: %s\n", cmd);
-    ret = fprintf(fp, "%s,", cmd); //add comma to act as last character
-    fclose(fp);
+    //ret = fprintf(fp, "%s,", cmd); //add comma to act as last character
+    ret = write(fp, cmd, strlen(cmd));
+    printf("Command Return value: %d\n", ret);
+    close(fp);
     return ret;
 }
 
