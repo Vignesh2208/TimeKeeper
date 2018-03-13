@@ -64,6 +64,7 @@ int main(int argc, char * argv[]){
 	pid_t ret_val;
 	int n_exited_tracers = 0;
 	int status;
+	int test_n_insns = 2000;
 
 	if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "\n");
@@ -164,7 +165,7 @@ int main(int argc, char * argv[]){
 
    		sprintf(tracer_id,"%d",i);
    		sprintf(rel_cpu_speed,"%d",1);
-   		sprintf(n_round_insns,"%d",1000000);
+   		sprintf(n_round_insns,"%d",test_n_insns);
    		child = fork();
     	if (child == (pid_t)-1) {
         	printf("fork() failed in run_command: %s.\n", strerror(errno));
@@ -184,7 +185,7 @@ int main(int argc, char * argv[]){
     	}
    }
 
-   usleep(2000000);
+   usleep(5000000);
 
    
    if(check_tracers_status(child_pids, n_tracers) == FAIL){
@@ -203,7 +204,7 @@ int main(int argc, char * argv[]){
    printf("Synchronize and Freeze succeeded !\n");
 
    printf("Progress Experiment for 10 Rounds !\n");
-   progress_n_rounds(10);
+   progress_n_rounds(1);
 
    printf("Stopping Experiment ... \n");
    stopExp();

@@ -238,7 +238,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 		}
 		else{
 
-			counter = libperf_readcounter(pd,LIBPERF_COUNT_HW_INSTRUCTIONS);
+			//counter = libperf_readcounter(pd,LIBPERF_COUNT_HW_INSTRUCTIONS);
 
 			ret = ptrace(PTRACE_GET_REM_MULTISTEP, pid, 0, (u32*)&n_ints);
 			//printf("n interrupts = %lu\n", n_ints);
@@ -246,16 +246,16 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
       		libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);			
       		//fprintf(stdout, "N HW instructions counter read: %"PRIu64"\n", counter); 
 
-		 	counter = libperf_readcounter(pd,LIBPERF_COUNT_SW_CONTEXT_SWITCHES);
+		 	//counter = libperf_readcounter(pd,LIBPERF_COUNT_SW_CONTEXT_SWITCHES);
 			//fprintf(stdout, "N CONTEXT SWITCHES counter read: %"PRIu64"\n", counter); 
 
+      		//libperf_close(pd);
+          	libperf_finalize(pd, 0); 	
+			//ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
 
-          		libperf_finalize(pd, 0); 	
-			ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-
-			#ifdef DEBUG_VERBOSE
+			//#ifdef DEBUG_VERBOSE
 			LOG("Single step completed for Process : %d. Status = %lX. Rip: %lX\n\n ", pid, status, regs.rip);
-			#endif
+			//#endif
 
 			if(ret == -1){
 				LOG("ERROR in GETREGS.\n");
@@ -296,7 +296,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 
 	u32 flags = 0;
 	
-	if(n_insns < 500)
+	if(n_insns <= 1000)
 		singlestepmode = 1;
 	else
 		singlestepmode = 0;
@@ -332,7 +332,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			errno = 0;
 			pd = libperf_initialize((int)pid,cpu_assigned); /* init lib */
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
-			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
+			//libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
 
 			#ifdef DEBUG_VERBOSE
@@ -349,13 +349,13 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			pd = libperf_initialize((int)pid,cpu_assigned); /* init lib */
 			libperf_ioctlrefresh(pd, LIBPERF_COUNT_HW_INSTRUCTIONS, (uint64_t )n_insns);
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
-			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
+			//libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
 
-			#ifdef DEBUG_VERBOSE
-			sprintf(buffer, "PTRACE RESUMING process. ret = %d, error_code = %d",ret, errno);
+			//#ifdef DEBUG_VERBOSE
+			sprintf(buffer, "PTRACE RESUMING process. ret = %d, error_code = %d. pid = %d",ret, errno, pid);
 			print_curr_time(buffer);
-			#endif
+			//#endif
 
 			ret = ptrace(PTRACE_CONT, pid, 0, 0);
 			
@@ -611,6 +611,7 @@ int main(int argc, char * argv[]){
 				#endif
 
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
+				usleep(10000);
 			}
 
 			flush_buffer(command,MAX_BUF_SIZ);

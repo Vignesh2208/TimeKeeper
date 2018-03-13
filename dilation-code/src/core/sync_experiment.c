@@ -155,7 +155,8 @@ int initialize_experiment_components(){
 
 	PDEBUG_V("Entering Experiment Initialization\n");
 	if(experiment_status == INITIALIZED){
-		PDEBUG_E("Experiment Already initialized\n");
+		PDEBUG_E("Experiment Already initialized !\n");
+		//cleanup_experiment_components();
 		return FAIL;
 	}
 
@@ -201,22 +202,6 @@ int initialize_experiment_components(){
 
 	PDEBUG_V("Init experiment components: Initialized Variables\n");
 
-
-	/* Acquire sys_call_table, hook system calls */
-	if(!(sys_call_table = aquire_sys_call_table()))
-      	return -EPERM;
-
-
-	orig_cr0 = read_cr0();
-	write_cr0(orig_cr0 & ~0x00010000);
-	ref_sys_sleep = (void *)sys_call_table[__NR_nanosleep];        
-	ref_sys_poll = (void *)sys_call_table[__NR_poll];
-	ref_sys_select = (void *) sys_call_table[NR_select];
-	ref_sys_clock_gettime = (void *)sys_call_table[__NR_clock_gettime];
-	ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
-	write_cr0(orig_cr0 | 0x00010000);
-
-	PDEBUG_V("Init experiment components: Hooked syscalls\n");
 
 	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
 	if(!IS_ERR(round_task)) {
@@ -283,7 +268,7 @@ int cleanup_experiment_components(){
 
 	if(sys_call_table){
 
-		/* Resetting just in case experiment does not finish properly */
+
 		orig_cr0 = read_cr0();
 		write_cr0(orig_cr0 & ~0x00010000);
 		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
@@ -368,6 +353,11 @@ int sync_and_freeze(char * write_buffer) {
 
 	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
 	PDEBUG_A("Round Sync Task Pid = %d\n", round_task->pid);
+
+	if(!sys_call_table){
+		PDEBUG_E("Sync and freeze: syscall table not acquired !\n");
+		return FAIL;
+	}
 
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
@@ -1069,9 +1059,11 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 		signal_tracer_resume(curr_tracer);
 		wait_for_tracer_completion(curr_tracer);
 	}
-
+	
 	resume_all_syscall_blocked_processes(curr_tracer);
+	
 
+	
 	return SUCCESS;
 }
 

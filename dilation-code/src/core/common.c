@@ -103,7 +103,7 @@ void clean_up_schedule_list(tracer * tracer_entry){
 				task->freeze_time = 0;
 				task->past_virtual_time = 0;
 				task->wakeup_time = 0;
-				kill(task, SIGKILL);
+				//kill(task, SIGKILL);
 			}
 		}
 		else
@@ -317,7 +317,7 @@ int register_tracer_process(char * write_buffer){
 
 	for(i = 0; i < EXP_CPUS; i++){
 		if(per_cpu_chain_length[i] < per_cpu_chain_length[best_cpu])
-			i = best_cpu;
+			best_cpu = i;
 	}
 
 	mutex_lock(&exp_lock);
@@ -551,7 +551,9 @@ int handle_stop_exp_cmd(){
 	wake_up_interruptible(&progress_sync_proc_wqueue);
 	wait_event_interruptible(expstop_call_proc_wqueue, atomic_read(&experiment_stopping) == 0);
 
-	return cleanup_experiment_components();
+	PDEBUG_V("Returning from Stop Cmd\n");
+	//return cleanup_experiment_components();
+	return SUCCESS;
 }
 
 

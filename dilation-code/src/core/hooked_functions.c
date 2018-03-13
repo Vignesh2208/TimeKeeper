@@ -1,7 +1,7 @@
 #include "module.h"
 
 
-
+unsigned long **aquire_sys_call_table(void);
 
 asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __user *rmtp);
 asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);

@@ -56,6 +56,8 @@ struct task_struct *loop_task;
 struct task_struct * round_task;
 extern wait_queue_head_t progress_sync_proc_wqueue;
 extern int initialize_experiment_components();
+extern unsigned long **aquire_sys_call_table(void);
+
 
 /***
 Gets the PID of our synchronizer spinner task (only in 64 bit)
@@ -247,6 +249,10 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 			kfree(curr_tracer);
 			mutex_unlock(&exp_lock);
 
+			if(atomic_read(&n_waiting_tracers) == 0){
+				cleanup_experiment_components();
+			}
+
 			return ret;
 
 		}
@@ -304,6 +310,25 @@ int __init my_module_init(void)
     	return -ENOMEM;
 	}*/
 
+	/* Acquire sys_call_table, hook system calls */
+    if(!(sys_call_table = aquire_sys_call_table()))
+        return -1;
+
+    if(sys_call_table){
+
+    	PDEBUG_A(" Getting sys_call_table references\n");
+
+		orig_cr0 = read_cr0();
+		write_cr0(orig_cr0 & ~0x00010000);
+		ref_sys_sleep = (void *)sys_call_table[__NR_nanosleep];        
+		ref_sys_poll = (void *)sys_call_table[__NR_poll];
+		ref_sys_select = (void *) sys_call_table[NR_select];
+		ref_sys_clock_gettime = (void *)sys_call_table[__NR_clock_gettime];
+		ref_sys_clock_nanosleep = (void *) sys_call_table[__NR_clock_nanosleep];
+		write_cr0(orig_cr0 | 0x00010000);
+
+	}
+
 
 	/* Acquire number of CPUs on system */
 	TOTAL_CPUS = num_online_cpus();
@@ -313,13 +338,25 @@ int __init my_module_init(void)
 		EXP_CPUS = TOTAL_CPUS - 2;
 	else
 		EXP_CPUS = 1;
-
-	EXP_CPUS = 1;
+	
 	PDEBUG_A(" Number of EXP_CPUS: %d\n", EXP_CPUS);
 
 
 	experiment_status = NOT_INITIALIZED;
 	experiment_stopped = NOTRUNNING;
+
+	
+		/* Wait to stop loop_task */
+	#ifdef __x86_64
+        	if (loop_task != NULL) {
+                	kill(loop_task, SIGSTOP, NULL);
+                	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
+       				cpumask_set_cpu(1,&loop_task->cpus_allowed);
+            }
+        	else {
+                	PDEBUG_E(" Loop_task is null??\n");
+            }
+	#endif
 
 	PDEBUG_A(" TIMEKEEPER MODULE LOADED SUCCESSFULLY \n");
 
@@ -344,7 +381,19 @@ void __exit my_module_exit(void)
    	remove_proc_entry(DILATION_DIR, NULL);
    	PDEBUG_A(" /proc/%s deleted\n", DILATION_DIR);
 
-   	cleanup_experiment_components();
+   	//cleanup_experiment_components();
+
+   	if(sys_call_table) {
+	   	orig_cr0 = read_cr0();
+		write_cr0(orig_cr0 & ~0x00010000);
+		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
+		sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
+		sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
+		sys_call_table[__NR_poll] = (unsigned long *)ref_sys_poll;	
+		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
+		write_cr0(orig_cr0 | 0x00010000);
+
+	}
 	
 
 	/* Kill the looping task */
