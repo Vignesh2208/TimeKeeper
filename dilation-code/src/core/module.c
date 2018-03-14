@@ -242,6 +242,9 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		if(strcmp(curr_tracer->run_q_buffer, "STOP") == 0){
 			// free up memory
 			PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
+			if(curr_tracer->spinner_task != NULL){
+				kill(curr_tracer->spinner_task, SIGKILL);
+			}
 			mutex_lock(&exp_lock);
 			//hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
 			//hmap_remove_abs(&get_tracer_by_pid, current->pid);
@@ -349,7 +352,7 @@ int __init my_module_init(void)
 		/* Wait to stop loop_task */
 	#ifdef __x86_64
         	if (loop_task != NULL) {
-                	kill(loop_task, SIGSTOP, NULL);
+                	kill(loop_task, SIGSTOP);
                 	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
        				cpumask_set_cpu(1,&loop_task->cpus_allowed);
             }
@@ -399,7 +402,7 @@ void __exit my_module_exit(void)
 	/* Kill the looping task */
 	#ifdef __x86_64
 		if (loop_task != NULL)
-			kill(loop_task, SIGKILL, NULL);
+			kill(loop_task, SIGKILL);
 	#endif
    	PDEBUG_A(" MP2 MODULE UNLOADED\n");
 }

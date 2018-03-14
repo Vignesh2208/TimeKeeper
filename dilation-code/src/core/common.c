@@ -348,17 +348,17 @@ int register_tracer_process(char * write_buffer){
 
    	refresh_tracer_schedule_queue(new_tracer);
 
-
+   	new_tracer->spinner_task = NULL;
 
    	//need to create spinner task before returning
 
-   	char *argv[] = { "/bin/x64_synchronizer", NULL };
+   	/*char *argv[] = { "/bin/x64_synchronizer", NULL };
 	static char *envp[] = {
         	"HOME=/",
 	        "TERM=linux",
         	"PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL };
 	run_usermode_tracer_spin_process(argv[0], argv, envp, UMH_NO_WAIT );
-
+	*/
    	return new_tracer->cpu_assignment;	//return the allotted cpu back to the tracer.
 
 

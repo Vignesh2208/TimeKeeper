@@ -51,6 +51,7 @@
 
 static struct workqueue_struct *perf_wq;
 
+
 typedef int (*remote_function_f)(void *);
 
 struct remote_function_call {
@@ -4986,6 +4987,50 @@ void perf_event_wakeup(struct perf_event *event)
 	}
 }
 
+static int enable_single_stepping(struct task_struct * child){
+{
+	struct pt_regs *regs = task_pt_regs(child);
+	unsigned long oflags;
+
+	/*
+	 * If we stepped into a sysenter/syscall insn, it trapped in
+	 * kernel mode; do_debug() cleared TF and set TIF_SINGLESTEP.
+	 * If user-mode had set TF itself, then it's still clear from
+	 * do_debug() and we need to set it again to restore the user
+	 * state so we don't wrongly set TIF_FORCED_TF below.
+	 * If enable_single_step() was used last and that is what
+	 * set TIF_SINGLESTEP, then both TF and TIF_FORCED_TF are
+	 * already set and our bookkeeping is fine.
+	 */
+	if (unlikely(test_tsk_thread_flag(child, TIF_SINGLESTEP)))
+		regs->flags |= X86_EFLAGS_TF;
+
+	/*
+	 * Always set TIF_SINGLESTEP - this guarantees that
+	 * we single-step system calls etc..  This will also
+	 * cause us to set TF when returning to user mode.
+	 */
+	set_tsk_thread_flag(child, TIF_SINGLESTEP);
+
+	oflags = regs->flags;
+
+	/* Set TF on the kernel stack.. */
+	regs->flags |= X86_EFLAGS_TF;
+
+	/*
+	 * If TF was already set, check whether it was us who set it.
+	 * If not, we should never attempt a block step.
+	 */
+	if (oflags & X86_EFLAGS_TF)
+		return test_tsk_thread_flag(child, TIF_FORCED_TF);
+
+	set_tsk_thread_flag(child, TIF_FORCED_TF);
+
+	return 1;
+}
+
+}
+
 static void perf_pending_event(struct irq_work *entry)
 {
 	struct perf_event *event = container_of(entry,
@@ -4996,6 +5041,7 @@ static void perf_pending_event(struct irq_work *entry)
 	u64 n_ints = 0;
 	u64 sample_period;
 	u64 delta = 0;
+	//int cpu = raw_smp_processor_id(); 
 	
 
 	rctx = perf_swevent_get_recursion_context();
@@ -5012,6 +5058,7 @@ static void perf_pending_event(struct irq_work *entry)
 	
 	if(event->hw.target != NULL) {
 		tsk = event->hw.target;
+		
 		sample_period = event->attr.sample_period;
 		n_ints = (u64) tsk->n_ints;
 		counter_val = perf_event_read_value(event, &enabled, &running);
@@ -5033,25 +5080,30 @@ static void perf_pending_event(struct irq_work *entry)
 			delta = sample_period - counter_val;
 			delta = 500 + delta;
 		}
+		
 
+		//trace_printk("perf pending event: Overflow for tsk: %d, Counter val = %llu. Task cpu: %d\n", tsk->pid, counter_val, tsk->cpus_allowed );
+		//trace_printk("perf pending event: sample period: %llu, n_ints = %llu, delta = %lu\n", sample_period, n_ints, (unsigned long) delta);
 
-		trace_printk("perf pending event: Overflow for tsk: %d, Counter val = %llu\n", tsk->pid, counter_val);
-		trace_printk("perf pending event: sample period: %llu, n_ints = %llu, delta = %lu\n", sample_period, n_ints, (unsigned long) delta);
-
+		
+		
 		if(delta > 0) {
 			tsk->ptrace_msteps = (unsigned long) delta;
+			//tsk->ptrace_msteps = 1;
 			tsk->ptrace_mflags = 0;
-			user_enable_single_step(tsk);
-			tsk->exit_code = 0;			
-			wake_up_state(tsk, __TASK_TRACED);
+			//user_enable_single_step(tsk);
+			//tsk->exit_code = 0;			
+			//wake_up_state(tsk, __TASK_TRACED);
+			 enable_single_stepping(tsk);
 
 		}
 		else{
 			tsk->ptrace_msteps = 1;
 			tsk->ptrace_mflags = 0;
-			user_enable_single_step(tsk);
-			tsk->exit_code = 0;			
-			wake_up_state(tsk, __TASK_TRACED);
+			//user_enable_single_step(tsk);
+			//tsk->exit_code = 0;			
+			//wake_up_state(tsk, __TASK_TRACED);
+			enable_single_stepping(tsk);
 
 		}
 		tsk->n_ints = 0;

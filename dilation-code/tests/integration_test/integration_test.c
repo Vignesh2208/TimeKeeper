@@ -64,7 +64,7 @@ int main(int argc, char * argv[]){
 	pid_t ret_val;
 	int n_exited_tracers = 0;
 	int status;
-	int test_n_insns = 2000;
+	int test_n_insns = 1000000;
 
 	if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "\n");
@@ -204,7 +204,7 @@ int main(int argc, char * argv[]){
    printf("Synchronize and Freeze succeeded !\n");
 
    printf("Progress Experiment for 10 Rounds !\n");
-   progress_n_rounds(1);
+   progress_n_rounds(100);
 
    printf("Stopping Experiment ... \n");
    stopExp();

@@ -219,10 +219,10 @@ int initialize_experiment_components(){
 	/* Wait to stop loop_task */
 	#ifdef __x86_64
 	if (loop_task != NULL) {
-    	kill(loop_task, SIGSTOP, NULL);
+    	kill(loop_task, SIGSTOP);
     	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
 		cpumask_set_cpu(1,&loop_task->cpus_allowed);
-		kill(loop_task, SIGCONT, NULL);
+		kill(loop_task, SIGCONT);
     }
 	else {
         PDEBUG_E(" Loop_task is null\n");
@@ -339,10 +339,10 @@ int sync_and_freeze(char * write_buffer) {
 		return FAIL;
 	}
 
-	if(n_processed_tracers != n_expected_tracers){
+	/*if(n_processed_tracers != n_expected_tracers){
 		PDEBUG_E("Sync And Freeze: Expected number of tracer spinner tasks: %d not present. Actual number of registered tracer spinners: %d\n", n_expected_tracers, n_processed_tracers);
 		return FAIL;	
-	}
+	}*/
 
 	if (experiment_stopped != NOTRUNNING) {
         PDEBUG_A("Sync And Freeze: Trying to Sync Freeze when an experiment is already running!\n");

@@ -687,9 +687,10 @@ dotraplinkage void do_debug(struct pt_regs *regs, long error_code)
 	si_code = get_si_code(tsk->thread.debugreg6);
 	if (tsk->thread.debugreg6 & (DR_STEP | DR_TRAP_BITS) || user_icebp){
 
-		trace_printk("Do_DEBUG: Pid: %d, number of rem steps: %lu\n",  tsk->pid, tsk->ptrace_msteps);
+		
 		if(user_icebp || tsk->ptrace_msteps <= 1) {
 			send_sigtrap(tsk, regs, error_code, si_code);
+			trace_printk("Do_DEBUG: Pid: %d, number of rem steps: %lu\n",  tsk->pid, tsk->ptrace_msteps);
 			tsk->ptrace_msteps = 0;
 		}
 		else{

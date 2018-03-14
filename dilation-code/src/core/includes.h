@@ -99,7 +99,7 @@
 
 
 #ifdef TIMEKEEPER_DEBUG_INFO
-	#define PDEBUG_I(fmt, args...) printk(KERN_INFO "TimeKeeper: <INFO> " fmt, ## args)
+	#define PDEBUG_I(fmt, args...) //printk(KERN_INFO "TimeKeeper: <INFO> " fmt, ## args)
 #else
 	#define PDEBUG_I(fmt,args...)
 #endif
@@ -107,13 +107,13 @@
 
 
 #ifdef TIMEKEEPER_DEBUG_VERBOSE
-	#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
+	#define PDEBUG_V(fmt,args...) //printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
 #else
 	#define PDEBUG_V(fmt,args...)
 #endif
 	
-#define PDEBUG_A(fmt, args...) printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)
-#define PDEBUG_E(fmt, args...) printk(KERN_ERR "TimeKeeper: <ERROR> " fmt, ## args)
+#define PDEBUG_A(fmt, args...) //printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)
+#define PDEBUG_E(fmt, args...) //printk(KERN_ERR "TimeKeeper: <ERROR> " fmt, ## args)
 
 
 

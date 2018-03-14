@@ -253,9 +253,9 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
           	libperf_finalize(pd, 0); 	
 			//ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
 
-			//#ifdef DEBUG_VERBOSE
+			#ifdef DEBUG_VERBOSE
 			LOG("Single step completed for Process : %d. Status = %lX. Rip: %lX\n\n ", pid, status, regs.rip);
-			//#endif
+			#endif
 
 			if(ret == -1){
 				LOG("ERROR in GETREGS.\n");
@@ -352,10 +352,10 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			//libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
 
-			//#ifdef DEBUG_VERBOSE
+			#ifdef DEBUG_VERBOSE
 			sprintf(buffer, "PTRACE RESUMING process. ret = %d, error_code = %d. pid = %d",ret, errno, pid);
 			print_curr_time(buffer);
-			//#endif
+			#endif
 
 			ret = ptrace(PTRACE_CONT, pid, 0, 0);
 			
@@ -592,7 +592,7 @@ int main(int argc, char * argv[]){
 			read_ret = -1;
 			while(read_ret == -1){
 				read_ret = read(fp, nxt_cmd,fp);
-				usleep(10000);
+				//usleep(10000);
 			}
 			LOG("Tracer: %d, Received Command: %s\n", tracer_id, nxt_cmd);
 			while(tail_ptr != -1){
@@ -611,7 +611,7 @@ int main(int argc, char * argv[]){
 				#endif
 
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
-				usleep(10000);
+				//usleep(10000);
 			}
 
 			flush_buffer(command,MAX_BUF_SIZ);
