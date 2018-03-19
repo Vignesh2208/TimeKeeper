@@ -1,6 +1,21 @@
 #ifndef __TK_FUNCTIONS
 #define __TK_FUNCTIONS
 #include <sys/time.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <stdarg.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/socket.h>
+#include <linux/netlink.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/select.h>
 
 
 #define MAX_PAYLOAD 1024
@@ -13,6 +28,7 @@ typedef unsigned long u32;
 // Synchronization Functions **********************
 
 int addToExp(float relative_cpu_speed, u32 n_round_instructions);
+int addToExp_sp(float relative_cpu_speed, u32 n_round_instructions, pid_t pid);
 int synchronizeAndFreeze(int n_expected_tracers);
 int update_tracer_params(int tracer_pid, float relative_cpu_speed, u32 n_round_instructions);
 int write_tracer_results(char * result);

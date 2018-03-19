@@ -59,6 +59,7 @@ typedef struct sched_queue_element{
 typedef struct tracer_struct {
 	struct task_struct * tracer_task;
 	struct task_struct * spinner_task;
+	int create_spinner;
 	int tracer_id;
 	char run_q_buffer[BUF_MAX_SIZE];
 	int buf_tail_ptr;
@@ -133,6 +134,7 @@ extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct p
 extern int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk);
 
 //extern int kill(struct task_struct *killTask) ;
+int run_usermode_tracer_spin_process(char *path, char **argv, char **envp, int wait);
 
 
 #endif

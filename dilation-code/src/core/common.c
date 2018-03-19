@@ -22,10 +22,12 @@ extern hashmap get_tracer_by_id;			//hashmap of <TRACER_NUMBER, TRACER_STRUCT>
 extern hashmap get_tracer_by_pid;			//hashmap of <TRACER_PID, TRACER_STRUCT>
 extern atomic_t experiment_stopping;
 extern wait_queue_head_t expstop_call_proc_wqueue;
+extern unsigned long **sys_call_table; 
 
 extern int run_usermode_tracer_spin_process(char *path, char **argv, char **envp, int wait);
 extern void signal_cpu_worker_resume(tracer * curr_tracer);
 extern s64 get_dilated_time(struct task_struct * task);
+extern int cleanup_experiment_components(void);
 
 
 extern struct poll_list {
@@ -37,7 +39,17 @@ extern struct poll_helper_struct;
 extern hashmap poll_process_lookup;
 extern atomic_t progress_n_rounds ;
 extern atomic_t progress_n_enabled ;
+extern atomic_t n_waiting_tracers;
 extern wait_queue_head_t progress_sync_proc_wqueue;
+
+
+extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
+extern asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
+extern asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
+extern unsigned long orig_cr0; 
+
 
 
 
@@ -167,14 +179,15 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 
 	if(!tracee || hmap_get_abs(&tracer_entry->ignored_children, tracee->pid) != NULL || hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL){
 
-		if(tracee && hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL){
+		if(tracee && hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL && tracee != tracer_entry->spinner_task){
 			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d is already present. Updating its attributes\n", tracer_entry->tracer_id, tracee->pid);
 			update_tracer_schedule_queue_elem(tracer_entry, tracee);
 		}
-		else if(tracee){
+		else if(tracee && tracee != tracer_entry->spinner_task){
 			PDEBUG_A("Tracee: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
 		}
 		else{
+			if(!tracee)
 			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee is NULL \n", tracer_entry->tracer_id);
 		}
 
@@ -278,7 +291,7 @@ void refresh_tracer_schedule_queue(tracer * tracer_entry){
 
 
 /**
-* write_buffer: <dilation_factor>,<tracer freeze_quantum>
+* write_buffer: <dilation_factor>,<tracer freeze_quantum>,<create_spinner>
 **/
 int register_tracer_process(char * write_buffer){
 	//Tracer will register itself by specifying the dilation factor
@@ -290,9 +303,15 @@ int register_tracer_process(char * write_buffer){
 	uint32_t tracer_id;
 	int i, nxt_idx;
 	int best_cpu = 0;
+	int should_create_spinner = 0;
+	int spinner_pid = 0;
+	struct task_struct * spinner_task = NULL;
 	dilation_factor = atoi(write_buffer);
 	nxt_idx = get_next_value(write_buffer);
 	tracer_freeze_quantum = atoi(write_buffer + nxt_idx);
+	nxt_idx = nxt_idx + get_next_value(write_buffer + nxt_idx);
+	should_create_spinner = atoi(write_buffer + nxt_idx);
+
 
 	if(experiment_status != INITIALIZED){
 		PDEBUG_E("Experiment must be initialized first before tracer registration\n");
@@ -302,7 +321,25 @@ int register_tracer_process(char * write_buffer){
 	if(dilation_factor <= 0)
 		dilation_factor = REF_CPU_SPEED;	//no dilation
 
+	if(should_create_spinner > 0) {
+		nxt_idx = nxt_idx + get_next_value(write_buffer + nxt_idx);
+		spinner_pid = atoi(write_buffer + nxt_idx);
+		should_create_spinner = 1;
+		if(spinner_pid <= 0){
+			PDEBUG_E("Spinner pid must be greater than zero. Received value: %d\n", spinner_pid);
+			return FAIL;
+		}
 
+		spinner_task = find_task_by_pid(spinner_pid);
+		
+		if(!spinner_task){
+			PDEBUG_E("Spinner pid task not found. Received pid: %d\n", spinner_pid);
+			return FAIL;
+		}
+
+	}
+	else
+		should_create_spinner = 0;
 	
 
 	PDEBUG_I("Register Tracer: Starting ...\n");
@@ -333,14 +370,15 @@ int register_tracer_process(char * write_buffer){
 	tracer_ref_quantum_n_insns = tracer_freeze_quantum;
 	new_tracer->quantum_n_insns = div_s64_rem(new_tracer->dilation_factor*tracer_ref_quantum_n_insns,REF_CPU_SPEED,&rem);
 	new_tracer->quantum_n_insns += rem;
-
+	new_tracer->create_spinner = should_create_spinner;
 	
 	hmap_put_abs(&get_tracer_by_id, tracer_id, new_tracer);
 	hmap_put_abs(&get_tracer_by_pid, current->pid, new_tracer);
 	llist_append(&per_cpu_tracer_list[best_cpu], new_tracer);
+
 	mutex_unlock(&exp_lock);
 
-	PDEBUG_I("Register Tracer: Pid: %d, ID: %d, dilation factor: %d, freeze_quantum: %d, assigned cpu: %d, quantum_n_insns: %d\n", current->pid, new_tracer->tracer_id, new_tracer->dilation_factor, new_tracer->freeze_quantum, new_tracer->cpu_assignment, new_tracer->quantum_n_insns);
+	PDEBUG_I("Register Tracer: Pid: %d, ID: %d, dilation factor: %d, freeze_quantum: %d, assigned cpu: %d, quantum_n_insns: %d. Spinner pid = %d\n", current->pid, new_tracer->tracer_id, new_tracer->dilation_factor, new_tracer->freeze_quantum, new_tracer->cpu_assignment, new_tracer->quantum_n_insns, spinner_pid);
 
 
 	bitmap_zero((&current->cpus_allowed)->bits, 8);
@@ -348,17 +386,15 @@ int register_tracer_process(char * write_buffer){
 
    	refresh_tracer_schedule_queue(new_tracer);
 
-   	new_tracer->spinner_task = NULL;
+   	if(should_create_spinner && spinner_task){
+   		new_tracer->spinner_task = spinner_task;
+   		kill_p(spinner_task, SIGSTOP);
+   		bitmap_zero((&spinner_task->cpus_allowed)->bits, 8);
+   		cpumask_set_cpu(1,&spinner_task->cpus_allowed);
+   		
+   	}
 
-   	//need to create spinner task before returning
 
-   	/*char *argv[] = { "/bin/x64_synchronizer", NULL };
-	static char *envp[] = {
-        	"HOME=/",
-	        "TERM=linux",
-        	"PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL };
-	run_usermode_tracer_spin_process(argv[0], argv, envp, UMH_NO_WAIT );
-	*/
    	return new_tracer->cpu_assignment;	//return the allotted cpu back to the tracer.
 
 
@@ -460,9 +496,13 @@ void update_all_children_virtual_time(tracer * tracer_entry){
 
 	s64 dilated_run_time;
 	s64 curr_virtual_time;
-	if(tracer_entry && tracer_entry->spinner_task && tracer_entry->tracer_task){
+	if(tracer_entry && tracer_entry->tracer_task){
 		dilated_run_time = tracer_entry->freeze_quantum;
-		tracer_entry->spinner_task->freeze_time = tracer_entry->round_start_virt_time  + dilated_run_time;
+
+		if(tracer_entry->spinner_task)
+			tracer_entry->spinner_task->freeze_time = tracer_entry->round_start_virt_time  + dilated_run_time;
+
+
 		curr_virtual_time = tracer_entry->round_start_virt_time  + dilated_run_time;
 		set_children_time(tracer_entry, tracer_entry->tracer_task, curr_virtual_time);
 	}
@@ -544,21 +584,26 @@ int handle_tracer_results(char * buffer){
 
 int handle_stop_exp_cmd(){
 
+
 	set_current_state(TASK_INTERRUPTIBLE);
 	atomic_set(&progress_n_enabled, 0);
 	atomic_set(&progress_n_rounds, 0);
 	atomic_set(&experiment_stopping,1);
+	wake_up_process(round_task);
 	wake_up_interruptible(&progress_sync_proc_wqueue);
-	wait_event_interruptible(expstop_call_proc_wqueue, atomic_read(&experiment_stopping) == 0);
+	wait_event_interruptible(expstop_call_proc_wqueue, atomic_read(&experiment_stopping) == 0 && atomic_read(&n_waiting_tracers) == 0);
 
+	
 	PDEBUG_V("Returning from Stop Cmd\n");
-	//return cleanup_experiment_components();
-	return SUCCESS;
+	
+
+	
+	return cleanup_experiment_components();
 }
 
 
 /**
-* write_buffer: <tracer_pid>,network device name\
+* write_buffer: <tracer_pid>,<network device name>
 * Can be called after successfull synchronize and freeze command
 **/
 int handle_set_netdevice_owner_cmd(char * write_buffer){

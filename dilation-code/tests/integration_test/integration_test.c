@@ -155,6 +155,7 @@ int main(int argc, char * argv[]){
    char tracer_id[5];
    char rel_cpu_speed[5];
    char n_round_insns[15];
+   char create_spinner[5];
    
 
    for(i = 0 ; i < n_tracers; i++){
@@ -162,10 +163,16 @@ int main(int argc, char * argv[]){
    		flush_buffer(tracer_id,5);
    		flush_buffer(rel_cpu_speed,5);
    		flush_buffer(n_round_insns,15);
+   		flush_buffer(create_spinner,5);
 
    		sprintf(tracer_id,"%d",i);
    		sprintf(rel_cpu_speed,"%d",1);
    		sprintf(n_round_insns,"%d",test_n_insns);
+   		if(i < 10)
+   			sprintf(create_spinner, "%d", 1);
+   		else
+   			sprintf(create_spinner, "%d", 0);
+
    		child = fork();
     	if (child == (pid_t)-1) {
         	printf("fork() failed in run_command: %s.\n", strerror(errno));
@@ -175,7 +182,9 @@ int main(int argc, char * argv[]){
     	if (!child) {
         	fflush(stdout);
         	fflush(stderr);
-        	execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, cmds_file[i], rel_cpu_speed, n_round_insns,(char *)NULL);
+
+
+        	execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, cmds_file[i], rel_cpu_speed, n_round_insns,create_spinner, (char *)NULL);
         	fflush(stdout);
         	fflush(stderr);
         	exit(2);
@@ -194,19 +203,28 @@ int main(int argc, char * argv[]){
    }
    
    printf("Synchronize and Freezing ... \n");
+   fflush(stdout);
+   usleep(1000000);
 
    while(synchronizeAndFreeze(n_tracers) <= FAIL){
    		printf("Sync and Freeze Failed. Retrying in 1 sec\n");
+      fflush(stdout);
    		usleep(1000000);
    		//exit(-1);
    }
 
    printf("Synchronize and Freeze succeeded !\n");
+   fflush(stdout);
+
+   usleep(1000000);
 
    printf("Progress Experiment for 10 Rounds !\n");
-   progress_n_rounds(100);
-
+   fflush(stdout);
+   //progress_n_rounds(100);
+   fflush(stdout);
    printf("Stopping Experiment ... \n");
+   fflush(stdout);
+   usleep(2000000);
    stopExp();
 
    printf("Waiting for tracers to exit ...\n");

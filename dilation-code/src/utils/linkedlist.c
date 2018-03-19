@@ -273,5 +273,6 @@ void llist_iterate(llist * l, void (*act_on)(void *item, void * args), void * ar
 void llist_destroy(llist * l){
 
 	while(l->size > 0)
-		llist_remove_at(l,0);
+		llist_pop(l);
+		//llist_remove_at(l,0);
 }

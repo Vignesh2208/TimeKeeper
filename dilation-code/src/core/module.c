@@ -5,15 +5,11 @@ Has basic functionality for the Kernel Module itself. It defines how the userlan
 as well as what should happen when the kernel module is initialized and removed.
 */
 
-asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
-asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
-asmlinkage int (*ref_sys_poll_dialated)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
-asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
-asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
-asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
-asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
-
-
+extern asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+extern asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
+extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
+extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
 
 
 int tracer_num = 0; 					// number of TRACERS in the experiment
@@ -53,10 +49,12 @@ extern struct sock *nl_sk;
 
 //task that loops endlessly (64-bit)
 struct task_struct *loop_task;
-struct task_struct * round_task;
+struct task_struct * round_task = NULL;
 extern wait_queue_head_t progress_sync_proc_wqueue;
+extern wait_queue_head_t expstop_call_proc_wqueue;
 extern int initialize_experiment_components();
 extern unsigned long **aquire_sys_call_table(void);
+extern int round_sync_task(void *data);
 
 
 /***
@@ -76,22 +74,23 @@ int get_tracer_spinner_pid(struct subprocess_info *info, struct cred *new) {
 
 		int curr_tracer_no;
 		tracer * curr_tracer;
+		int i = 0;
 		mutex_lock(&exp_lock);
-		n_processed_tracers ++;
-		curr_tracer_no = n_processed_tracers;
-		curr_tracer = hmap_get_abs(&get_tracer_by_id, n_processed_tracers);
-		if(!curr_tracer){
-			mutex_unlock(&exp_lock);
-			PDEBUG_E("Tracer Spinner: %d. Corresponding Tracer struct does not exist\n", n_processed_tracers);
-			return 0;
+		for(i = 1 ; i <= tracer_num; i++){
+			curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
+			if(curr_tracer && curr_tracer->create_spinner){
+				curr_tracer->spinner_task = current;
+				curr_tracer->create_spinner = 0;
+				curr_tracer_no = i;	
+				PDEBUG_A(" Tracer Spinner Started for Tracer no: %d, Spinned Pid = %d\n", curr_tracer_no, current->pid);
+			} 
 		}
-        curr_tracer->spinner_task = current;
         mutex_unlock(&exp_lock);
 
         bitmap_zero((&current->cpus_allowed)->bits, 8);
        	cpumask_set_cpu(1,&current->cpus_allowed);
 
-       	PDEBUG_A(" Tracer Spinner Started for Tracer no: %d, Spinned Pid = %d\n", curr_tracer_no, current->pid);
+       
 
         return 0;
 }
@@ -228,7 +227,7 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		atomic_inc(&n_waiting_tracers);
 		wake_up_interruptible(&progress_sync_proc_wqueue);
 		wait_event_interruptible(curr_tracer->w_queue, atomic_read(&curr_tracer->w_queue_control) == 0);
-		atomic_dec(&n_waiting_tracers);
+		
 
 		PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
 		
@@ -243,7 +242,8 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 			// free up memory
 			PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
 			if(curr_tracer->spinner_task != NULL){
-				kill(curr_tracer->spinner_task, SIGKILL);
+				//kill_p(curr_tracer->spinner_task, SIGKILL);
+				curr_tracer->spinner_task = NULL;
 			}
 			mutex_lock(&exp_lock);
 			//hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
@@ -252,14 +252,16 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 			kfree(curr_tracer);
 			mutex_unlock(&exp_lock);
 
-			if(atomic_read(&n_waiting_tracers) == 0){
+			/*if(atomic_read(&n_waiting_tracers) == 0){
 				cleanup_experiment_components();
-			}
+			}*/
+			atomic_dec(&n_waiting_tracers);
+			wake_up_interruptible(&expstop_call_proc_wqueue);
 
 			return ret;
 
 		}
-
+		atomic_dec(&n_waiting_tracers);
 		ret = curr_tracer->buf_tail_ptr;
 		PDEBUG_V("Status Read: Tracer: %d, Returning value: %d\n", current->pid, ret);
         return ret;
@@ -313,6 +315,14 @@ int __init my_module_init(void)
     	return -ENOMEM;
 	}*/
 
+
+	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
+	if(!IS_ERR(round_task)) {
+	    //kthread_bind(catchup_task,0);
+	    wake_up_process(round_task);
+	}
+
+
 	/* Acquire sys_call_table, hook system calls */
     if(!(sys_call_table = aquire_sys_call_table()))
         return -1;
@@ -350,16 +360,16 @@ int __init my_module_init(void)
 
 	
 		/* Wait to stop loop_task */
-	#ifdef __x86_64
+	/*#ifdef __x86_64
         	if (loop_task != NULL) {
-                	kill(loop_task, SIGSTOP);
+                	kill_p(loop_task, SIGSTOP);
                 	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
        				cpumask_set_cpu(1,&loop_task->cpus_allowed);
             }
         	else {
                 	PDEBUG_E(" Loop_task is null??\n");
             }
-	#endif
+	#endif*/
 
 	PDEBUG_A(" TIMEKEEPER MODULE LOADED SUCCESSFULLY \n");
 
@@ -376,7 +386,6 @@ void __exit my_module_exit(void)
 	s64 i;
 
 
-	//netlink_kernel_release(nl_sk);
 
 	//remove_proc_entry(DILATION_FILE, dilation_dir);
 	remove_proc_entry(DILATION_FILE, NULL);
@@ -386,7 +395,7 @@ void __exit my_module_exit(void)
 
    	//cleanup_experiment_components();
 
-   	if(sys_call_table) {
+   	/*if(sys_call_table) {
 	   	orig_cr0 = read_cr0();
 		write_cr0(orig_cr0 & ~0x00010000);
 		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
@@ -396,13 +405,25 @@ void __exit my_module_exit(void)
 		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
 		write_cr0(orig_cr0 | 0x00010000);
 
-	}
+	}*/
+
+	/* Busy wait briefly for tasks to finish -Not the best approach */
+	for (i = 0; i < 1000000000; i++) {}
+
+	if ( kthread_stop(round_task) )
+    {
+         PDEBUG_E(" Stopping round_task error\n");
+    }
+	
+
+	for (i = 0; i < 1000000000; i++) {}
+
 	
 
 	/* Kill the looping task */
 	#ifdef __x86_64
 		if (loop_task != NULL)
-			kill(loop_task, SIGKILL);
+			kill_p(loop_task, SIGKILL);
 	#endif
    	PDEBUG_A(" MP2 MODULE UNLOADED\n");
 }

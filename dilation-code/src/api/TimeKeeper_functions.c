@@ -1,18 +1,4 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <string.h>
-#include <signal.h>
-#include <sys/syscall.h>
-#include <stdarg.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/socket.h>
-#include <linux/netlink.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/select.h>
+
 #include "TimeKeeper_functions.h"
 #include "TimeKeeper_definitions.h"
 #include "utility_functions.h"
@@ -27,8 +13,26 @@ int hello(){
 }
 
 /*
-Given a pid, add that container to an experiment. If the timeline is less than 0, add to a CBE experiment
-else, it represents a specific timeline
+Register Tracer and create a spinner task for the tracer
+*/
+int addToExp_sp(float relative_cpu_speed, u32 n_round_instructions, pid_t pid ) {
+
+	if(n_round_instructions <= 0 || relative_cpu_speed <= 0.0)
+		return -1;
+
+	int rel_cpu_speed = (int)(1000.0*relative_cpu_speed);
+
+    if (is_root() && isModuleLoaded()) {
+        char command[100];
+        flush_buffer(command,100);
+		sprintf(command, "%c,%d,%d,1,%d", REGISTER_TRACER, rel_cpu_speed,(int)n_round_instructions, pid);
+		return send_to_timekeeper(command);
+	}
+    return -1;
+}
+
+/*
+Register Tracer and do not create a spinner task for the tracer
 */
 int addToExp(float relative_cpu_speed, u32 n_round_instructions) {
 
@@ -40,7 +44,7 @@ int addToExp(float relative_cpu_speed, u32 n_round_instructions) {
     if (is_root() && isModuleLoaded()) {
         char command[100];
         flush_buffer(command,100);
-		sprintf(command, "%c,%d,%d,", REGISTER_TRACER, rel_cpu_speed,(int)n_round_instructions);
+		sprintf(command, "%c,%d,%d,0,", REGISTER_TRACER, rel_cpu_speed,(int)n_round_instructions);
 		return send_to_timekeeper(command);
 	}
     return -1;

@@ -9,11 +9,15 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
 asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespec __user * tp);
 
-extern asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
-extern asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
-extern asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
-extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
-extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
+
+asmlinkage long (*ref_sys_sleep)(struct timespec __user *rqtp, struct timespec __user *rmtp);
+asmlinkage int (*ref_sys_poll)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
+asmlinkage int (*ref_sys_poll_dialated)(struct pollfd __user * ufds, unsigned int nfds, int timeout_msecs);
+asmlinkage int (*ref_sys_select)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+asmlinkage int (*ref_sys_select_dialated)(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp);
+asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
+asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
+
 
 
 
@@ -30,7 +34,7 @@ extern hashmap poll_process_lookup;
 extern hashmap select_process_lookup;
 extern hashmap sleep_process_lookup;
 
-extern int kill(struct task_struct *killTask, int sig);
+extern int kill_p(struct task_struct *killTask, int sig);
 extern int experiment_stopped;
 extern int experiment_type;
 extern atomic_t n_active_syscalls;
@@ -136,7 +140,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 			
 			if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING){
 				wake_up_interruptible(&syscall_control_queue[cpu]);
-				kill(current,SIGKILL);
+				kill_p(current,SIGKILL);
 		    	break;
 			}
 			wake_up_interruptible(&syscall_control_queue[cpu]);
@@ -291,7 +295,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			now = get_dilated_time(current);
 		    if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING){
 		    	wake_up_interruptible(&syscall_control_queue[cpu]);
-		    	kill(current, SIGKILL);
+		    	kill_p(current, SIGKILL);
 		    	break;
 		    }
 		  
@@ -516,7 +520,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		atomic_dec(&n_active_syscalls);
 		wake_up_interruptible(&expstop_call_proc_wqueue);
 		if(atomic_read(&experiment_stopping) == 1)
-			kill(current, SIGKILL);
+			kill_p(current, SIGKILL);
 		return ret;
 		
 		revert_select:
@@ -718,7 +722,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 
 		wake_up_interruptible(&expstop_call_proc_wqueue);
 		if(atomic_read(&experiment_stopping) == 1)
-			kill(current, SIGKILL);		
+			kill_p(current, SIGKILL);		
 		return err;
 		
 		

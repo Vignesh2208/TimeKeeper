@@ -68,6 +68,7 @@ int per_cpu_worker(void *data);
 int round_sync_task(void *data);
 
 
+
 /***
 * Progress experiment for specified number of rounds
 * write_buffer: <number of rounds>
@@ -203,13 +204,16 @@ int initialize_experiment_components(){
 	PDEBUG_V("Init experiment components: Initialized Variables\n");
 
 
-	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
-	if(!IS_ERR(round_task)) {
-	    wake_up_process(round_task);
-	}
-	else{
-		PDEBUG_E("Error Starting Round Sync Task\n");
-		return -EFAULT;
+	if(!round_task){
+		round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
+		if(!IS_ERR(round_task)) {
+		    wake_up_process(round_task);
+		}
+		else{
+			PDEBUG_E("Error Starting Round Sync Task\n");
+			return -EFAULT;
+		}
+
 	}
 
 	experiment_stopped = NOTRUNNING;
@@ -217,17 +221,17 @@ int initialize_experiment_components(){
 
 
 	/* Wait to stop loop_task */
-	#ifdef __x86_64
+	/*#ifdef __x86_64
 	if (loop_task != NULL) {
-    	kill(loop_task, SIGSTOP);
+    	kill_p(loop_task, SIGSTOP);
     	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
 		cpumask_set_cpu(1,&loop_task->cpus_allowed);
-		kill(loop_task, SIGCONT);
+		kill_p(loop_task, SIGCONT);
     }
 	else {
         PDEBUG_E(" Loop_task is null\n");
     }
-	#endif
+	#endif*/
 
 	PDEBUG_V("Init experiment components: Finished\n");
 
@@ -244,7 +248,7 @@ int cleanup_experiment_components(){
 		return FAIL;
 	}
 
-	PDEBUG_V("Cleaning up experiment components ...\n");
+	PDEBUG_I("Cleaning up experiment components ...\n");
 
 	hmap_destroy(&poll_process_lookup);
 	hmap_destroy(&select_process_lookup);
@@ -255,7 +259,7 @@ int cleanup_experiment_components(){
 	tracer_num = 0;
 	n_processed_tracers = 0;
 	//loop_task = NULL;
-	round_task = NULL;
+	//round_task = NULL;
 
 	atomic_set(&progress_n_enabled,0);
 	atomic_set(&progress_n_rounds,0);
@@ -266,7 +270,7 @@ int cleanup_experiment_components(){
 
 
 
-	if(sys_call_table){
+	/*if(sys_call_table){
 
 
 		orig_cr0 = read_cr0();
@@ -278,7 +282,7 @@ int cleanup_experiment_components(){
 		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
 		write_cr0(orig_cr0 | 0x00010000);
 
-	}
+	}*/
 
 	//if ( kthread_stop(round_sync_task) )
     //{
@@ -354,11 +358,16 @@ int sync_and_freeze(char * write_buffer) {
 	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
 	PDEBUG_A("Round Sync Task Pid = %d\n", round_task->pid);
 
-	if(!sys_call_table){
+	/*if(!(sys_call_table = aquire_sys_call_table())){
 		PDEBUG_E("Sync and freeze: syscall table not acquired !\n");
 		return FAIL;
-	}
+	}*/
 
+	if(sys_call_table){
+
+
+	/*preempt_disable();
+	local_irq_disable();
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
 
@@ -369,7 +378,10 @@ int sync_and_freeze(char * write_buffer) {
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
 
 	write_cr0(orig_cr0 | 0x00010000 );
+	local_irq_enable();
+	preempt_enable();*/
 
+	}
 
 	for (j = 0; j < EXP_CPUS; j++) {
         values[j] = j;
@@ -412,9 +424,9 @@ int sync_and_freeze(char * write_buffer) {
     experiment_stopped = FROZEN;
 
     //if its 64-bit, start the busy loop task to fix the weird bug
-	#ifdef __x86_64
-	kill(loop_task, SIGCONT);
-	#endif
+	/*#ifdef __x86_64
+	kill_p(loop_task, SIGCONT);
+	#endif*/
 
 	PDEBUG_A("Finished Sync and Freeze\n");
 
@@ -547,7 +559,8 @@ int round_sync_task(void *data)
 					wait_event_interruptible(sync_worker_wqueue, atomic_read(&n_workers_running) == 0);
 					PDEBUG_I("round_sync_task: All cpu workers and all syscalls exited !\n");
                     clean_exp();
-					return 0;
+                    round_count = 0;
+					continue;
             }
 
             
@@ -1139,6 +1152,32 @@ void clean_exp(){
 	wait_event_interruptible(progress_sync_proc_wqueue, atomic_read(&n_waiting_tracers) == tracer_num);
 			
 	PDEBUG_I("Clean exp: Cleaning up initiated ...");
+
+	//return cleanup_experiment_components();
+	
+	//sys_call_table = aquire_sys_call_table();
+	//if(sys_call_table) {
+
+	/*preempt_disable();
+	local_irq_disable();
+	orig_cr0 = read_cr0();
+	write_cr0(orig_cr0 & ~0x00010000);
+
+	sys_call_table[NR_select] = (unsigned long *)ref_sys_select;	
+	sys_call_table[__NR_poll] = (unsigned long *) ref_sys_poll;
+	sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
+	sys_call_table[__NR_clock_gettime] = (unsigned long *) ref_sys_clock_gettime;
+	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) ref_sys_clock_nanosleep;
+
+	write_cr0(orig_cr0 | 0x00010000 );
+	local_irq_enable();
+	preempt_enable();*/
+
+	//}
+	
+	PDEBUG_I("Clean exp: Syscall unhooked ...");
+
+	atomic_set(&experiment_stopping,0);
 	mutex_lock(&exp_lock);
 	for(i = 1; i <= tracer_num; i++){
 
@@ -1155,8 +1194,10 @@ void clean_exp(){
 		}
 	}
 	mutex_unlock(&exp_lock);
-	atomic_set(&experiment_stopping,0);
-	wake_up_interruptible(&expstop_call_proc_wqueue);
-
+	
+	//wake_up_interruptible(&expstop_call_proc_wqueue);
+	
+	experiment_stopped = NOTRUNNING;
+	
 }
 

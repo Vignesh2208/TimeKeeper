@@ -131,6 +131,8 @@ void set_children_cpu(struct task_struct *aTask, int cpu) {
 		if (taskRecurse->pid == 0) {
 			return;
 		}
+
+
 		if (cpu == -1) {
 			/* allow all cpus */
 			cpumask_setall(&taskRecurse->cpus_allowed);
@@ -215,7 +217,7 @@ void print_schedule_list(tracer* tracer_entry)
 /***
 My implementation of the kill system call. Will send a signal to a container. Used for freezing/unfreezing containers
 ***/
-int kill(struct task_struct *killTask, int sig) {
+int kill_p(struct task_struct *killTask, int sig) {
         struct siginfo info;
         int returnVal;
         info.si_signo = sig;

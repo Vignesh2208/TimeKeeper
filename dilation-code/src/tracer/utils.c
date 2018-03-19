@@ -87,7 +87,27 @@ void print_curr_time(char * str) {
 }
 
 
+int create_spinner_task(pid_t * child_pid) {
 
+	pid_t child;
+
+	child = fork();
+	if (child == (pid_t)-1) {
+    	LOG("fork() failed in create_spinner_task: %s.\n", strerror(errno));
+    	exit(-1);
+	}
+
+	if (!child) {
+    	execvp("/bin/x64_synchronizer", NULL);
+    	exit(2);
+	}
+		
+	*child_pid = child;
+
+	return 0;
+
+
+}
 
 int run_command(char * full_command_str, pid_t * child_pid) {
 

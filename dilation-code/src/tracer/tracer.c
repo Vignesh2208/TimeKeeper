@@ -465,6 +465,9 @@ int main(int argc, char * argv[]){
 	char command[MAX_BUF_SIZ];
 	int n_cpus = get_nprocs();
 	int read_ret = -1;
+	int create_spinner = 0;
+	pid_t spinned_pid;
+	int cmd_no = 0;
 
 	
 
@@ -473,10 +476,10 @@ int main(int argc, char * argv[]){
 	llist_set_equality_checker(&tracee_list,llist_elem_comparer);
  
 	
-	if (argc < 5 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+	if (argc < 6 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
 	        fprintf(stderr, "\n");
         	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
-        	fprintf(stderr,	"		%s TRACER_ID CMDS_FILE_PATH RELATIVE_CPU_SPEED N_ROUND_INSTRUCTIONS\n", argv[0]);
+        	fprintf(stderr,	"		%s TRACER_ID CMDS_FILE_PATH RELATIVE_CPU_SPEED N_ROUND_INSTRUCTIONS CREATE_SPINNER\n", argv[0]);
         	fprintf(stderr, "\n");
         	fprintf(stderr, "This program executes all COMMANDs specified in the CMD file path in trace mode\n");
         	fprintf(stderr, "\n");
@@ -488,6 +491,12 @@ int main(int argc, char * argv[]){
 	cmd_file_path = argv[2];
 	rel_cpu_speed = atof(argv[3]);
 	n_round_insns = (u32) atoi(argv[4]);
+	create_spinner = atoi(argv[5]);
+
+	if(create_spinner)
+		create_spinner = 1;
+	else
+		create_spinner = 0;
 
 
 	#ifdef DEBUG
@@ -556,8 +565,12 @@ int main(int argc, char * argv[]){
 	#else
 
 
-		
-		cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
+		if(create_spinner){
+			create_spinner_task(&spinned_pid);
+			cpu_assigned = addToExp_sp(rel_cpu_speed, n_round_insns, spinned_pid);
+		}
+		else		
+			cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
 
 		if(cpu_assigned <= 0){
 
@@ -590,11 +603,12 @@ int main(int argc, char * argv[]){
 			new_cmd_pid = 0;
 			n_insns = 0;
 			read_ret = -1;
+			cmd_no ++;
 			while(read_ret == -1){
 				read_ret = read(fp, nxt_cmd,fp);
 				//usleep(10000);
 			}
-			LOG("Tracer: %d, Received Command: %s\n", tracer_id, nxt_cmd);
+			LOG("Tracer: %d, Cmd no = %d, Received Command: %s\n", tracer_id, cmd_no, nxt_cmd);
 			while(tail_ptr != -1){
 				tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);
 
