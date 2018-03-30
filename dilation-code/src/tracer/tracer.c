@@ -475,7 +475,8 @@ int main(int argc, char * argv[]){
 	llist_init(&tracee_list);
 	llist_set_equality_checker(&tracee_list,llist_elem_comparer);
  
-	
+
+	#ifndef TEST	
 	if (argc < 6 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
 	        fprintf(stderr, "\n");
         	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
@@ -488,16 +489,20 @@ int main(int argc, char * argv[]){
 
 
     tracer_id = atoi(argv[1]);
-	cmd_file_path = argv[2];
 	rel_cpu_speed = atof(argv[3]);
 	n_round_insns = (u32) atoi(argv[4]);
 	create_spinner = atoi(argv[5]);
+	cmd_file_path = argv[2];
 
 	if(create_spinner)
 		create_spinner = 1;
 	else
 		create_spinner = 0;
+	#else
+	cmd_file_path = argv[1];
+	#endif
 
+	
 
 	#ifdef DEBUG
 	flush_buffer(logFile, MAX_FNAME_SIZ);
@@ -625,7 +630,7 @@ int main(int argc, char * argv[]){
 				#endif
 
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
-				//usleep(10000);
+				
 			}
 
 			flush_buffer(command,MAX_BUF_SIZ);
@@ -635,6 +640,7 @@ int main(int argc, char * argv[]){
 			LOG("Tracer: %d: Writing Cmd Results\n", tracer_id);
 			#endif
 			
+			//usleep(1000000);
 			write(fp,command, strlen(command));
 		}
 		end:

@@ -176,13 +176,37 @@ int run_command(char * full_command_str, pid_t * child_pid) {
     	}
 
     	if (!child) {
+
+    		i = 0;
+    		while(args[i] != NULL){
+    			if(strcmp(args[i],">>") == 0 || strcmp(args[i],">") == 0){
+    				args[i] = '\0';
+    				int fd; /*file descriptor to the file we will redirect ls's output*/
+
+    				if(args[i+1]){
+						if((fd = open(args[i+1], O_RDWR | O_CREAT))==-1){ /*open the file */
+						  perror("open");
+						  exit(-1);
+						}
+
+						dup2(fd,STDOUT_FILENO); /*copy the file descriptor fd into standard output*/
+						dup2(fd,STDERR_FILENO); /* same, for the standard error */
+						close(fd); /* close the file descriptor as we don't need it more  */
+					}
+    				break;
+    			}
+    			i++;
+    		}
+
+    		
+
         	prctl(PR_SET_DUMPABLE, (long)1);
         	prctl(PR_SET_PTRACER, (long)getppid());
-		ptrace(PTRACE_TRACEME,0,NULL, NULL);
+			ptrace(PTRACE_TRACEME,0,NULL, NULL);
         	fflush(stdout);
         	fflush(stderr);
         	execvp(args[0], &args[0]);
-		free(args);
+			free(args);
         	exit(2);
     	}
 		

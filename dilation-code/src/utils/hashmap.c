@@ -200,25 +200,29 @@ void hmap_put_abs(hashmap * h, int key, void * value){
 	list = h->head[index];
 	llist_elem * head;
 
-	new_elem = (hashmap_elem *) kmalloc(sizeof(hashmap_elem), GFP_KERNEL);
-	//new_elem->key = NULL;
-	new_elem->key_val = key;
-	new_elem->value = value;
-	new_elem->equals = NULL;
+	
 	head = list->head;
 	while(head != NULL){
 		temp = (hashmap_elem *) head->item;
 		if(temp->key_val == key) {
-		
 			printk(KERN_INFO "HMAP: Updating existing value. Key: %d\n", key);
 			temp->value = value;
-			kfree(new_elem);
 			return;
 		}
 		head = head->next;
 	}
 
-	llist_append(list,new_elem);
+	new_elem = (hashmap_elem *) kmalloc(sizeof(hashmap_elem), GFP_KERNEL);
+
+	if(new_elem){
+		//new_elem->key = NULL;
+		new_elem->key_val = key;
+		new_elem->value = value;
+		new_elem->equals = NULL;
+
+		llist_append(list,new_elem);
+
+	}
 
 }
 

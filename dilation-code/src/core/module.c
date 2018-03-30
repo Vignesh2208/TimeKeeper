@@ -216,12 +216,16 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 			return -1;
 		}
 
+		mutex_lock(&exp_lock);
 		curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
 		if(!curr_tracer){
+			mutex_unlock(&exp_lock);
 			PDEBUG_I("Status Read: Tracer : %d, not registered\n", current->pid);
 			return -1;
 		}
-		PDEBUG_V("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
+		mutex_unlock(&exp_lock);
+		
+		PDEBUG_I("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
 		
 		set_current_state(TASK_INTERRUPTIBLE);
 		atomic_inc(&n_waiting_tracers);
@@ -315,6 +319,9 @@ int __init my_module_init(void)
     	return -ENOMEM;
 	}*/
 
+	experiment_status = NOT_INITIALIZED;
+	experiment_stopped = NOTRUNNING;
+
 
 	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
 	if(!IS_ERR(round_task)) {
@@ -355,8 +362,7 @@ int __init my_module_init(void)
 	PDEBUG_A(" Number of EXP_CPUS: %d\n", EXP_CPUS);
 
 
-	experiment_status = NOT_INITIALIZED;
-	experiment_stopped = NOTRUNNING;
+	
 
 	
 		/* Wait to stop loop_task */

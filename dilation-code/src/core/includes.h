@@ -107,7 +107,7 @@
 
 
 #ifdef TIMEKEEPER_DEBUG_VERBOSE
-	#define PDEBUG_V(fmt,args...) //printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
+	#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
 #else
 	#define PDEBUG_V(fmt,args...)
 #endif

@@ -44,6 +44,8 @@ extern asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct 
 extern unsigned long **aquire_sys_call_table(void);
 
 
+spinlock_t syscall_lookup_lock;
+
 
 /** LOCALLY DEFINED GLOBAL VARIABLES **/
 s64 boottime;
@@ -177,10 +179,12 @@ int initialize_experiment_components(){
 	for(i = 0; i < EXP_CPUS; i++){
 		llist_init(&per_cpu_tracer_list[i]);
 		per_cpu_chain_length[i] = 0;
+		syscall_running[i] = 0;
 		init_waitqueue_head(&syscall_control_queue[i]);
 	}
 	
 	mutex_init(&exp_lock);
+	spin_lock_init(&syscall_lookup_lock);
 
 	hmap_init( &poll_process_lookup,"int",0);
 	hmap_init( &select_process_lookup,"int",0);
@@ -326,6 +330,7 @@ int sync_and_freeze(char * write_buffer) {
 	//if(ret != SUCCESS)
 	//	return ret;
 
+	set_current_state(TASK_INTERRUPTIBLE);
 	if(experiment_status != INITIALIZED || experiment_stopped != NOTRUNNING)
 		return FAIL;
 
@@ -333,11 +338,17 @@ int sync_and_freeze(char * write_buffer) {
 
 	PDEBUG_A("Sync And Freeze: ** Starting Experiment Synchronization **\n");
 
+	PDEBUG_A("Sync And Freeze: N expected tracers: %d\n", n_expected_tracers);
+	
+	wait_event_interruptible(progress_sync_proc_wqueue, atomic_read(&n_waiting_tracers) == n_expected_tracers);
+
+
 	if (tracer_num <= 0) {
 		PDEBUG_E("Sync And Freeze: Nothing added to experiment, dropping out\n");
 		return FAIL;
 	}
-	
+
+
 	if(tracer_num != n_expected_tracers){
 		PDEBUG_E("Sync And Freeze: Expected number of tracers: %d not present. Actual number of registered tracers: %d\n", n_expected_tracers, tracer_num);
 		return FAIL;
@@ -356,6 +367,11 @@ int sync_and_freeze(char * write_buffer) {
 
 
 	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
+
+	if(!round_task){
+		PDEBUG_A("Sync And Freeze: Round sync task not started error !\n");
+        return FAIL;
+	}
 	PDEBUG_A("Round Sync Task Pid = %d\n", round_task->pid);
 
 	/*if(!(sys_call_table = aquire_sys_call_table())){
@@ -366,20 +382,22 @@ int sync_and_freeze(char * write_buffer) {
 	if(sys_call_table){
 
 
-	/*preempt_disable();
+	preempt_disable();
 	local_irq_disable();
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
 
-	sys_call_table[NR_select] = (unsigned long *)sys_select_new;	
-	sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
+	
+	//sys_call_table[NR_select] = (unsigned long *)sys_select_new;	
+	//sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
 	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;
+	
 
 	write_cr0(orig_cr0 | 0x00010000 );
 	local_irq_enable();
-	preempt_enable();*/
+	preempt_enable();
 
 	}
 
@@ -403,7 +421,10 @@ int sync_and_freeze(char * write_buffer) {
     now = timeval_to_ns(&now_timeval);
 
     for(i = 1; i <= tracer_num; i++){
+    	mutex_lock(&exp_lock);
     	curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
+    	mutex_unlock(&exp_lock);
+
     	if(curr_tracer){
 
     		PDEBUG_A("Sync And Freeze: Setting Virt time for Tracer %d and its children\n", i);	
@@ -576,7 +597,9 @@ int round_sync_task(void *data)
 
 				set_current_state(TASK_INTERRUPTIBLE);
 				for(i = 1; i <= tracer_num; i++){
+					mutex_lock(&exp_lock);
 					curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
+					mutex_unlock(&exp_lock);
 					if(curr_tracer){
 						set_current_state(TASK_INTERRUPTIBLE);
 						resume_all_syscall_blocked_processes(curr_tracer);
@@ -690,50 +713,46 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask){
 		do {
 
 
-		    acquire_irq_lock(&t->dialation_lock,flags);
+		    acquire_irq_lock(&syscall_lookup_lock,flags);
 			task_poll_helper = hmap_get_abs(&poll_process_lookup,t->pid);
 			task_select_helper = hmap_get_abs(&select_process_lookup,t->pid);
 			task_sleep_helper = hmap_get_abs(&sleep_process_lookup, t->pid);
 
 			if(task_poll_helper != NULL){
 				
-				t->freeze_time = 0;
 				syscall_running[cpu] = 1;
 				atomic_set(&task_poll_helper->done,1);
 				
 				PDEBUG_V("Poll Wakeup. Pid = %d\n", t->pid); 
 				wake_up(&task_poll_helper->w_queue);
-				release_irq_lock(&t->dialation_lock,flags);
+				release_irq_lock(&syscall_lookup_lock,flags);
 				wait_event_interruptible(syscall_control_queue[cpu],syscall_running[cpu] == 0);
 				PDEBUG_V("Poll Wakeup Resume. Pid = %d\n", t->pid); 
 			}
 			else if(task_select_helper != NULL){
-
-				t->freeze_time = 0;
 				syscall_running[cpu] = 1;
 				atomic_set(&task_select_helper->done,1);
 				
 				PDEBUG_V("Select Wakeup. Pid = %d\n", t->pid); 
 				wake_up(&task_select_helper->w_queue);
-				release_irq_lock(&t->dialation_lock,flags);
+				release_irq_lock(&syscall_lookup_lock,flags);
 				wait_event_interruptible(syscall_control_queue[cpu],syscall_running[cpu] == 0);
 				PDEBUG_V("Select Wakeup Resume. Pid = %d\n", t->pid); 
 			}
 			else if( task_sleep_helper != NULL) {
 			
 				/* Sending a Continue signal here will wake all threads up. We dont want that */
-				t->freeze_time = 0;
 				syscall_running[cpu] = 1;
 				atomic_set(&task_sleep_helper->done,1);
 				
 				PDEBUG_V("Sleep Wakeup. Pid = %d\n", t->pid); 
 				wake_up(&task_sleep_helper->w_queue);
-				release_irq_lock(&t->dialation_lock,flags);
+				release_irq_lock(&syscall_lookup_lock,flags);
 				wait_event_interruptible(syscall_control_queue[cpu],syscall_running[cpu] == 0);
 				PDEBUG_V("Sleep Wakeup Resume. Pid = %d\n", t->pid); 
 			}
 			else{
-				release_irq_lock(&t->dialation_lock,flags);
+				release_irq_lock(&syscall_lookup_lock,flags);
 			}
 		}while_each_thread(me, t);
 
@@ -847,7 +866,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 		PDEBUG_V("Update all runnable task timeslices: Processing Curr elem Left\n");
 		PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
 
-		acquire_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
+		acquire_irq_lock(&syscall_lookup_lock,flags);
 		task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
 		task_select_helper = hmap_get_abs(&select_process_lookup,curr_elem->pid);
 		task_sleep_helper = hmap_get_abs(&sleep_process_lookup, curr_elem->pid);
@@ -882,7 +901,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 			curr_elem->n_insns_left = 0;
 		}
 
-		release_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
+		release_irq_lock(&syscall_lookup_lock,flags);
 		head = head->next;
 	}
 
@@ -922,7 +941,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 				PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
 
 
-				acquire_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
+				acquire_irq_lock(&syscall_lookup_lock,flags);
 				task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
 				task_select_helper = hmap_get_abs(&select_process_lookup,curr_elem->pid);
 				task_sleep_helper = hmap_get_abs(&sleep_process_lookup, curr_elem->pid);
@@ -943,7 +962,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 
 						if(n_alotted_insns == total_insns){
 							curr_tracer->last_run = curr_elem;
-							release_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
+							release_irq_lock(&syscall_lookup_lock,flags);
 							return;
 						}
 					
@@ -953,7 +972,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 					curr_elem->n_insns_left = 0;
 				}
 
-				release_irq_lock(&curr_elem->curr_task->dialation_lock,flags);
+				release_irq_lock(&syscall_lookup_lock,flags);
 				head = head->next;
 
 				if(head == NULL){
@@ -1050,6 +1069,9 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 	/* for adding any new tasks that might have been spawned */
 	refresh_tracer_schedule_queue(curr_tracer);
 	clean_up_all_irrelevant_processes(curr_tracer);
+
+	resume_all_syscall_blocked_processes(curr_tracer);
+
 	update_all_runnable_task_timeslices(curr_tracer);
 	flush_buffer(curr_tracer->run_q_buffer, BUF_MAX_SIZE);
 	print_schedule_list(curr_tracer);
@@ -1073,7 +1095,7 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 		wait_for_tracer_completion(curr_tracer);
 	}
 	
-	resume_all_syscall_blocked_processes(curr_tracer);
+	
 	
 
 	
@@ -1156,9 +1178,9 @@ void clean_exp(){
 	//return cleanup_experiment_components();
 	
 	//sys_call_table = aquire_sys_call_table();
-	//if(sys_call_table) {
+	if(sys_call_table) {
 
-	/*preempt_disable();
+	preempt_disable();
 	local_irq_disable();
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
@@ -1171,9 +1193,9 @@ void clean_exp(){
 
 	write_cr0(orig_cr0 | 0x00010000 );
 	local_irq_enable();
-	preempt_enable();*/
+	preempt_enable();
 
-	//}
+	}
 	
 	PDEBUG_I("Clean exp: Syscall unhooked ...");
 
@@ -1181,9 +1203,9 @@ void clean_exp(){
 	mutex_lock(&exp_lock);
 	for(i = 1; i <= tracer_num; i++){
 
-
+		
 		curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
-
+		
 		if(curr_tracer){
 			clean_up_schedule_list(curr_tracer);
 			flush_buffer(curr_tracer->run_q_buffer, BUF_MAX_SIZE);

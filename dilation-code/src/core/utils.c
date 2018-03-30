@@ -5,6 +5,7 @@ extern int experiment_stopped;
 extern int tracer_num;
 extern int schedule_list_size(tracer * tracer_entry);
 extern hashmap get_tracer_by_id;
+extern struct mutex exp_lock;
 
 
 void flush_buffer(char * buf, int size){
@@ -69,6 +70,8 @@ tracer * alloc_tracer_entry(uint32_t tracer_id, u32 dilation_factor){
 	hmap_init(&new_tracer->valid_children,"int",0);
 	hmap_init(&new_tracer->ignored_children,"int",0);
 	init_waitqueue_head(&new_tracer->w_queue);
+
+	mutex_init(&new_tracer->tracer_lock);
 
 	atomic_set(&new_tracer->w_queue_control,1);
 
@@ -243,15 +246,19 @@ tracer * get_tracer_for_task(struct task_struct * aTask){
 	if(experiment_stopped != RUNNING)
 		return NULL;
 
+	mutex_lock(&exp_lock);
 	for(i = 1; i <= tracer_num; i++){
+
 		curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
 		if(curr_tracer){
 			if(hmap_get_abs(&curr_tracer->valid_children, aTask->pid)){
+					mutex_unlock(&exp_lock);
 					return curr_tracer;
 			}
 		}
 
 	}
+	mutex_unlock(&exp_lock);
 
 	return NULL;
 }

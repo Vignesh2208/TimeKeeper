@@ -194,11 +194,11 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 		return;
 	}
 
-	PDEBUG_V("Add to tracer schedule queue: Tracer %d, Adding new tracee %d. \n", tracer_entry->tracer_id, tracee->pid);
+	PDEBUG_I("Add to tracer schedule queue: Tracer %d, Adding new tracee %d. \n", tracer_entry->tracer_id, tracee->pid);
 
 	new_elem = (lxc_schedule_elem *)kmalloc(sizeof(lxc_schedule_elem), GFP_KERNEL);
 	if(new_elem == NULL){
-		PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d. Failed to alot Memory\n", tracer_entry->tracer_id, tracee->pid);
+		PDEBUG_E("Add to tracer schedule queue: Tracer %d, tracee %d. Failed to alot Memory\n", tracer_entry->tracer_id, tracee->pid);
 		return;
 	}
 
@@ -241,7 +241,7 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 	hmap_put_abs(&tracer_entry->valid_children,new_elem->pid, new_elem);
 	
 
-	PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d. Succeeded.\n", tracer_entry->tracer_id, tracee->pid);
+	PDEBUG_I("Add to tracer schedule queue: Tracer %d, tracee %d. Succeeded.\n", tracer_entry->tracer_id, tracee->pid);
 
 
 
@@ -384,8 +384,7 @@ int register_tracer_process(char * write_buffer){
 	bitmap_zero((&current->cpus_allowed)->bits, 8);
    	cpumask_set_cpu(new_tracer->cpu_assignment,&current->cpus_allowed);
 
-   	refresh_tracer_schedule_queue(new_tracer);
-
+   	
    	if(should_create_spinner && spinner_task){
    		new_tracer->spinner_task = spinner_task;
    		kill_p(spinner_task, SIGSTOP);
@@ -393,6 +392,11 @@ int register_tracer_process(char * write_buffer){
    		cpumask_set_cpu(1,&spinner_task->cpus_allowed);
    		
    	}
+   	else{
+   		new_tracer->spinner_task = NULL;
+   	}
+
+   	refresh_tracer_schedule_queue(new_tracer);
 
 
    	return new_tracer->cpu_assignment;	//return the allotted cpu back to the tracer.
@@ -451,7 +455,9 @@ int update_tracer_params(char * write_buffer){
 	}
    
    	if(task && found){
+   		mutex_lock(&exp_lock);
    		tracer_entry = hmap_get_abs(&get_tracer_by_pid, task->pid);
+   		mutex_unlock(&exp_lock);
 	}
 	
 	if(tracer_entry){
@@ -545,7 +551,9 @@ void update_all_tracers_virtual_time(int cpuID){
 int handle_tracer_results(char * buffer){
 
 	int result = 0 ;
+	mutex_lock(&exp_lock);
 	tracer * curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
+	mutex_unlock(&exp_lock);
 	int buf_len = strlen(buffer);
 	int next_idx = 0;
 	lxc_schedule_elem * curr_elem;
@@ -644,7 +652,9 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
 	}
    
    	if(task && found){
+   		mutex_lock(&exp_lock);
    		curr_tracer = hmap_get_abs(&get_tracer_by_pid, task->pid);
+   		mutex_unlock(&exp_lock);
    		if(!curr_tracer)
    			return FAIL;
 

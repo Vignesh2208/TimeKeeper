@@ -61,6 +61,7 @@ typedef struct tracer_struct {
 	struct task_struct * spinner_task;
 	int create_spinner;
 	int tracer_id;
+	struct mutex tracer_lock;
 	char run_q_buffer[BUF_MAX_SIZE];
 	int buf_tail_ptr;
 	u32 cpu_assignment;
