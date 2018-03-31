@@ -388,8 +388,8 @@ int sync_and_freeze(char * write_buffer) {
 	write_cr0(orig_cr0 & ~0x00010000);
 
 	
-	//sys_call_table[NR_select] = (unsigned long *)sys_select_new;	
-	//sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
+	sys_call_table[NR_select] = (unsigned long *)sys_select_new;	
+	sys_call_table[__NR_poll] = (unsigned long *) sys_poll_new;
 	sys_call_table[__NR_nanosleep] = (unsigned long *)sys_sleep_new;
 	sys_call_table[__NR_clock_gettime] = (unsigned long *) sys_clock_gettime_new;
 	sys_call_table[__NR_clock_nanosleep] = (unsigned long *) sys_clock_nanosleep_new;

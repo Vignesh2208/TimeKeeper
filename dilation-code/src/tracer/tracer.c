@@ -145,6 +145,8 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 	if((pid_t)ret != pid){
 		if(errno == EBREAK_SYSCALL){
 			LOG("Waitpid: Breaking out. Process entered blocking syscall\n");
+			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
+			libperf_finalize(pd, 0); 
 			curr_tracee->syscall_blocked = 1;
 			return TID_SYSCALL_ENTER;
 		}
@@ -640,7 +642,7 @@ int main(int argc, char * argv[]){
 			LOG("Tracer: %d: Writing Cmd Results\n", tracer_id);
 			#endif
 			
-			//usleep(1000000);
+			usleep(10000);
 			write(fp,command, strlen(command));
 		}
 		end:

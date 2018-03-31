@@ -7,18 +7,32 @@ import Queue
 import time
 
 
+print 'Client program starting ans sleeping for 0.5 sec'
+print time.time()
+sys.stdout.flush()
+
 # Do not block forever (milliseconds)
 TIMEOUT = 1000
-
-time.sleep(1)
 
 server_address = ('localhost',10000)
 
 # Create a TCP/IP socket
 sock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+try:
+	time.sleep(0.5)
+except IOError as err:
+	print("Unexpected error:", sys.exc_info()[0]) 
+
+
+print 'Client program woke up from sleep!'
+print time.time()
+sys.stdout.flush()
+
+
 # Connect the socket to the port where the server is listening
-print >>sys.stderr, 'connecting to %s port %s' % server_address
+print 'connecting to %s port %s' % server_address
+sys.stdout.flush()
 sock.connect(server_address)
 
 
@@ -26,7 +40,7 @@ sock.connect(server_address)
 
 # Read from File and send
 
-with open('./sock_testdata') as f:
+with open('/home/vignesh/TimeKeeper/dilation-code/tests/socket_test/sock_testdata') as f:
 	array = []
 	for line in f:
 		array.append(line)
@@ -39,16 +53,20 @@ try :
 		sock.sendall(message)
 		# time.sleep(1)
 
-	print >>sys.stderr, '\n**** Client File Over **** \n'
+	print '\n**** Client File Over **** \n'
+	sys.stdout.flush()
 
 	amount_received = 0
 	while amount_received < amount_expected:
 		data = sock.recv(128)
 		amount_received += len(data)
-		print >>sys.stderr, '%s' % data,
+		print '%s' % data,
+		sys.stdout.flush()
 finally:
 	print >>sys.stderr, 'Closing Socket'
 	sock.close()
+
+
 
 '''
 # Commonly used flag setes
