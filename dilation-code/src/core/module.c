@@ -401,7 +401,7 @@ void __exit my_module_exit(void)
 
    	//cleanup_experiment_components();
 
-   	/*if(sys_call_table) {
+   	if(sys_call_table) {
 	   	orig_cr0 = read_cr0();
 		write_cr0(orig_cr0 & ~0x00010000);
 		sys_call_table[__NR_nanosleep] = (unsigned long *)ref_sys_sleep;
@@ -411,15 +411,15 @@ void __exit my_module_exit(void)
 		sys_call_table[NR_select] = (unsigned long *)ref_sys_select;
 		write_cr0(orig_cr0 | 0x00010000);
 
-	}*/
+	}
 
 	/* Busy wait briefly for tasks to finish -Not the best approach */
 	for (i = 0; i < 1000000000; i++) {}
 
 	if ( kthread_stop(round_task) )
-    {
+    	{
          PDEBUG_E(" Stopping round_task error\n");
-    }
+    	}
 	
 
 	for (i = 0; i < 1000000000; i++) {}

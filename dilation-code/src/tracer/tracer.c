@@ -145,6 +145,8 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 	if((pid_t)ret != pid){
 		if(errno == EBREAK_SYSCALL){
 			LOG("Waitpid: Breaking out. Process entered blocking syscall\n");
+			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
+			libperf_finalize(pd, 0); 
 			curr_tracee->syscall_blocked = 1;
 			return TID_SYSCALL_ENTER;
 		}
@@ -167,6 +169,8 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 		if(status >>8 == (SIGTRAP | PTRACE_EVENT_CLONE << 8) || status >>8 == (SIGTRAP | PTRACE_EVENT_FORK << 8)) {
 		
 			
+			
+
 			ret = ptrace(PTRACE_GETEVENTMSG,pid, NULL, (u32*)&new_child_pid);
 			status = 0;
 			do{
@@ -177,6 +181,10 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 				LOG("Process does not exist\n");
 				return TID_IGNORE_PROCESS;
 			}
+
+			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
+			libperf_finalize(pd, 0); 
+
 
 			if(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) {
 				new_tracee = alloc_new_tracee_entry(new_child_pid);
@@ -198,7 +206,11 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 			if(curr_tracee->vfork_parent != NULL) {
 				curr_tracee->vfork_parent->vfork_stop = 0;
 				curr_tracee->vfork_parent = NULL;
-			}			
+			}	
+
+			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
+			libperf_finalize(pd, 0); 
+
 			return TID_EXITED;
 		}
 		else if(status >>8 == (SIGTRAP | PTRACE_EVENT_VFORK << 8)){
@@ -212,6 +224,9 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 			if(errno == ESRCH) {
 				return TID_IGNORE_PROCESS;
 			}
+
+			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
+			libperf_finalize(pd, 0); 
 
 			if(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP){
 				new_tracee = alloc_new_tracee_entry(new_child_pid);
@@ -234,26 +249,24 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 				curr_tracee->vfork_parent->vfork_stop = 0;
 				curr_tracee->vfork_parent = NULL;
 			}
+
+			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
+			libperf_finalize(pd, 0); 
+
+
 			return TID_OTHER;	
 		}
 		else{
 
-			//counter = libperf_readcounter(pd,LIBPERF_COUNT_HW_INSTRUCTIONS);
-
+		
 			ret = ptrace(PTRACE_GET_REM_MULTISTEP, pid, 0, (u32*)&n_ints);
-			//printf("n interrupts = %lu\n", n_ints);
 			
       		libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);			
-      		//fprintf(stdout, "N HW instructions counter read: %"PRIu64"\n", counter); 
-
-		 	//counter = libperf_readcounter(pd,LIBPERF_COUNT_SW_CONTEXT_SWITCHES);
-			//fprintf(stdout, "N CONTEXT SWITCHES counter read: %"PRIu64"\n", counter); 
-
-      		//libperf_close(pd);
           	libperf_finalize(pd, 0); 	
-			//ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+
 
 			#ifdef DEBUG_VERBOSE
+			ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
 			LOG("Single step completed for Process : %d. Status = %lX. Rip: %lX\n\n ", pid, status, regs.rip);
 			#endif
 
@@ -265,6 +278,10 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 		}
 
 
+	}
+	else{
+		libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);			
+        libperf_finalize(pd, 0); 	
 	}
 
 
@@ -283,7 +300,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 
 }
 
-int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32 n_insns, int cpu_assigned){
+int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32 n_insns, int cpu_assigned, float rel_cpu_speed){
 
 
 	int i = 0;
@@ -315,10 +332,18 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			ret = ptrace(PTRACE_GET_MSTEP_FLAGS, pid, 0, (u32*)&flags);
 			if(test_bit(flags, PTRACE_ENTER_SYSCALL_FLAG) == 0){
 				curr_tracee->syscall_blocked = 0;
+
+				#ifdef DEBUG_VERBOSE
 				LOG("Process: %d , ret = %d, errno = %d, flags = %lX\n", pid, ret, errno, flags);
+				#endif
 			}
 			else {
 				LOG("Process: %d is still blocked inside syscall\n",pid);
+
+				int sleep_duration = (int)n_insns*(rel_cpu_speed/1000.0);
+
+				if(sleep_duration >= 1)
+					usleep(sleep_duration)
 				return SUCCESS;
 			}
 	
@@ -389,8 +414,8 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 		switch(ret) {
 
 			case TID_SYSCALL_ENTER:		curr_tracee->syscall_blocked = 1;
-							return SUCCESS;
-							break;
+										return SUCCESS;
+										break;
 
 			case TID_IGNORE_PROCESS:	llist_remove(tracee_list, curr_tracee);
 							hmap_remove_abs(tracees, pid);
@@ -563,7 +588,7 @@ int main(int argc, char * argv[]){
 			if(new_cmd_pid == -1 )
 				break;
 
-			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, 0);
+			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, 0,1.0);
 		}
 		close(sock_fd);
 
@@ -629,7 +654,7 @@ int main(int argc, char * argv[]){
 				LOG("Tracer: %d, Running Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
 				#endif
 
-				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned);
+				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned, rel_cpu_speed);
 				
 			}
 
@@ -640,7 +665,7 @@ int main(int argc, char * argv[]){
 			LOG("Tracer: %d: Writing Cmd Results\n", tracer_id);
 			#endif
 			
-			//usleep(1000000);
+			//usleep(10000);
 			write(fp,command, strlen(command));
 		}
 		end:

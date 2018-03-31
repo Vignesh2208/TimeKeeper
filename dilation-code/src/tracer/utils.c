@@ -190,7 +190,7 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 						}
 
 						dup2(fd,STDOUT_FILENO); /*copy the file descriptor fd into standard output*/
-						dup2(fd,STDERR_FILENO); /* same, for the standard error */
+						//dup2(fd,STDERR_FILENO); /* same, for the standard error */
 						close(fd); /* close the file descriptor as we don't need it more  */
 					}
     				break;
