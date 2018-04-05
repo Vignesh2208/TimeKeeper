@@ -32,7 +32,7 @@ build_core:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SUBDIR)/build modules
 
 build_api:
-	@cd src/api; $(MAKE) build;
+	@cd src/api; $(MAKE) build_api;
 
 build_tracer:
 	@cd src/tracer; $(MAKE) build;

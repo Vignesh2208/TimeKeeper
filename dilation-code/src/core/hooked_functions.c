@@ -54,6 +54,8 @@ extern int do_dialated_select(int n, fd_set_bits *fds,struct task_struct * tsk);
 extern spinlock_t syscall_lookup_lock;
 extern tracer * get_tracer_for_task(struct task_struct * aTask);
 
+extern int is_tracer_task(struct task_struct * aTask);
+
 s64 get_dilated_time(struct task_struct * task)
 {
 	struct timeval tv;
@@ -99,6 +101,9 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	struct timespec rmt;
 	rem.tv64 = 0;
 
+	if(is_tracer_task(current) >= 0){
+		return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
+	}
 
 	if (copy_from_user(&tu, rqtp, sizeof(tu)))
 		return -EFAULT;
@@ -121,6 +126,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 
 		curr_tracer = get_tracer_for_task(current);
 		
+
 		
 		if(!curr_tracer){
 			current->virt_start_time = 0;
@@ -132,6 +138,8 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 			hmap_remove_abs(&sleep_process_lookup,current->pid);
 			goto revert_nano_sleep;
 		}
+
+
 
 
 		if(wakeup_time > now)
@@ -275,6 +283,9 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	rem.tv64 = 0;
 
 
+	if(is_tracer_task(current) >= 0){
+		return ref_sys_sleep(rqtp,rmtp);
+	}
 	
 	
 
@@ -309,6 +320,9 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			hmap_remove_abs(&sleep_process_lookup,current->pid);
 			goto revert_sleep;
 		}
+
+
+		
 
 		
 		
@@ -424,6 +438,10 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 
 
 	current_task = current;
+
+	if(is_tracer_task(current) >= 0){
+		return ref_sys_select(k,inp,outp,exp,tvp);
+	}
 	
 	rcu_read_lock();
 	fdt = files_fdtable(current->files);
@@ -665,10 +683,15 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	struct poll_helper_struct * poll_helper =  &helper;
 	tracer * curr_tracer;
 	int cpu;
+
+	if(is_tracer_task(current) >= 0){
+		return ref_sys_poll(ufds,nfds,timeout_msecs);
+	}
+	
 	
 	current_task = current;
 	acquire_irq_lock(&syscall_lookup_lock,flags);
-	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs >= 0 && atomic_read(&experiment_stopping) == 0){
+	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs > 0 && atomic_read(&experiment_stopping) == 0){
 	
 		PDEBUG_V("Sys Poll: Poll Entered %d.\n",current->pid);
 		atomic_inc(&n_active_syscalls);

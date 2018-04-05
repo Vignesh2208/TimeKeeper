@@ -50,6 +50,9 @@ extern asmlinkage long (*ref_sys_clock_nanosleep)(const clockid_t which_clock, i
 extern asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct timespec __user * tp);
 extern unsigned long orig_cr0; 
 
+extern s64 round_error;
+extern s64 n_rounds;
+extern s64 round_error_sq;
 
 
 
@@ -258,17 +261,19 @@ void add_process_to_schedule_queue_recurse(tracer * tracer_entry, struct task_st
 	if(tsk == NULL || tsk->pid == 0 || !tracer_entry)
 		return;
 
-	if(tracer_entry->tracer_task != tsk){
+	//if(tracer_entry->tracer_task != tsk){
 		// Do not add any of the threads of the tracer itself because they are not dilated.
 		/* set policy for all threads as well */
 		me = tsk;
 		t = me;
 
 		do {
+
+			if(tracer_entry->tracer_task->pid != t->pid)
 				add_to_tracer_schedule_queue(tracer_entry, t);
 		} while_each_thread(me, t);
 
-	}
+	//}
 
 	list_for_each(list, &tsk->children)
 	{
@@ -503,7 +508,7 @@ void update_all_children_virtual_time(tracer * tracer_entry){
 	s64 dilated_run_time;
 	s64 curr_virtual_time;
 	if(tracer_entry && tracer_entry->tracer_task){
-		dilated_run_time = tracer_entry->freeze_quantum;
+		dilated_run_time = tracer_entry->quantum_n_insns;
 
 		if(tracer_entry->spinner_task)
 			tracer_entry->spinner_task->freeze_time = tracer_entry->round_start_virt_time  + dilated_run_time;
@@ -520,6 +525,7 @@ void update_all_tracers_virtual_time(int cpuID){
 	llist_elem * head;
 	llist * tracer_list;
 	tracer * curr_tracer;
+	s64 err;
 
 
 	tracer_list =  &per_cpu_tracer_list[cpuID];
@@ -535,10 +541,15 @@ void update_all_tracers_virtual_time(int cpuID){
 		}
 		else{
            	update_all_children_virtual_time(curr_tracer);
-
 		}
 
-		curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + curr_tracer->freeze_quantum;
+		curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + curr_tracer->quantum_n_insns;
+
+		if(curr_tracer->quantum_n_insns > curr_tracer->freeze_quantum)
+			err = curr_tracer->quantum_n_insns - curr_tracer->freeze_quantum;
+		else
+			err = 0;
+		curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum - err; // for next round, compensate
 		head = head->next;
 	}	
 }
@@ -568,9 +579,29 @@ int handle_tracer_results(char * buffer){
 		next_idx += get_next_value(buffer + next_idx);
 
 		PDEBUG_V("Handle tracer results: Pid: %d, Tracer ID: %d, Curr Result: %d, All results: %s\n", current->pid, curr_tracer->tracer_id, result, buffer);
-		if(result <= 0)
-			break;
+		
 
+		if(result <= 0){
+			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum;
+			break;
+		}
+
+		if(result){
+
+			/*
+			mutex_lock(&exp_lock);
+			round_error  = round_error + result;
+			round_error_sq = round_error_sq + (result*result);
+			n_rounds += 1;
+			mutex_unlock(&exp_lock);
+			*/
+			
+			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum + result;
+			curr_tracer->tracer_task->freeze_time = curr_tracer->tracer_task->freeze_time + result;
+			break;
+		}
+
+		/*
 		curr_elem = hmap_get_abs(&curr_tracer->valid_children, result);
 		if(curr_elem){
 
@@ -580,7 +611,9 @@ int handle_tracer_results(char * buffer){
 			if(task != NULL)
 				hmap_put_abs(&curr_tracer->ignored_children, result, task);
 			hmap_remove_abs(&curr_tracer->valid_children, result);
-		}
+		}*/
+
+
 
 	}
 
@@ -633,7 +666,7 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
     int next_idx = get_next_value(write_buffer);
 	
 
-	for(i = 0; *(write_buffer + next_idx + i) != '\0' && i < IFNAMSIZ ; i++)
+	for(i = 0; *(write_buffer + next_idx + i) != '\0' && *(write_buffer + next_idx + i) != ','  && i < IFNAMSIZ ; i++)
 		dev_name[i] = *(write_buffer + next_idx + i);
 
     PDEBUG_A("Set Net Device Owner: Received Pid: %d, Dev Name: %s\n", pid, dev_name);
@@ -651,7 +684,10 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
 	    }
 	}
    
+   	
    	if(task && found){
+
+   		/*
    		mutex_lock(&exp_lock);
    		curr_tracer = hmap_get_abs(&get_tracer_by_pid, task->pid);
    		mutex_unlock(&exp_lock);
@@ -664,6 +700,7 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
    			PDEBUG_E("Pid Struct of spinner task not found for tracer: %d\n", curr_tracer->tracer_task->pid);
    			return FAIL;
    		}
+   		*/
 
 	    write_lock_bh(&dev_base_lock);
 		for_each_net(net) {
@@ -674,6 +711,9 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
 						dev->owner_pid = pid_struct;
 						found = 1;
 			    	}
+			    	/*else{
+			    		PDEBUG_A("Set Net Device Owner: Examined device: %s\n", dev->name);
+			    	}*/
 				}
 			}
 		}	
@@ -684,6 +724,7 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
 	else{
 		return FAIL;
 	}
+	
 
 	return SUCCESS;
 }

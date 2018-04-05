@@ -47,6 +47,11 @@ extern unsigned long **aquire_sys_call_table(void);
 spinlock_t syscall_lookup_lock;
 
 
+extern s64 round_error;
+extern s64 n_rounds;
+extern s64 round_error_sq;
+
+
 /** LOCALLY DEFINED GLOBAL VARIABLES **/
 s64 boottime;
 atomic_t is_boottime_set = ATOMIC_INIT(0);
@@ -100,7 +105,7 @@ int progress_exp_fixed_rounds(char * write_buffer){
 		PDEBUG_A("progress exp n rounds: Woke up round_sync_task\n");
 	}
 
-	PDEBUG_V("Progress Exp For Fixed Rounds Initiated. Number of Progress rounds = %d\n", progress_rounds);
+	PDEBUG_V("Progress Exp For Fixed Rounds Initiated. Number of Progress rounds = %d\n", atomic_read(&progress_n_rounds));
 	wake_up_interruptible(&progress_sync_proc_wqueue);
 	experiment_stopped = RUNNING;
 	do{
@@ -111,6 +116,8 @@ int progress_exp_fixed_rounds(char * write_buffer){
 				set_current_state(TASK_RUNNING);
 
 	}while(ret == 0);
+
+	set_current_state(TASK_RUNNING);	
 	
 	return SUCCESS;
 }
@@ -152,9 +159,10 @@ void start_exp(){
 
 
 
-int initialize_experiment_components(){
+int initialize_experiment_components(char * write_buffer){
 
 	int i;
+	int j;
 
 	PDEBUG_V("Entering Experiment Initialization\n");
 	if(experiment_status == INITIALIZED){
@@ -183,6 +191,11 @@ int initialize_experiment_components(){
 		init_waitqueue_head(&syscall_control_queue[i]);
 	}
 	
+
+	round_error = 0;
+	round_error_sq = 0;
+	n_rounds = 0;
+
 	mutex_init(&exp_lock);
 	spin_lock_init(&syscall_lookup_lock);
 
@@ -222,6 +235,24 @@ int initialize_experiment_components(){
 
 	experiment_stopped = NOTRUNNING;
 	experiment_status = INITIALIZED;
+
+	char dilation_file_name[STATUS_MAXSIZE];
+	int n_expected_tracers = atoi(write_buffer);
+
+    for(i = 1; i <= n_expected_tracers; i++){
+    	for(j = 0; j < STATUS_MAXSIZE; j++)
+    		dilation_file_name[j] = '\0';
+
+    	sprintf(dilation_file_name, "status%d", i);
+    	remove_proc_entry(dilation_file_name, NULL);
+
+		if(proc_create(dilation_file_name, 0666, NULL,&proc_file_fops) == NULL){
+		    remove_proc_entry(dilation_file_name, NULL);
+	   		PDEBUG_E("Error: Could not initialize /proc/%s\n", dilation_file_name);
+	   		return -ENOMEM;
+	  	}
+
+    }
 
 
 	/* Wait to stop loop_task */
@@ -307,6 +338,8 @@ int cleanup_experiment_components(){
 	experiment_stopped = NOTRUNNING;
 	experiment_status = NOT_INITIALIZED;
 
+	set_current_state(TASK_RUNNING);
+
 	return SUCCESS;
 
 
@@ -331,8 +364,10 @@ int sync_and_freeze(char * write_buffer) {
 	//	return ret;
 
 	set_current_state(TASK_INTERRUPTIBLE);
-	if(experiment_status != INITIALIZED || experiment_stopped != NOTRUNNING)
+	if(experiment_status != INITIALIZED || experiment_stopped != NOTRUNNING){
+		set_current_state(TASK_RUNNING);
 		return FAIL;
+	}
 
 	n_expected_tracers = atoi(write_buffer);
 
@@ -345,12 +380,14 @@ int sync_and_freeze(char * write_buffer) {
 
 	if (tracer_num <= 0) {
 		PDEBUG_E("Sync And Freeze: Nothing added to experiment, dropping out\n");
+		set_current_state(TASK_RUNNING);
 		return FAIL;
 	}
 
 
 	if(tracer_num != n_expected_tracers){
 		PDEBUG_E("Sync And Freeze: Expected number of tracers: %d not present. Actual number of registered tracers: %d\n", n_expected_tracers, tracer_num);
+		set_current_state(TASK_RUNNING);
 		return FAIL;
 	}
 
@@ -361,15 +398,20 @@ int sync_and_freeze(char * write_buffer) {
 
 	if (experiment_stopped != NOTRUNNING) {
         PDEBUG_A("Sync And Freeze: Trying to Sync Freeze when an experiment is already running!\n");
+        set_current_state(TASK_RUNNING);
         return FAIL;
     }
 
+
+    
+    
 
 
 	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
 
 	if(!round_task){
 		PDEBUG_A("Sync And Freeze: Round sync task not started error !\n");
+		set_current_state(TASK_RUNNING);
         return FAIL;
 	}
 	PDEBUG_A("Round Sync Task Pid = %d\n", round_task->pid);
@@ -439,6 +481,12 @@ int sync_and_freeze(char * write_buffer) {
 				curr_tracer->spinner_task->wakeup_time = 0;
 
 	    	}
+
+	    	curr_tracer->tracer_task->virt_start_time = 0;
+	    	curr_tracer->tracer_task->freeze_time = now;
+    		curr_tracer->tracer_task->past_physical_time = 0;
+	        curr_tracer->tracer_task->past_virtual_time = 0;
+			curr_tracer->tracer_task->wakeup_time = 0;
     	}
     }
 
@@ -450,6 +498,7 @@ int sync_and_freeze(char * write_buffer) {
 	#endif*/
 
 	PDEBUG_A("Finished Sync and Freeze\n");
+	set_current_state(TASK_RUNNING);
 
 	return SUCCESS;
 
@@ -626,8 +675,9 @@ int round_sync_task(void *data)
 			/* wait up each synchronization worker thread, then wait til they are all done */
 			if (EXP_CPUS > 0 && tracer_num  > 0) {
 
-				PDEBUG_V("round_sync_task: Round Starting. Waking up worker threads\n");
+				PDEBUG_V("$$$$$$$$$$$$$$$$$$$$$$$ round_sync_task: Round %d Starting. Waking up worker threads $$$$$$$$$$$$$$$$$$$$$$$$$$\n", round_count);
 				atomic_set(&n_workers_running, EXP_CPUS);
+				set_current_state(TASK_INTERRUPTIBLE);
 			
 				for (i=0; i < EXP_CPUS; i++) {
 
@@ -650,7 +700,7 @@ int round_sync_task(void *data)
                 start_ns = timeval_to_ns(&now);
 
 
-    			set_current_state(TASK_INTERRUPTIBLE);
+    			
 				wait_event_interruptible(sync_worker_wqueue, atomic_read(&n_workers_running) == 0);
 				
 
@@ -658,6 +708,7 @@ int round_sync_task(void *data)
 				for(i = 0 ; i < EXP_CPUS; i++){
 					 update_all_tracers_virtual_time(i);
 				}
+
 			}
 
 			if(atomic_read(&progress_n_enabled) == 1 && atomic_read(&progress_n_rounds) > 0){
@@ -705,13 +756,14 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask){
 	struct sleep_helper_struct * task_sleep_helper = NULL;
 	int cpu;
 
-	if(curr_tracer && aTask && aTask != curr_tracer->tracer_task){
+	//if(curr_tracer && aTask && aTask != curr_tracer->tracer_task){
 
 		cpu = curr_tracer->cpu_assignment - 2;
 		me = aTask;
 		t = me;
 		do {
 
+			if(curr_tracer && t && t->pid != curr_tracer->tracer_task->pid){
 
 		    acquire_irq_lock(&syscall_lookup_lock,flags);
 			task_poll_helper = hmap_get_abs(&poll_process_lookup,t->pid);
@@ -754,9 +806,12 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask){
 			else{
 				release_irq_lock(&syscall_lookup_lock,flags);
 			}
+
+			}
+
 		}while_each_thread(me, t);
 
-	}
+	//}
 
 	if(aTask && curr_tracer){
 	    list_for_each(list, &aTask->children)
@@ -1041,8 +1096,9 @@ void signal_tracer_resume(tracer * curr_tracer){
 }
 
 void wait_for_tracer_completion(tracer * curr_tracer){
-	PDEBUG_V("Waiting for Tracer completion from Tracer : %d, Tracer ID: %d\n", curr_tracer->tracer_task->pid, curr_tracer->tracer_id);
 	wait_event_interruptible(curr_tracer->w_queue, atomic_read(&curr_tracer->w_queue_control) == 1);
+	PDEBUG_V("Resuming from Tracer completion for Tracer : %d, Tracer ID: %d\n", curr_tracer->tracer_task->pid, curr_tracer->tracer_id);
+
 }
 
 #ifndef __TK_MULTI_CORE_MODE
@@ -1096,7 +1152,7 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 	}
 	
 	
-	
+	curr_tracer->tracer_task->freeze_time = curr_tracer->tracer_task->freeze_time + curr_tracer->freeze_quantum;
 
 	
 	return SUCCESS;
@@ -1128,6 +1184,9 @@ int unfreeze_proc_exp_multi_core_mode(tracer * curr_tracer) {
 	/* for adding any new tasks that might have been spawned */
 	refresh_tracer_schedule_queue(curr_tracer);
 	clean_up_all_irrelevant_processes(curr_tracer);
+
+	resume_all_syscall_blocked_processes(curr_tracer);
+
 	update_all_runnable_task_timeslices(curr_tracer);
 	flush_buffer(curr_tracer->run_q_buffer, BUF_MAX_SIZE);
 	print_schedule_list(curr_tracer);
@@ -1150,7 +1209,7 @@ int unfreeze_proc_exp_multi_core_mode(tracer * curr_tracer) {
 		wait_for_tracer_completion(curr_tracer);
 	}
 
-	resume_all_syscall_blocked_processes(curr_tracer);
+	
 
 	return SUCCESS;
 }

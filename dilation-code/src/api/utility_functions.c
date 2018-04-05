@@ -29,6 +29,27 @@ int send_to_timekeeper(char * cmd) {
     return ret;
 }
 
+int get_stats(ioctl_args * args){
+
+    int fp = open(FILENAME, O_RDWR);
+    int ret = 0;
+    if (fp < 0) {
+        printf("Error communicating with TimeKeeper\n");
+        return -1;
+    }
+
+
+    ret = ioctl(fp, TK_IO_GET_STATS, args);
+    if (ret == -1) {
+        perror("ioctl");
+        close(fp);
+        return -1;
+    }
+    close(fp);
+
+    return 0;
+
+}
 
 /*
 Returns the thread id of a process

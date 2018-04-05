@@ -2,6 +2,15 @@
 #include <sys/sysinfo.h>
 #include <fcntl.h> // for open
 #include <unistd.h> // for close
+#include <sys/file.h>
+#include <sys/ioctl.h>
+ #define _GNU_SOURCE
+#include <sched.h>
+
+#define TK_IOC_MAGIC  'k'
+
+#define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
+#define TK_IO_WRITE_RESULTS _IOW(TK_IOC_MAGIC,  2, int)
 
 #define TRACER_RESULTS 'J'
 #define MAX_BUF_SIZ 1024
@@ -338,12 +347,14 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 				#endif
 			}
 			else {
-				LOG("Process: %d is still blocked inside syscall\n",pid);
+				
 
 				int sleep_duration = (int)n_insns*(rel_cpu_speed/1000.0);
 
+				LOG("Process: %d is still blocked inside syscall. Sleeping for: %d\n",pid, sleep_duration);
+
 				if(sleep_duration >= 1)
-					usleep(sleep_duration)
+					usleep(sleep_duration);
 				return SUCCESS;
 			}
 	
@@ -462,6 +473,50 @@ void init_msg_buffer(struct nlmsghdr *nlh, struct sockaddr_nl * dst_addr) {
 #endif
 
 
+void write_results(int fp, char * command){
+
+
+  LOG("Writing results back \n");
+  char * ptr;
+  int ret = 0;
+  ptr = command;
+
+  /*
+  while(1){
+
+  	flock(fp, LOCK_EX);
+    ret = write(fp,ptr, strlen(ptr));
+    flock(fp,LOCK_UN);
+    
+    LOG("Wrote %d bytes in one go\n", ret);
+    if(ret < 0){
+      LOG("Write Error!\n");
+      perror("Write Error!\n");
+      break;
+    }
+    if(ret != strlen(ptr)){
+    	LOG("Wrote %d bytes in one go\n", ret);
+    	usleep(1000);
+    }
+    else{
+    	break;
+    }
+
+
+    ptr  = ptr + ret;
+
+    if(*ptr == '\0')
+    	break;
+
+  }
+  ret = fsync(fp);
+  */
+
+  ret = ioctl(fp,TK_IO_WRITE_RESULTS, command);
+  //ret = write(fp,ptr, strlen(ptr));
+  LOG("Wrote results back. ioctl ret = %d \n", ret);
+}
+
 
 int main(int argc, char * argv[]){
 
@@ -480,7 +535,7 @@ int main(int argc, char * argv[]){
 	
 	pid_t new_cmd_pid;
 	pid_t new_pid;
-	char * nxt_cmd[MAX_PAYLOAD];
+	char nxt_cmd[MAX_PAYLOAD];
 	int tail_ptr;
 	int tracer_id = 0;
 	int count = 0;
@@ -493,8 +548,12 @@ int main(int argc, char * argv[]){
 	int create_spinner = 0;
 	pid_t spinned_pid;
 	int cmd_no = 0;
+	FILE* fp1;
 
-	
+	//read_ret = unshare(CLONE_NEWNET|CLONE_NEWNS);
+	//if(read_ret == -1){
+	//	LOG("UNSHARE Error: %d\n", errno );
+	//}
 
 	hmap_init(&tracees, 1000);
 	llist_init(&tracee_list);
@@ -541,11 +600,13 @@ int main(int argc, char * argv[]){
 
 	LOG("Tracer Pid: %d, Tracer ID: %d, CMDS_FILE_PATH: %s, REL_CPU_SPEED: %f, N_ROUND_INSNS: %lu, N_CPUS: %d\n", (pid_t)getpid(), tracer_id, cmd_file_path, rel_cpu_speed, n_round_insns, n_cpus);
 
-	fp = fopen(cmd_file_path,"r");
-	if(fp == NULL) 
+	fp1 = fopen(cmd_file_path,"r");
+	if(fp1 == NULL){
+		LOG("ERROR opening cmds file\n");
 		exit(-1);
+	}
 
-	while ((line_read = getline(&line, &len, fp)) != -1) {
+	while ((line_read = getline(&line, &len, fp1)) != -1) {
 		count ++;
        	LOG("Running Command no: %d: %s", count, line);
 		run_command(line, &new_cmd_pid);
@@ -557,6 +618,7 @@ int main(int argc, char * argv[]){
 	setup_all_traces(&tracees, &tracee_list);
 
 
+	fclose(fp1);
 
 	#ifdef TEST 
 		sock_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_USERSOCK);
@@ -619,14 +681,19 @@ int main(int argc, char * argv[]){
 		}
 
 		//fp = fopen("/proc/dilation/status","a");
-		fp = open("/proc/status", O_RDWR);
+
+		char dilation_file_name[MAX_BUF_SIZ];
+		flush_buffer(dilation_file_name,MAX_BUF_SIZ);
+		sprintf(dilation_file_name,"/proc/status%d",tracer_id);
+
+		fp = open(dilation_file_name, O_RDWR);
 
 		if(fp == -1){
 			LOG("PROC file open error\n");
-			exit(-1);;
+			exit(-1);
 		}
 
-
+		LOG("DILATION FILE NAME: %s\n", dilation_file_name);
 		while(1){
 			flush_buffer(nxt_cmd, MAX_PAYLOAD);
 			tail_ptr = 0;
@@ -634,11 +701,21 @@ int main(int argc, char * argv[]){
 			n_insns = 0;
 			read_ret = -1;
 			cmd_no ++;
-			while(read_ret == -1){
-				read_ret = read(fp, nxt_cmd,fp);
-				//usleep(10000);
-			}
-			LOG("Tracer: %d, Cmd no = %d, Received Command: %s\n", tracer_id, cmd_no, nxt_cmd);
+
+			
+
+			
+			LOG("Tracer Waiting for next command\n");
+			/*while(read_ret == -1){
+				read_ret = read(fp, nxt_cmd,MAX_PAYLOAD);
+				usleep(1000);
+			}*/
+			sprintf(nxt_cmd, "%c,%s,", TRACER_RESULTS,"0");
+			write_results(fp,nxt_cmd);
+			usleep(1000);
+
+
+			LOG("Tracer: %d, Cmd no = %d, Received Command: %s, read_ret = %d\n", tracer_id, cmd_no, nxt_cmd, read_ret);
 			while(tail_ptr != -1){
 				tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);
 
@@ -650,23 +727,27 @@ int main(int argc, char * argv[]){
 				if(new_cmd_pid == 0)
 					break;
 
-				#ifdef DEBUG_VERBOSE
-				LOG("Tracer: %d, Running Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
-				#endif
+				
 
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned, rel_cpu_speed);
+				//usleep(1000);
+				//#ifdef DEBUG_VERBOSE
+				LOG("Tracer: %d, Ran Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
+				//s#endif
 				
 			}
 
 			flush_buffer(command,MAX_BUF_SIZ);
 			sprintf(command, "%c,%s,", TRACER_RESULTS,"0");
 
-			#ifdef DEBUG_VERBOSE
+			//#ifdef DEBUG_VERBOSE
 			LOG("Tracer: %d: Writing Cmd Results\n", tracer_id);
-			#endif
+			//#endif
+			//write_results(fp,command);
+
 			
 			//usleep(10000);
-			write(fp,command, strlen(command));
+			//write(fp,command, strlen(command));
 		}
 		end:
 		close(fp);

@@ -20,6 +20,7 @@ int experiment_stopped; 			 		// flag to determine state of the experiment
 int experiment_status;						// INTIALIZED/NOT INITIALIZED
 
 struct mutex exp_lock;
+struct mutex file_lock;
 int *per_cpu_chain_length;
 llist * per_cpu_tracer_list;
 
@@ -30,6 +31,7 @@ hashmap sleep_process_lookup;
 hashmap get_tracer_by_id;		//hashmap of <TRACER_NUMBER, TRACER_STRUCT>
 hashmap get_tracer_by_pid;		//hashmap of <PID, TRACER_STRUCT>
 atomic_t n_waiting_tracers = ATOMIC_INIT(0);
+
 
 // Proc file declarations
 static struct proc_dir_entry *dilation_dir = NULL;
@@ -52,9 +54,14 @@ struct task_struct *loop_task;
 struct task_struct * round_task = NULL;
 extern wait_queue_head_t progress_sync_proc_wqueue;
 extern wait_queue_head_t expstop_call_proc_wqueue;
-extern int initialize_experiment_components();
+extern int initialize_experiment_components(char * write_buffer);
 extern unsigned long **aquire_sys_call_table(void);
 extern int round_sync_task(void *data);
+
+
+s64 round_error = 0;
+s64 n_rounds = 0;
+s64 round_error_sq = 0;
 
 
 /***
@@ -125,6 +132,144 @@ int run_usermode_tracer_spin_process(char *path, char **argv, char **envp, int w
 }
 
 
+loff_t tk_llseek(struct file * filp, loff_t pos, int whence){
+	loff_t new_pos = 0;
+	return new_pos;
+}
+
+int tk_release(struct inode *inode, struct file *filp){
+	return 0;
+}
+
+long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
+
+	int err = 0;
+	int retval = 0;
+    int i = 0;
+	uint8_t mask = 0;
+	unsigned long flags;
+	ioctl_args * args;
+	ioctl_args tmp;
+	char write_buffer[STATUS_MAXSIZE];
+	char * ptr;
+	int ret;
+	tracer * curr_tracer;
+
+	for(i = 0; i < STATUS_MAXSIZE; i++)
+		write_buffer[i] = '\0';
+
+
+	PDEBUG_V("Got ioctl from : %d\n", current->pid);
+
+	/*
+	 * extract the type and number bitfields, and don't decode
+	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
+	 */
+	if (_IOC_TYPE(cmd) != TK_IOC_MAGIC) return -ENOTTY;
+	
+	/*
+	 * the direction is a bitmask, and VERIFY_WRITE catches R/W
+	 * transfers. `Type' is user-oriented, while
+	 * access_ok is kernel-oriented, so the concept of "read" and
+	 * "write" is reversed
+	 */
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+	else if (_IOC_DIR(cmd) & _IOC_WRITE)
+		err =  !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+
+	if (err) return -EFAULT;
+
+	switch(cmd) {
+
+			case TK_IO_GET_STATS	:
+										args = (ioctl_args *) arg;
+										if(!args)
+											return -EFAULT;
+
+										mutex_lock(&exp_lock);
+										tmp.round_error = round_error;
+										tmp.round_error_sq = round_error_sq;
+										tmp.n_rounds = n_rounds;
+										mutex_unlock(&exp_lock);
+
+										if(copy_to_user(args, &tmp, sizeof(ioctl_args)))
+											return -EFAULT;
+
+										return 0;
+
+			case TK_IO_WRITE_RESULTS	:	ptr = (char *) arg;
+											if(copy_from_user(write_buffer, ptr, STATUS_MAXSIZE)){
+												return -EFAULT;
+											}
+											mutex_lock(&file_lock);
+											ret = handle_tracer_results(write_buffer + 2);
+											mutex_unlock(&file_lock);
+
+											mutex_lock(&exp_lock);
+											curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
+											if(!curr_tracer){
+												mutex_unlock(&exp_lock);
+												PDEBUG_I("Status Read: Tracer : %d, not registered\n", current->pid);
+												return -1;
+											}
+											mutex_unlock(&exp_lock);
+											
+											PDEBUG_I("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
+											
+											set_current_state(TASK_INTERRUPTIBLE);
+											atomic_inc(&n_waiting_tracers);
+											wake_up_interruptible(&progress_sync_proc_wqueue);
+											wait_event_interruptible(curr_tracer->w_queue, atomic_read(&curr_tracer->w_queue_control) == 0);
+											
+
+											PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
+											
+
+											set_current_state(TASK_RUNNING);
+											if(copy_to_user(ptr, curr_tracer->run_q_buffer, curr_tracer->buf_tail_ptr + 1 )){
+												PDEBUG_I("Status Read: Tracer : %d, Resuming from wait. Error copying to user buf\n", current->pid);	
+												return -EFAULT;
+											}
+
+											if(strcmp(curr_tracer->run_q_buffer, "STOP") == 0){
+												// free up memory
+												PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
+												if(curr_tracer->spinner_task != NULL){
+													//kill_p(curr_tracer->spinner_task, SIGKILL);
+													curr_tracer->spinner_task = NULL;
+												}
+												mutex_lock(&exp_lock);
+												//hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
+												//hmap_remove_abs(&get_tracer_by_pid, current->pid);
+												ret = curr_tracer->buf_tail_ptr;
+												kfree(curr_tracer);
+												mutex_unlock(&exp_lock);
+
+												/*if(atomic_read(&n_waiting_tracers) == 0){
+													cleanup_experiment_components();
+												}*/
+												atomic_dec(&n_waiting_tracers);
+												wake_up_interruptible(&expstop_call_proc_wqueue);
+
+												return 0;
+
+											}
+											atomic_dec(&n_waiting_tracers);
+											ret = curr_tracer->buf_tail_ptr;
+											PDEBUG_V("Status Read: Tracer: %d, Returning value: %d\n", current->pid, ret);
+
+											return 0;
+
+
+
+			default: return -ENOTTY;
+	}
+
+	return retval;
+
+}
+
 /***
 This handles how a process from userland communicates with the kernel module. The process basically writes to:
 /proc/dilation/status with a command ie, 'W', which will tell the kernel module to call the sec_clean_exp() function
@@ -134,6 +279,8 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 	unsigned long buffer_size;
 	int i = 0;
 	int ret = 0;
+
+	mutex_lock(&file_lock);
 
  	if(count > STATUS_MAXSIZE)
 	{
@@ -145,53 +292,76 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 
 	}
 
+	PDEBUG_V("Got Generic write to proc file from : %d, count = %d\n", current->pid, count);
+
 	for(i = 0; i < STATUS_MAXSIZE; i++)
 		write_buffer[i] = '\0';
 
-  	if(copy_from_user(write_buffer, buffer, buffer_size))
+  	if(copy_from_user(write_buffer, buffer, buffer_size)){
+  		mutex_unlock(&file_lock);
 		return -EFAULT;
+  	}
 
+	//PDEBUG_V("Got Generic write from : %d, buffer: %s\n", current->pid, write_buffer);
 
 	if(write_buffer[0] == REGISTER_TRACER){
 		ret =  register_tracer_process(write_buffer + 2);
+		mutex_unlock(&file_lock);
 		PDEBUG_I("Register Tracer : %d, Return value = %d\n", current->pid, ret);
 		if(ret > 0)
 			ret = -255 + ret;
 	}
 	else if(write_buffer[0] == SYNC_AND_FREEZE){
+		mutex_unlock(&file_lock);
 		ret =  sync_and_freeze(write_buffer + 2);
 	}
 	else if(write_buffer[0] == UPDATE_TRACER_PARAMS){
 		ret =  update_tracer_params(write_buffer + 2);
+		mutex_unlock(&file_lock);
 	}
 	else if(write_buffer[0] == PROGRESS){
 		ret =  resume_exp_progress();
+		mutex_unlock(&file_lock);
 	}
 	else if(write_buffer[0] == PROGRESS_N_ROUNDS){
+		mutex_unlock(&file_lock);
 		ret =  progress_exp_fixed_rounds(write_buffer + 2);
 	}
 	else if(write_buffer[0] == START_EXP){
+
 		ret = start_exp();
+		mutex_unlock(&file_lock);
 	}
 	else if(write_buffer[0] == STOP_EXP){
+		mutex_unlock(&file_lock);
 		ret = handle_stop_exp_cmd();
 	}
 	else if(write_buffer[0] == TRACER_RESULTS){
+		PDEBUG_V("Got Handle tracer results for : %d, results: %s\n", current->pid, write_buffer);
 		ret = handle_tracer_results(write_buffer + 2);
+		mutex_unlock(&file_lock);
+
+		//return 0;
 	}
 	else if(write_buffer[0] == SET_NETDEVICE_OWNER){
 		ret = handle_set_netdevice_owner_cmd(write_buffer + 2);
+		mutex_unlock(&file_lock);
 	}
 	else if(write_buffer[0] == GETTIMEPID){
 		ret = handle_gettimepid(write_buffer + 2);
+		mutex_unlock(&file_lock);
 	}
 	else if(write_buffer[0] == INITIALIZE_EXP){
-		ret = initialize_experiment_components();
+		ret = initialize_experiment_components(write_buffer + 2);
+		mutex_unlock(&file_lock);
 	}
 	else{
+		mutex_unlock(&file_lock);
 		printk(KERN_INFO "TIMEKEEPER: Unknown command Received. Command: %s. Buffer size: %zu.\n", write_buffer, count);
 	}
 
+
+	
 	if(ret < 0)
 		return ret;
 	else
@@ -235,6 +405,7 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 
 		PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
 		
+		set_current_state(TASK_RUNNING);
 
 		
 		if(copy_to_user(pBuf, curr_tracer->run_q_buffer, curr_tracer->buf_tail_ptr + 1 )){
@@ -292,6 +463,8 @@ int __init my_module_init(void)
   	PDEBUG_A(" /proc/%s created\n", DILATION_DIR);
   	//dilation_file = proc_create(DILATION_FILE, 0660, dilation_dir,&proc_file_fops);
 	dilation_file = proc_create(DILATION_FILE, 0666, NULL,&proc_file_fops);
+
+	mutex_init(&file_lock);
 
 	if(dilation_file == NULL){
 	    remove_proc_entry(DILATION_FILE, dilation_dir);

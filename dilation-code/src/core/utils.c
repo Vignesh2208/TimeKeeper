@@ -169,11 +169,13 @@ void set_children_time(tracer * tracer_entry, struct task_struct *aTask, s64 tim
 	me = aTask;
 	t = me;
 
-	if(aTask->pid != tracer_entry->tracer_task->pid) {
+	//if(aTask->pid != tracer_entry->tracer_task->pid) {
 		// do not set for any threads of tracer itself
 
 		/* set it for all threads */
 		do {
+
+			if(t->pid != tracer_entry->tracer_task->pid){
 			if (t->pid != aTask->pid) {
 	           		t->virt_start_time = time;
 	           		t->freeze_time = time;
@@ -181,10 +183,12 @@ void set_children_time(tracer * tracer_entry, struct task_struct *aTask, s64 tim
 	           		t->past_virtual_time = 0;
 				if(experiment_stopped != RUNNING)
 	     	       	t->wakeup_time = 0;
-			}		
+			}	
+
+			}	
 		} while_each_thread(me, t);
 
-	}
+	//}
 
 	list_for_each(list, &aTask->children)
 	{
@@ -261,4 +265,30 @@ tracer * get_tracer_for_task(struct task_struct * aTask){
 	mutex_unlock(&exp_lock);
 
 	return NULL;
+}
+
+int is_tracer_task(struct task_struct * aTask){
+	int i = 0;
+	tracer * curr_tracer;
+	if(!aTask)
+		return 0;
+
+	if(experiment_stopped != RUNNING)
+		return 0;
+
+	mutex_lock(&exp_lock);
+	for(i = 1; i <= tracer_num; i++){
+
+		curr_tracer = hmap_get_abs(&get_tracer_by_id, i);
+		if(curr_tracer){
+			if(curr_tracer->tracer_task == aTask){
+					mutex_unlock(&exp_lock);
+					return 1;
+			}
+		}
+
+	}
+	mutex_unlock(&exp_lock);
+
+	return -1;
 }

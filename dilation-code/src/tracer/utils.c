@@ -52,13 +52,6 @@ void print_tracee_list(llist * tracee_list) {
 }
 
 
-int flush_buffer(char * buf, int len) {
-	int i;
-	for(i = 0; i < len; i++){
-		buf[i] = '\0';
-	}
-	return 0;
-}
 
 
 void print_curr_time(char * str) {

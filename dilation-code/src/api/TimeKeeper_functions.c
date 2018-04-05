@@ -4,12 +4,23 @@
 #include "utility_functions.h"
 
 
-#define IFNAMESIZ 16
-#define MAX_BUF_SIZ 200
+
+
 
 int hello(){
 	printf("Hello there from shared lib\n");
 	return 0;
+}
+
+
+int get_experiment_stats(ioctl_args * args){
+
+	if (is_root() && isModuleLoaded()) {
+        return get_stats(args);
+	}
+    return -1;
+
+
 }
 
 /*
@@ -63,12 +74,12 @@ int startExp() {
     return -1;
 }
 
-int initializeExp() {
+int initializeExp(int num_tracers) {
 
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,", INITIALIZE_EXP);
+		sprintf(command, "%c,%d", INITIALIZE_EXP, num_tracers);
 		return send_to_timekeeper(command);
     }
     return -1;
@@ -130,7 +141,7 @@ int set_netdevice_owner(int tracer_pid, char * intf_name){
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d,%s,", SET_NETDEVICE_OWNER,tracer_pid, intf_name);
+		sprintf(command, "%c,%d,%s", SET_NETDEVICE_OWNER,tracer_pid, intf_name);
 		return send_to_timekeeper(command);
 	}
 

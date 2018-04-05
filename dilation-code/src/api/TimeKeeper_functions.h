@@ -16,12 +16,20 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/select.h>
-
+#include "utility_functions.h"
 
 #define MAX_PAYLOAD 1024
 #define NETLINK_USER 31
 
+
+
+#define IFNAMESIZ 16
+#define MAX_BUF_SIZ 200
+
+
+
 // General Functions **********************
+
 
 typedef unsigned long u32;
 
@@ -37,10 +45,13 @@ int gettimepid(int pid);
 
 int startExp();
 int stopExp();
-int initializeExp();
+int initializeExp(int num_tracers);
 
 
 int progress_n_rounds(int n_rounds);
 int progress();
 int hello();
+int get_experiment_stats(ioctl_args * args);
+
+
 #endif

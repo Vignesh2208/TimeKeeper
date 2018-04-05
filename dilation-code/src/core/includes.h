@@ -42,6 +42,12 @@
 #include "../utils/hashmap.h"
 #include "timekeeper_cmds.h"
 
+
+#define TK_IOC_MAGIC  'k'
+
+#define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
+#define TK_IO_WRITE_RESULTS _IOW(TK_IOC_MAGIC,  2, int)
+
 /* Define this macro to enable debug kernel logging in INFO mode*/
 #define TIMEKEEPER_DEBUG_VERBOSE
 #define TIMEKEEPER_DEBUG_INFO
