@@ -87,7 +87,7 @@ void printLog(const char *fmt, ...);
 #if defined DEBUG
 #define LOG(...)    printLog(__VA_ARGS__)
 #else
-#define LOG(...)	printLog(__VA_ARGS__)
+#define LOG(...)	//printLog(__VA_ARGS__)
 #endif
 
 

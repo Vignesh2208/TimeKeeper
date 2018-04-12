@@ -22,9 +22,11 @@ int send_to_timekeeper(char * cmd) {
         return -1;
     }
     printf("Sending Command: %s\n", cmd);
+    fflush(stdout);
     //ret = fprintf(fp, "%s,", cmd); //add comma to act as last character
     ret = write(fp, cmd, strlen(cmd));
     printf("Command Return value: %d\n", ret);
+    fflush(stdout);
     close(fp);
     return ret;
 }

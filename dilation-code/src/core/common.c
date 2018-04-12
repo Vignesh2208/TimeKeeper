@@ -54,6 +54,8 @@ extern s64 round_error;
 extern s64 n_rounds;
 extern s64 round_error_sq;
 
+extern s64 expected_time;
+
 
 
 
@@ -186,7 +188,10 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d is already present. Updating its attributes\n", tracer_entry->tracer_id, tracee->pid);
 			update_tracer_schedule_queue_elem(tracer_entry, tracee);
 		}
-		else if(tracee && tracee != tracer_entry->spinner_task){
+		else if(tracee && tracee == tracer_entry->spinner_task ){
+			PDEBUG_A("Tracee spinner: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
+		}
+		else if (tracee && tracee == tracer_entry->tracer_task){
 			PDEBUG_A("Tracee: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
 		}
 		else{
@@ -195,6 +200,15 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 		}
 
 		return;
+	}
+
+	if(tracee && tracer_entry->spinner_task && tracee->pid == tracer_entry->spinner_task->pid ){
+		PDEBUG_A("Tracee spinner: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
+		return ;
+	}
+	else if (tracee && tracee == tracer_entry->tracer_task){
+		PDEBUG_A("Tracee: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
+		return ;
 	}
 
 	PDEBUG_I("Add to tracer schedule queue: Tracer %d, Adding new tracee %d. \n", tracer_entry->tracer_id, tracee->pid);
@@ -391,6 +405,7 @@ int register_tracer_process(char * write_buffer){
 
    	
    	if(should_create_spinner && spinner_task){
+   		PDEBUG_I("Set Spinner Task for Tracer: %d, Spinner: %d\n", current->pid, spinner_task->pid);
    		new_tracer->spinner_task = spinner_task;
    		kill_p(spinner_task, SIGSTOP);
    		bitmap_zero((&spinner_task->cpus_allowed)->bits, 8);
@@ -526,6 +541,7 @@ void update_all_tracers_virtual_time(int cpuID){
 	llist * tracer_list;
 	tracer * curr_tracer;
 	s64 err;
+	int updated = 0;
 
 
 	tracer_list =  &per_cpu_tracer_list[cpuID];
@@ -536,6 +552,8 @@ void update_all_tracers_virtual_time(int cpuID){
 
 		curr_tracer = (tracer*)head->item;
 
+		if(curr_tracer->quantum_n_insns){
+
 		if (schedule_list_size(curr_tracer) == 0) {			
 			update_task_virtual_time(curr_tracer, curr_tracer->spinner_task, curr_tracer->quantum_n_insns);
 		}
@@ -543,13 +561,42 @@ void update_all_tracers_virtual_time(int cpuID){
            	update_all_children_virtual_time(curr_tracer);
 		}
 
+		}
+
+		if(cpuID == 0 && updated == 0){
+			expected_time = expected_time + curr_tracer->freeze_quantum;
+			updated = 1;
+		}
+
+
+
 		curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + curr_tracer->quantum_n_insns;
 
-		if(curr_tracer->quantum_n_insns > curr_tracer->freeze_quantum)
+
+		if(expected_time  + curr_tracer->freeze_quantum < curr_tracer->round_start_virt_time){
+			curr_tracer->quantum_n_insns = 0;
+
+		}
+		else if(expected_time < curr_tracer->round_start_virt_time){
+			err = curr_tracer->round_start_virt_time - expected_time;
+			curr_tracer->quantum_n_insns = err;
+		}
+		else if(expected_time > curr_tracer->round_start_virt_time){
+			err = expected_time - curr_tracer->round_start_virt_time;
+			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum + err;
+
+		}
+		else{
+			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum;
+		}
+
+		/*if(curr_tracer->quantum_n_insns > curr_tracer->freeze_quantum)
 			err = curr_tracer->quantum_n_insns - curr_tracer->freeze_quantum;
 		else
 			err = 0;
 		curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum - err; // for next round, compensate
+		*/
+
 		head = head->next;
 	}	
 }
@@ -561,7 +608,7 @@ void update_all_tracers_virtual_time(int cpuID){
 
 int handle_tracer_results(char * buffer){
 
-	int result = 0 ;
+	s64 result = 0 ;
 	mutex_lock(&exp_lock);
 	tracer * curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
 	mutex_unlock(&exp_lock);
@@ -588,13 +635,13 @@ int handle_tracer_results(char * buffer){
 
 		if(result){
 
-			/*
+			
 			mutex_lock(&exp_lock);
 			round_error  = round_error + result;
 			round_error_sq = round_error_sq + (result*result);
 			n_rounds += 1;
 			mutex_unlock(&exp_lock);
-			*/
+			
 			
 			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum + result;
 			curr_tracer->tracer_task->freeze_time = curr_tracer->tracer_task->freeze_time + result;
@@ -687,7 +734,7 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
    	
    	if(task && found){
 
-   		/*
+   		
    		mutex_lock(&exp_lock);
    		curr_tracer = hmap_get_abs(&get_tracer_by_pid, task->pid);
    		mutex_unlock(&exp_lock);
@@ -695,12 +742,18 @@ int handle_set_netdevice_owner_cmd(char * write_buffer){
    			return FAIL;
 
    		task = curr_tracer->spinner_task;
+
+   		if(task == NULL){
+   			PDEBUG_E("Must have spinner task to be able to set net device owner\n");
+   			return FAIL;
+   		}
+   		
    		pid_struct = get_task_pid(task,PIDTYPE_PID);
    		if(!pid_struct){
    			PDEBUG_E("Pid Struct of spinner task not found for tracer: %d\n", curr_tracer->tracer_task->pid);
    			return FAIL;
    		}
-   		*/
+   		
 
 	    write_lock_bh(&dev_base_lock);
 		for_each_net(net) {

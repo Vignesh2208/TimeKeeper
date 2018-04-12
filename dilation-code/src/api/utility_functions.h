@@ -2,14 +2,17 @@
 #define __UTILITY_FNS_H
 
 #include <sys/ioctl.h>
+#include <stdint.h>
 
-typedef long long s64;
+
+
+typedef unsigned long long s64;
 
 
 typedef struct ioctl_args_struct{
-	s64 round_error;
-	s64 n_rounds;
-	s64 round_error_sq;
+	uint64_t round_error;
+	uint64_t n_rounds;
+	uint64_t round_error_sq;
 } ioctl_args;
 
 #define TK_IOC_MAGIC  'k'

@@ -73,6 +73,7 @@ int* syscall_running;
 
 int per_cpu_worker(void *data);
 int round_sync_task(void *data);
+s64 expected_time;
 
 
 
@@ -461,6 +462,8 @@ int sync_and_freeze(char * write_buffer) {
 
 	do_gettimeofday(&now_timeval);
     now = timeval_to_ns(&now_timeval);
+
+    expected_time = now;
 
     for(i = 1; i <= tracer_num; i++){
     	mutex_lock(&exp_lock);
@@ -1119,6 +1122,8 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 	if(!curr_tracer)
 		return FAIL;
 
+	if(curr_tracer->quantum_n_insns == 0)
+		return SUCCESS;
 
 
 

@@ -185,7 +185,7 @@ static PyObject * py_get_experiment_stats(PyObject *self, PyObject *arg)
     if(ret < 0)
     	return Py_BuildValue("[i,i,i]", ret, ret, ret);
     else
-    	return Py_BuildValue("[i,i,i]", args.round_error, args.round_error_sq, args.n_rounds);
+    	return Py_BuildValue("[L,L,L]", args.round_error, args.round_error_sq, args.n_rounds);
 }
 
 
@@ -198,10 +198,14 @@ static PyObject * py_o_get_experiment_stats(PyObject *self, PyObject *arg)
     int ret;
     
     ret = o_get_stats(&args);
+
+
     if(ret < 0)
     	return Py_BuildValue("[i,i,i]", ret,ret,ret);
-    else
-    	return Py_BuildValue("[i,i,i]", args.round_error, args.round_error_sq, args.n_rounds);
+    else{
+        printf("Return Round Error: %llu, Round error sq: %llu, N rounds: %llu\n", args.round_error, args.round_error_sq, args.n_rounds);
+    	return Py_BuildValue("[L,L,L]", args.round_error, args.round_error_sq, args.n_rounds);
+    }
 }
 
 static PyMethodDef timekeeper_functions_methods[] = {

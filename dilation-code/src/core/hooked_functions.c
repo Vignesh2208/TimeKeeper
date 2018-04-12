@@ -392,6 +392,8 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 		//if (copy_to_user(rmtp, &rmt, sizeof(*rmtp)))
 		//	return -EFAULT;
 
+		set_current_state(TASK_RUNNING);
+
 		return 0; 
 
 
@@ -683,6 +685,10 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	struct poll_helper_struct * poll_helper =  &helper;
 	tracer * curr_tracer;
 	int cpu;
+
+	if(timeout_msecs <= 0){
+		return ref_sys_poll(ufds,nfds,timeout_msecs);
+	}
 
 	if(is_tracer_task(current) >= 0){
 		return ref_sys_poll(ufds,nfds,timeout_msecs);

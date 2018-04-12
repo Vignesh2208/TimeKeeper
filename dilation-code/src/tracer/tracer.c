@@ -322,10 +322,13 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 
 	u32 flags = 0;
 	
-	if(n_insns <= 1000)
+	/*if(n_insns <= 1000)
 		singlestepmode = 1;
 	else
 		singlestepmode = 0;
+	*/
+
+	singlestepmode = 1;
 
 
 	curr_tracee = hmap_get_abs(tracees, pid);
@@ -370,6 +373,8 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			//libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
+
+			LOG("PTRACE RESUMING MULTI-STEPPING OF process. ret = %d, error_code = %d",ret,errno);
 
 			#ifdef DEBUG_VERBOSE
 			sprintf(buffer, "PTRACE RESUMING MULTI-STEPPING OF process. ret = %d, error_code = %d",ret,errno);

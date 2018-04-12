@@ -11,7 +11,7 @@ all: clean build
 
 clean: clean_build clean_core clean_utils clean_api clean_tracer clean_tests clean_scripts
 
-build: build_scripts build_core build_api build_tracer build_tests
+build: build_scripts build_core build_api build_tracer #build_tests
 
 setup_kernel: compile_4_4_kernel
 
@@ -59,6 +59,7 @@ clean_build:
 clean_core:
 	@echo "Cleaning old TimeKeeper core files ..."
 	@$(RM) -f src/core/*.o 	
+	@cd build && $(MAKE) clean
 
 clean_utils:
 	@echo "Cleaning old TimeKeeper utils files ..."
