@@ -146,7 +146,7 @@ int main(int argc, char * argv[]){
 
     printf("Initializing Exp ...\n");
 
-    ret = initializeExp();
+    ret = initializeExp(1);
     if(ret <= FAIL){
     		printf("Initialize Exp Failed !\n");
     		exit(-1);

@@ -619,7 +619,7 @@ s64 get_current_dilated_time(struct task_struct *task)
 
 	if(virt_start_time > 0){
 	
-		return freeze_time;
+		return init_task.freeze_time;
 	
 	}
 
@@ -669,7 +669,7 @@ EXPORT_SYMBOL(get_task_struct_from_qdisc);
 
 
 
-static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer *timer)
+static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer_dilated *timer)
 {
        
        struct netem_skb_cb * cb = NULL;
@@ -687,42 +687,47 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer *timer)
        if (pkt_owner == NULL || cb == NULL)
        {
 
-	    if(pkt_owner == NULL)
-		printk(KERN_INFO "Netem: pkt_owner is null. Maybe sending early. Pid = %d\n", wd->owner_pid);
+		    if(pkt_owner == NULL)
+			printk(KERN_INFO "Netem: pkt_owner is null. Maybe sending early. Pid = %d\n", wd->owner_pid);
 
-	    if(cb == NULL)
-		printk(KERN_INFO "Netem: cb is null. Maybe sending early. Pid = %d\n", wd->owner_pid);
+		    if(cb == NULL)
+			printk(KERN_INFO "Netem: cb is null. Maybe sending early. Pid = %d\n", wd->owner_pid);
 
-	    qdisc_unthrottled(wd->qdisc);
-	    __netif_schedule(qdisc_root(wd->qdisc));
-	   return HRTIMER_NORESTART;
+		    qdisc_unthrottled(wd->qdisc);
+		    __netif_schedule(qdisc_root(wd->qdisc));
+		   return HRTIMER_NORESTART;
        }
   
        current_dilated_time = get_current_dilated_time(pkt_owner);
         
        if (PSCHED_NS2TICKS(current_dilated_time) >= cb->time_to_send) 
        {
-	    qdisc_unthrottled(wd->qdisc);
-	    __netif_schedule(qdisc_root(wd->qdisc));
+		    qdisc_unthrottled(wd->qdisc);
+		    __netif_schedule(qdisc_root(wd->qdisc));
 
-	   return HRTIMER_NORESTART;
-        }  
-        else
-        {
-	   hrtimer_forward_now(timer,ns_to_ktime(100000));	
-	   return HRTIMER_RESTART;
-        }
+		   return HRTIMER_NORESTART;
+       }  
+       else
+       {
+		   //hrtimer_forward_now(timer,ns_to_ktime(100000));	
+		   //return HRTIMER_RESTART;
+
+       		printk(KERN_INFO "Netem: Dilated time less. Sending early. Pid = %d\n", wd->owner_pid);
+       		return HRTIMER_NORESTART;
+       }
 }
 
 
 void qdisc_watchdog_init(struct qdisc_watchdog *wd, struct Qdisc *qdisc)
 {
 	hrtimer_init(&wd->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
-	hrtimer_init(&wd->timer_dilated,CLOCK_MONOTONIC,HRTIMER_MODE_REL);
+	//hrtimer_init(&wd->timer_dilated,CLOCK_MONOTONIC,HRTIMER_MODE_REL);
+	dilated_hrtimer_init(&wd->timer_dilated,0,HRTIMER_MODE_ABS);
 	wd->timer.function = qdisc_watchdog;
-        wd->timer_dilated.function = qdisc_watchdog_dilated;
+    wd->timer_dilated.function = qdisc_watchdog_dilated;
 	wd->qdisc = qdisc;
 	wd->owner_pid = 0;
+	printk(KERN_INFO "QDISC WATCH DOG init\n");
 }
 EXPORT_SYMBOL(qdisc_watchdog_init);
 
@@ -735,10 +740,8 @@ void qdisc_watchdog_schedule_ns_dilated(struct qdisc_watchdog *wd, u64 expires)
 
 	qdisc_throttled(wd->qdisc);
 
-	hrtimer_start(&wd->timer_dilated,
-		      ns_to_ktime(1000000),
-		      HRTIMER_MODE_REL);
-
+	//hrtimer_start(&wd->timer_dilated,ns_to_ktime(1000000),HRTIMER_MODE_REL);
+	dilated_hrtimer_start(&wd->timer_dilated, ns_to_ktime(expires), HRTIMER_MODE_ABS);
 }
 
 EXPORT_SYMBOL(qdisc_watchdog_schedule_ns_dilated);
@@ -762,7 +765,9 @@ EXPORT_SYMBOL(qdisc_watchdog_schedule_ns);
 void qdisc_watchdog_cancel(struct qdisc_watchdog *wd)
 {
 	hrtimer_cancel(&wd->timer);
-        hrtimer_cancel(&wd->timer_dilated);
+    //hrtimer_cancel(&wd->timer_dilated);
+    dilated_hrtimer_cancel(&wd->timer_dilated);
+    printk(KERN_INFO "QDISC WATCH DOG Cancel\n");
 	qdisc_unthrottled(wd->qdisc);
 }
 EXPORT_SYMBOL(qdisc_watchdog_cancel);

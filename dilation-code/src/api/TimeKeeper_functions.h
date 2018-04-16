@@ -45,7 +45,7 @@ int gettimepid(int pid);
 
 int startExp();
 int stopExp();
-int initializeExp(int num_tracers);
+int initializeExp(int exp_type);
 
 
 int progress_n_rounds(int n_rounds);

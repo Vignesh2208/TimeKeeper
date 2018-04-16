@@ -94,7 +94,8 @@ psched_tdiff_bounded(psched_time_t tv1, psched_time_t tv2, psched_time_t bound)
 
 struct qdisc_watchdog {
 	struct hrtimer	timer;
-	struct hrtimer	timer_dilated;
+	//struct hrtimer timer_dilated;
+	struct hrtimer_dilated	timer_dilated;
 	struct Qdisc	*qdisc;
         struct sk_buff  *skb;
 	struct pid * owner_pid;

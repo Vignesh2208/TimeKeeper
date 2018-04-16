@@ -43,6 +43,7 @@ extern s64 boottime;
 extern atomic_t is_boottime_set;
 extern wait_queue_head_t expstop_call_proc_wqueue;
 extern wait_queue_head_t* syscall_control_queue;
+extern wait_queue_head_t sleep_queue;
 extern int * syscall_running; 
 extern hashmap get_tracer_by_id;
 extern struct mutex exp_lock;
@@ -255,6 +256,17 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 
 }
 
+enum hrtimer_restart sleep_fn_hrtimer(struct hrtimer_dilated *timer)
+{
+
+	struct sleep_helper_struct * sleep_helper = container_of(timer, struct sleep_helper_struct, timer);
+
+	PDEBUG_V("Called Sleep hrtimer function wakeup for : %d\n", sleep_helper->process_pid);
+
+	wake_up_interruptible(&sleep_helper->w_queue);
+
+	return HRTIMER_NORESTART;
+}
 
 
 /***
@@ -282,13 +294,55 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 	rem.tv64 = 0;
 
+	sleep_helper->process_pid = current->pid;
+
 
 	if(is_tracer_task(current) >= 0){
 		return ref_sys_sleep(rqtp,rmtp);
 	}
-	
-	
 
+
+	/** Uncomment this Just to try out this code with dilated hrtimers **/
+	/*
+	if(experiment_stopped == RUNNING &&  current->virt_start_time != 0 && atomic_read(&experiment_stopping) == 0){
+		if (copy_from_user(&tu, rqtp, sizeof(tu))){
+				return -EFAULT;
+		}
+
+		init_waitqueue_head(&sleep_helper->w_queue);
+		if(dilated_hrtimer_init(&sleep_helper->timer,0,HRTIMER_MODE_REL) < 0){
+			PDEBUG_E("Sys Sleep: PID: %d, Dilated HRTIMER INIT failed\n", current->pid);
+			return -EFAULT;
+		}
+		sleep_helper->timer.function = sleep_fn_hrtimer;
+
+		PDEBUG_V("Sys Sleep: PID: %d, Initialized Hrtimer dilated\n", current->pid);
+
+		now = get_dilated_time(current);
+		s64 sleep_time = (tu.tv_sec*1000000000) + tu.tv_nsec;
+		s64 wakeup_time = now + ((tu.tv_sec*1000000000) + tu.tv_nsec);
+		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %llu Nano Secs: %llu, New wake up time : %llu\n",current->pid, tu.tv_sec, tu.tv_nsec, wakeup_time); 
+		
+
+		if(now < wakeup_time){
+			set_current_state(TASK_INTERRUPTIBLE);
+			dilated_hrtimer_start(&sleep_helper->timer, ns_to_ktime(sleep_time), HRTIMER_MODE_REL);
+			wait_event_interruptible(sleep_helper->w_queue, current->freeze_time >= wakeup_time || atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING);
+		
+
+			set_current_state(TASK_RUNNING);
+			now = get_dilated_time(current);
+			err = now - wakeup_time;
+			PDEBUG_V("Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Overshoot error = %llu\n",current->pid, now, err );
+			return 0;
+		}
+		else{
+			return 0;
+		}
+	}
+	*/
+	
+	
 	acquire_irq_lock(&syscall_lookup_lock,flags);
 	if(experiment_stopped == RUNNING && current->virt_start_time != 0 && atomic_read(&experiment_stopping) == 0)
 	{		
@@ -321,13 +375,8 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 			goto revert_sleep;
 		}
 
-
-		
-
-		
 		
 		s64 wakeup_time = now + ((tu.tv_sec*1000000000) + tu.tv_nsec);
-
 		
 		if(wakeup_time > now)
 			difference = wakeup_time - now;
@@ -408,6 +457,8 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	
 	
 	release_irq_lock(&syscall_lookup_lock,flags);
+	
+
     return ref_sys_sleep(rqtp,rmtp);
 }
 

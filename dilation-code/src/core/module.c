@@ -18,6 +18,7 @@ int EXP_CPUS = 0;
 int TOTAL_CPUS = 0;
 int experiment_stopped; 			 		// flag to determine state of the experiment
 int experiment_status;						// INTIALIZED/NOT INITIALIZED
+int experiment_type;						// CS or CBE
 
 struct mutex exp_lock;
 struct mutex file_lock;
@@ -498,7 +499,7 @@ int __init my_module_init(void)
 
 	round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
 	if(!IS_ERR(round_task)) {
-	    //kthread_bind(catchup_task,0);
+	    kthread_bind(round_task,0);
 	    wake_up_process(round_task);
 	}
 

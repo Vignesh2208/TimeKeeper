@@ -405,7 +405,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 				  &q->delay_cor, q->delay_dist);
 
 		now = psched_get_time();
-	        struct task_struct *ts = get_task_struct_from_qdisc(sch);
+	    struct task_struct *ts = get_task_struct_from_qdisc(sch);
 
 
 		if (q->rate) {
@@ -454,15 +454,15 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		printk(KERN_INFO "Netem: Doing some re-ordering on 1 out of N packets\n");
 
 		struct task_struct *ts = get_task_struct_from_qdisc(sch);
-                if (ts != NULL)
-                {  
-		   s64 dilated_time = get_current_dilated_time(ts);
-                   cb->time_to_send = PSCHED_NS2TICKS(dilated_time); 
-                }
-                else
-                {
-                   cb->time_to_send = psched_get_time();
-                }
+        if (ts != NULL)
+        {  
+   		   s64 dilated_time = get_current_dilated_time(ts);
+           cb->time_to_send = PSCHED_NS2TICKS(dilated_time); 
+        }
+        else
+        {
+           cb->time_to_send = psched_get_time();
+        }
 
 		q->counter = 0;
 
@@ -524,22 +524,22 @@ deliver:
 	p = rb_first(&q->t_root);
 	if (p) {
 		psched_time_t time_to_send;
-                psched_time_t curr_time;
+        psched_time_t curr_time;
 
 		skb = netem_rb_to_skb(p);
 
-                struct task_struct *ts = get_task_struct_from_qdisc(sch);
-    		if (ts == NULL) 
-                { 
+        struct task_struct *ts = get_task_struct_from_qdisc(sch);
+		if (ts == NULL) 
+        { 
 
-		  time_to_send = netem_skb_cb(skb)->time_to_send;
-                  curr_time = psched_get_time();
-                }
-                else
-                {
-		  time_to_send = netem_skb_cb(skb)->time_to_send;
-                  curr_time = PSCHED_NS2TICKS(get_current_dilated_time(ts));
-                }
+  		  time_to_send = netem_skb_cb(skb)->time_to_send;
+          curr_time = psched_get_time();
+        }
+        else
+        {
+  		  time_to_send = netem_skb_cb(skb)->time_to_send;
+          curr_time = PSCHED_NS2TICKS(get_current_dilated_time(ts));
+        }
 
 		if (time_to_send <= curr_time) {
 
@@ -579,15 +579,15 @@ deliver:
 			if (skb)
 				goto deliver;
 		}
-                if(ts == NULL)
-                {
-		    qdisc_watchdog_schedule(&q->watchdog, time_to_send);
-                }
-                else
-                { 
-                    q->watchdog.skb = skb;
-		    qdisc_watchdog_schedule_dilated(&q->watchdog, time_to_send);
-                }
+        if(ts == NULL)
+        {
+    		qdisc_watchdog_schedule(&q->watchdog, time_to_send);
+        }
+        else
+        { 
+            q->watchdog.skb = skb;
+    		qdisc_watchdog_schedule_dilated(&q->watchdog, time_to_send);
+        }
                      
 	}
 

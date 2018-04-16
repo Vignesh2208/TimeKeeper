@@ -8,6 +8,7 @@ extern int EXP_CPUS;
 extern int TOTAL_CPUS;
 extern int experiment_stopped; 			 		// flag to determine state of the experiment
 extern int experiment_status;
+extern int experiment_type;
 extern unsigned long orig_cr0; 
 extern struct task_struct *loop_task;
 extern struct task_struct * round_task;
@@ -43,6 +44,9 @@ extern asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct 
 /** EXTERN FUNCTIONS **/
 extern unsigned long **aquire_sys_call_table(void);
 
+extern enum hrtimer_restart sleep_fn_hrtimer(struct hrtimer_dilated *timer);
+
+
 
 spinlock_t syscall_lookup_lock;
 
@@ -66,6 +70,7 @@ static wait_queue_head_t progress_call_proc_wqueue;
 wait_queue_head_t progress_sync_proc_wqueue;
 wait_queue_head_t expstop_call_proc_wqueue;
 wait_queue_head_t* syscall_control_queue;
+wait_queue_head_t sleep_queue;
 
 struct task_struct ** chaintask;
 int* values;
@@ -210,6 +215,7 @@ int initialize_experiment_components(char * write_buffer){
 	init_waitqueue_head(&progress_sync_proc_wqueue);	
 	init_waitqueue_head(&expstop_call_proc_wqueue);
 	init_waitqueue_head(&sync_worker_wqueue);
+	init_waitqueue_head(&sleep_queue);
 	
 
 	atomic_set(&progress_n_enabled,0);
@@ -225,6 +231,7 @@ int initialize_experiment_components(char * write_buffer){
 	if(!round_task){
 		round_task = kthread_create(&round_sync_task, NULL, "round_sync_task");
 		if(!IS_ERR(round_task)) {
+			kthread_bind(round_task,0);
 		    wake_up_process(round_task);
 		}
 		else{
@@ -237,23 +244,15 @@ int initialize_experiment_components(char * write_buffer){
 	experiment_stopped = NOTRUNNING;
 	experiment_status = INITIALIZED;
 
-	char dilation_file_name[STATUS_MAXSIZE];
-	int n_expected_tracers = atoi(write_buffer);
+	experiment_type = atoi(write_buffer);
 
-    for(i = 1; i <= n_expected_tracers; i++){
-    	for(j = 0; j < STATUS_MAXSIZE; j++)
-    		dilation_file_name[j] = '\0';
-
-    	sprintf(dilation_file_name, "status%d", i);
-    	remove_proc_entry(dilation_file_name, NULL);
-
-		if(proc_create(dilation_file_name, 0666, NULL,&proc_file_fops) == NULL){
-		    remove_proc_entry(dilation_file_name, NULL);
-	   		PDEBUG_E("Error: Could not initialize /proc/%s\n", dilation_file_name);
-	   		return -ENOMEM;
-	  	}
-
-    }
+	if(experiment_type != EXP_CBE && experiment_type != EXP_CS){
+		PDEBUG_I("Init experiment components: EXP TYPE CBE \n");
+		experiment_type = EXP_CBE; //force set
+	}
+	else{
+		PDEBUG_I("Init experiment components: EXP TYPE %d \n", experiment_type);	
+	}
 
 
 	/* Wait to stop loop_task */
@@ -360,9 +359,6 @@ int sync_and_freeze(char * write_buffer) {
 	tracer * curr_tracer;
 	int ret;
 
-	//ret = initialize_experiment_components();
-	//if(ret != SUCCESS)
-	//	return ret;
 
 	set_current_state(TASK_INTERRUPTIBLE);
 	if(experiment_status != INITIALIZED || experiment_stopped != NOTRUNNING){
@@ -392,10 +388,7 @@ int sync_and_freeze(char * write_buffer) {
 		return FAIL;
 	}
 
-	/*if(n_processed_tracers != n_expected_tracers){
-		PDEBUG_E("Sync And Freeze: Expected number of tracer spinner tasks: %d not present. Actual number of registered tracer spinners: %d\n", n_expected_tracers, n_processed_tracers);
-		return FAIL;	
-	}*/
+
 
 	if (experiment_stopped != NOTRUNNING) {
         PDEBUG_A("Sync And Freeze: Trying to Sync Freeze when an experiment is already running!\n");
@@ -460,10 +453,13 @@ int sync_and_freeze(char * write_buffer) {
 	}
 
 
-	do_gettimeofday(&now_timeval);
-    now = timeval_to_ns(&now_timeval);
+	//do_gettimeofday(&now_timeval);
+   //now = timeval_to_ns(&now_timeval);
+
+	now = 1000000000;
 
     expected_time = now;
+    init_task.freeze_time = now;
 
     for(i = 1; i <= tracer_num; i++){
     	mutex_lock(&exp_lock);
@@ -631,6 +627,14 @@ int round_sync_task(void *data)
 					}
 					wait_event_interruptible(sync_worker_wqueue, atomic_read(&n_workers_running) == 0);
 					PDEBUG_I("round_sync_task: All cpu workers and all syscalls exited !\n");
+					init_task.freeze_time = KTIME_MAX;
+					preempt_disable();
+					local_irq_disable();
+					dilated_hrtimer_run_queues_flush(0);
+					local_irq_enable();
+					preempt_enable();
+					
+					init_task.freeze_time = 0;
                     clean_exp();
                     round_count = 0;
 					continue;
@@ -712,6 +716,18 @@ int round_sync_task(void *data)
 					 update_all_tracers_virtual_time(i);
 				}
 
+				PDEBUG_V("Calling dilated hrtimer run queues\n");
+
+				preempt_disable();
+				local_irq_disable();
+				dilated_hrtimer_run_queues(0);
+				local_irq_enable();
+				preempt_enable();
+				
+				PDEBUG_V("Finished dilated hrtimer run queues\n");
+				set_current_state(TASK_RUNNING);
+				schedule();
+				//msleep(1);
 			}
 
 			if(atomic_read(&progress_n_enabled) == 1 && atomic_read(&progress_n_rounds) > 0){
@@ -720,15 +736,7 @@ int round_sync_task(void *data)
 					PDEBUG_V("Waking up Progress rounds wait Process\n");
 					wake_up_interruptible(&progress_call_proc_wqueue);
 				}
-			}
-
-			/* if there are no continers in the experiment, then stop the experiment */
-			/*if (tracer_num == 0 && experiment_stopped == RUNNING) {
-				PDEBUG_I("round_sync_task: Cleaning experiment via catchup task because no tasks left\n");
-           		clean_exp();	
-				return 0;
-			}*/
-		    
+			}		    
 
 			end:
                 set_current_state(TASK_INTERRUPTIBLE);	
@@ -1179,6 +1187,9 @@ int unfreeze_proc_exp_multi_core_mode(tracer * curr_tracer) {
 
 	if(!curr_tracer)
 		return FAIL;
+
+	if(curr_tracer->quantum_n_insns == 0)
+		return SUCCESS;
 
 
 	llist * schedule_queue = &curr_tracer->schedule_queue;

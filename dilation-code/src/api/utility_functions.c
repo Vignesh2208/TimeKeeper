@@ -21,11 +21,11 @@ int send_to_timekeeper(char * cmd) {
         printf("Error communicating with TimeKeeper\n");
         return -1;
     }
-    printf("Sending Command: %s\n", cmd);
-    fflush(stdout);
+    //printf("Sending Command: %s\n", cmd);
+    //fflush(stdout);
     //ret = fprintf(fp, "%s,", cmd); //add comma to act as last character
     ret = write(fp, cmd, strlen(cmd));
-    printf("Command Return value: %d\n", ret);
+    //printf("Command Return value: %d\n", ret);
     fflush(stdout);
     close(fp);
     return ret;

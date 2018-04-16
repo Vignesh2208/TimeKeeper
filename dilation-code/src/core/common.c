@@ -10,6 +10,7 @@ extern int TOTAL_CPUS;
 extern struct task_struct *round_task; 		// the main synchronization kernel thread for experiments
 extern int experiment_stopped; 			 			// flag to determine state of the experiment
 extern int experiment_status;
+extern int experiment_type;
 					 		
 extern struct mutex exp_lock;
 extern int *per_cpu_chain_length;
@@ -542,7 +543,11 @@ void update_all_tracers_virtual_time(int cpuID){
 	tracer * curr_tracer;
 	s64 err;
 	int updated = 0;
-
+	s64 advanced_time;
+	s32 rem = 0;
+	s64 quantum_n_insns;
+	s64 overshot_n_insns;
+	s64 undershot_n_insns;
 
 	tracer_list =  &per_cpu_tracer_list[cpuID];
 	head = tracer_list->head;
@@ -554,40 +559,81 @@ void update_all_tracers_virtual_time(int cpuID){
 
 		if(curr_tracer->quantum_n_insns){
 
-		if (schedule_list_size(curr_tracer) == 0) {			
-			update_task_virtual_time(curr_tracer, curr_tracer->spinner_task, curr_tracer->quantum_n_insns);
+			if (schedule_list_size(curr_tracer) == 0) {			
+				update_task_virtual_time(curr_tracer, curr_tracer->spinner_task, curr_tracer->quantum_n_insns);
+			}
+			else{
+	           	update_all_children_virtual_time(curr_tracer);
+			}
+
+		}
+
+		if(experiment_type == EXP_CBE){
+
+			if(cpuID == 0 && updated == 0){
+				expected_time = expected_time + curr_tracer->freeze_quantum;
+				updated = 1;
+				
+			}
+
+			//Quantum n insns contains amount of instructions actually run in previous round.
+			advanced_time = div_s64_rem(curr_tracer->quantum_n_insns*REF_CPU_SPEED, curr_tracer->dilation_factor, &rem);
+			advanced_time = advanced_time + rem;
+
+			curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + advanced_time;
+
+			if(cpuID == 0){
+				init_task.freeze_time = curr_tracer->round_start_virt_time;
+			}
+			else if(curr_tracer->round_start_virt_time < init_task.freeze_time){
+				init_task.freeze_time = curr_tracer->round_start_virt_time;
+			}
+
+			//Set quantum n insns for next round for the tracer.
+			if(expected_time  + curr_tracer->freeze_quantum < curr_tracer->round_start_virt_time){
+				curr_tracer->quantum_n_insns = 0; // for next round.
+			}
+			else if(expected_time < curr_tracer->round_start_virt_time){
+				err = curr_tracer->round_start_virt_time - expected_time;
+				quantum_n_insns = div_s64_rem(curr_tracer->freeze_quantum*curr_tracer->dilation_factor,REF_CPU_SPEED,&rem);
+				quantum_n_insns = quantum_n_insns + rem;
+
+				overshot_n_insns = div_s64_rem(err*curr_tracer->dilation_factor,REF_CPU_SPEED,&rem);
+				overshot_n_insns = overshot_n_insns + rem;
+
+				if(quantum_n_insns > overshot_n_insns) // should always be true
+					curr_tracer->quantum_n_insns = quantum_n_insns - overshot_n_insns;
+				else{
+					PDEBUG_E("Should never happen\n");
+					curr_tracer->quantum_n_insns = quantum_n_insns;
+				}
+			}
+			else if(expected_time > curr_tracer->round_start_virt_time){
+				err = expected_time - curr_tracer->round_start_virt_time;
+				quantum_n_insns = div_s64_rem(curr_tracer->freeze_quantum*curr_tracer->dilation_factor,REF_CPU_SPEED,&rem);
+				quantum_n_insns = quantum_n_insns + rem;
+
+				undershot_n_insns = div_s64_rem(err*curr_tracer->dilation_factor,REF_CPU_SPEED,&rem);
+				undershot_n_insns = undershot_n_insns + rem;
+				curr_tracer->quantum_n_insns = quantum_n_insns + undershot_n_insns;
+			}
+			else{
+				quantum_n_insns = div_s64_rem(curr_tracer->freeze_quantum*curr_tracer->dilation_factor,REF_CPU_SPEED,&rem);
+				quantum_n_insns = quantum_n_insns + rem;
+
+				curr_tracer->quantum_n_insns = quantum_n_insns;
+			}
+
 		}
 		else{
-           	update_all_children_virtual_time(curr_tracer);
-		}
-
-		}
-
-		if(cpuID == 0 && updated == 0){
-			expected_time = expected_time + curr_tracer->freeze_quantum;
-			updated = 1;
-		}
-
-
-
-		curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + curr_tracer->quantum_n_insns;
-
-
-		if(expected_time  + curr_tracer->freeze_quantum < curr_tracer->round_start_virt_time){
-			curr_tracer->quantum_n_insns = 0;
-
-		}
-		else if(expected_time < curr_tracer->round_start_virt_time){
-			err = curr_tracer->round_start_virt_time - expected_time;
-			curr_tracer->quantum_n_insns = err;
-		}
-		else if(expected_time > curr_tracer->round_start_virt_time){
-			err = expected_time - curr_tracer->round_start_virt_time;
-			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum + err;
-
-		}
-		else{
-			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum;
+			curr_tracer->round_start_virt_time = curr_tracer->round_start_virt_time + curr_tracer->freeze_quantum;
+			
+			if(cpuID == 0){
+				init_task.freeze_time = curr_tracer->round_start_virt_time;
+			}
+			else if(curr_tracer->round_start_virt_time < init_task.freeze_time){
+				init_task.freeze_time = curr_tracer->round_start_virt_time;
+			}
 		}
 
 		/*if(curr_tracer->quantum_n_insns > curr_tracer->freeze_quantum)
@@ -603,7 +649,8 @@ void update_all_tracers_virtual_time(int cpuID){
 
 
 /**
-* write_buffer: comma separated list of ignored pids or zero if none
+* write_buffer: result which indicates overflow number of instructions. It specifies the total number of instructions by which the tracer overshot in the current round.
+* The overshoot is ignored if experiment type is CS
 **/
 
 int handle_tracer_results(char * buffer){
@@ -617,9 +664,18 @@ int handle_tracer_results(char * buffer){
 	lxc_schedule_elem * curr_elem;
 	struct pid *pid_struct;
 	struct task_struct * task;
+	s64 overshoot_time = 0;
+	s32 rem = 0;
+	s64 quantum_n_insns;
 
 	if(!curr_tracer)
 		return FAIL;
+
+	if(experiment_type == EXP_CS){
+		signal_cpu_worker_resume(curr_tracer);
+		return SUCCESS;
+	}
+
 
 	while(next_idx < buf_len){
 		result = atoi(buffer + next_idx);
@@ -629,10 +685,13 @@ int handle_tracer_results(char * buffer){
 		
 
 		if(result <= 0){
-			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum;
+			//quantum_n_insns = div_s64_rem(curr_tracer->freeze_quantum*curr_tracer->dilation_factor,REF_CPU_SPEED,&rem);
+			//quantum_n_insns = quantum_n_insns + rem;
+			//curr_tracer->quantum_n_insns = quantum_n_insns;
 			break;
 		}
 
+		//result is overshoot_n_insns
 		if(result){
 
 			
@@ -643,25 +702,12 @@ int handle_tracer_results(char * buffer){
 			mutex_unlock(&exp_lock);
 			
 			
-			curr_tracer->quantum_n_insns = curr_tracer->freeze_quantum + result;
-			curr_tracer->tracer_task->freeze_time = curr_tracer->tracer_task->freeze_time + result;
+			curr_tracer->quantum_n_insns = curr_tracer->quantum_n_insns + result;
+			overshoot_time = div_s64_rem(REF_CPU_SPEED*result,curr_tracer->dilation_factor,&rem);
+			overshoot_time = overshoot_time + rem;
+			curr_tracer->tracer_task->freeze_time = curr_tracer->tracer_task->freeze_time + overshoot_time;
 			break;
 		}
-
-		/*
-		curr_elem = hmap_get_abs(&curr_tracer->valid_children, result);
-		if(curr_elem){
-
-			pid_struct = find_get_pid(curr_elem->pid); 	 
-			task = pid_task(pid_struct,PIDTYPE_PID); 
-
-			if(task != NULL)
-				hmap_put_abs(&curr_tracer->ignored_children, result, task);
-			hmap_remove_abs(&curr_tracer->valid_children, result);
-		}*/
-
-
-
 	}
 
 	signal_cpu_worker_resume(curr_tracer);

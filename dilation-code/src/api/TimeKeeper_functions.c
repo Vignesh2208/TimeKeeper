@@ -74,12 +74,12 @@ int startExp() {
     return -1;
 }
 
-int initializeExp(int num_tracers) {
+int initializeExp(int exp_type) {
 
 	if (is_root() && isModuleLoaded()) {
 		char command[100];
 		flush_buffer(command,100);
-		sprintf(command, "%c,%d", INITIALIZE_EXP, num_tracers);
+		sprintf(command, "%c,%d", INITIALIZE_EXP, exp_type);
 		return send_to_timekeeper(command);
     }
     return -1;

@@ -121,6 +121,7 @@ struct sleep_helper_struct
 	pid_t process_pid;
 	wait_queue_head_t w_queue;
 	atomic_t done;
+	struct hrtimer_dilated timer;
 };
 
 

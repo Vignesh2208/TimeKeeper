@@ -322,13 +322,13 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 
 	u32 flags = 0;
 	
-	/*if(n_insns <= 1000)
+	if(n_insns <= 500)
 		singlestepmode = 1;
 	else
 		singlestepmode = 0;
-	*/
+	
 
-	singlestepmode = 1;
+	//singlestepmode = 1;
 
 
 	curr_tracee = hmap_get_abs(tracees, pid);
@@ -691,7 +691,7 @@ int main(int argc, char * argv[]){
 		flush_buffer(dilation_file_name,MAX_BUF_SIZ);
 		sprintf(dilation_file_name,"/proc/status%d",tracer_id);
 
-		fp = open(dilation_file_name, O_RDWR);
+		fp = open("/proc/status", O_RDWR);
 
 		if(fp == -1){
 			LOG("PROC file open error\n");
@@ -717,7 +717,7 @@ int main(int argc, char * argv[]){
 			}*/
 			sprintf(nxt_cmd, "%c,%s,", TRACER_RESULTS,"0");
 			write_results(fp,nxt_cmd);
-			usleep(1000);
+			//usleep(1000);
 
 
 			LOG("Tracer: %d, Cmd no = %d, Received Command: %s, read_ret = %d\n", tracer_id, cmd_no, nxt_cmd, read_ret);

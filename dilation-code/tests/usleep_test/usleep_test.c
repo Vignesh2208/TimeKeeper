@@ -144,7 +144,7 @@ int main(int argc, char * argv[]){
 
     printf("Initializing Exp ...\n");
 
-    ret = initializeExp();
+    ret = initializeExp(1);
     if(ret <= FAIL){
     		printf("Initialize Exp Failed !\n");
     		exit(-1);
@@ -223,7 +223,6 @@ int main(int argc, char * argv[]){
     fflush(stdout);
     printf("Stopping Experiment ... \n");
     fflush(stdout);
-    //while(1);
     usleep(2000000);
     stopExp();
 

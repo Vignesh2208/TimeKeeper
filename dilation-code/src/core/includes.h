@@ -101,6 +101,9 @@
 #define NR_select __NR_select
 #define ENABLE_LOCKING
 
+#define EXP_CBE 1
+#define EXP_CS 2
+
 
 
 

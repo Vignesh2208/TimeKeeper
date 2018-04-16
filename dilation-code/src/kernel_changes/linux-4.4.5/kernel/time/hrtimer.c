@@ -92,21 +92,29 @@ struct hrtimer_cpu_base * get_cpu_base(int cpu){
 EXPORT_SYMBOL_GPL(get_cpu_base);
 
 
-static ktime_t __dilated_hrtimer_get_next_event(struct hrtimer_cpu_base *cpu_base)
+ktime_t __dilated_hrtimer_get_next_event(struct hrtimer_cpu_base *cpu_base)
 {
 	struct hrtimer_dilated_clock_base *base = &cpu_base->dilated_clock_base;
 	ktime_t expires_next = { .tv64 = KTIME_MAX };
 	unsigned int active = base->clock_active;
+	struct timerqueue_node *next;
+	struct hrtimer_dilated *timer;
 
 	if(!active)
 		return expires_next;
 
-	struct timerqueue_node *next;
-	struct hrtimer_dilated *timer;
+	
 
 	next = timerqueue_getnext(&base->active);
+
+	if(!next){
+		expires_next.tv64 = 0;
+		return expires_next;
+	}
+
+
 	timer = container_of(next, struct hrtimer_dilated, node);
-	expires_next = timer->_softexpires;
+	expires_next.tv64 = timer->_softexpires.tv64;
 	
 	if (expires_next.tv64 < 0)
 		expires_next.tv64 = 0;
@@ -114,7 +122,7 @@ static ktime_t __dilated_hrtimer_get_next_event(struct hrtimer_cpu_base *cpu_bas
 }
 
 
-static int __dilated_hrtimer_init(struct hrtimer_dilated *timer, int cpu, enum hrtimer_mode mode)
+int __dilated_hrtimer_init(struct hrtimer_dilated *timer, int cpu, enum hrtimer_mode mode)
 {
 	struct hrtimer_cpu_base *cpu_base = get_cpu_base(cpu);
 	int base;
@@ -152,7 +160,7 @@ EXPORT_SYMBOL_GPL(dilated_hrtimer_init);
  *
  * Returns 1 when the new timer is the leftmost timer in the tree.
  */
-static int enqueue_dilated_hrtimer(struct hrtimer_dilated *timer,
+int enqueue_dilated_hrtimer(struct hrtimer_dilated *timer,
 			   struct hrtimer_dilated_clock_base *base)
 {
 
@@ -170,11 +178,11 @@ static int enqueue_dilated_hrtimer(struct hrtimer_dilated *timer,
  * reprogram to zero. This is useful, when the context does a reprogramming
  * anyway (e.g. timer interrupt)
  */
-static void __remove_dilated_hrtimer(struct hrtimer_dilated *timer,
+void __remove_dilated_hrtimer(struct hrtimer_dilated *timer,
 			     struct hrtimer_dilated_clock_base *base,
 			     u8 newstate)
 {
-	struct hrtimer_cpu_base *cpu_base = base->cpu_base;
+	//struct hrtimer_cpu_base *cpu_base = base->cpu_base;
 	u8 state = timer->state;
 
 	timer->state = newstate;
@@ -187,8 +195,7 @@ static void __remove_dilated_hrtimer(struct hrtimer_dilated *timer,
 /*
  * remove dilated hrtimer, called with base lock held
  */
-static inline int
-remove_dilated_hrtimer(struct hrtimer_dilated *timer, struct hrtimer_dilated_clock_base *base, bool restart)
+int remove_dilated_hrtimer(struct hrtimer_dilated *timer, struct hrtimer_dilated_clock_base *base, bool restart)
 {
 	if (timer->state & HRTIMER_STATE_ENQUEUED) {
 		u8 state = timer->state;
@@ -221,16 +228,20 @@ void dilated_hrtimer_start_range_ns(struct hrtimer_dilated *timer, ktime_t expir
 	/* Remove an active timer from the queue: */
 	remove_dilated_hrtimer(timer, base, true);
 
-	if (mode & HRTIMER_MODE_REL)
-		expiry_time = ktime_add_safe(expiry_time, base->get_time());
+	if (mode & HRTIMER_MODE_REL){
+		//expiry_time = ktime_add_safe(expiry_time, base->get_time());
+		expiry_time.tv64 = expiry_time.tv64 + init_task.freeze_time;
+	}
 
-	timer->_softexpires = expiry_time;
+	timer->_softexpires.tv64 = expiry_time.tv64;
 	leftmost = enqueue_dilated_hrtimer(timer, base);
-	if (!leftmost)
+	if (!leftmost){
+		trace_printk("HRTIMER DILATED enqueue error\n");
 		goto unlock;
+	}
 
 	expires_next = __dilated_hrtimer_get_next_event(cpu_base);
-	cpu_base->nxt_dilated_expiry = expires_next;
+	cpu_base->nxt_dilated_expiry.tv64 = expires_next.tv64;
 
 unlock:
 	raw_spin_unlock_irqrestore(&cpu_base->lock, flags);
@@ -264,8 +275,8 @@ int dilated_hrtimer_try_to_cancel(struct hrtimer_dilated *timer)
 	 * base lock does not serialize against a concurrent enqueue,
 	 * so we can avoid taking it.
 	 */
-	if (timer->active == 0)
-		return 0;
+	//if (timer->active == 0)
+	//	return 0;
 
 	raw_spin_lock_irqsave(&base->cpu_base->lock, flags);
 
@@ -301,61 +312,88 @@ EXPORT_SYMBOL_GPL(dilated_hrtimer_cancel);
 
 
 
-static void __run_dilated_hrtimer(struct hrtimer_cpu_base *cpu_base,
+void a_run_dilated_hrtimer(struct hrtimer_cpu_base *cpu_base,
 			  struct hrtimer_dilated_clock_base *base,
 			  struct hrtimer_dilated *timer)
 {
 	enum hrtimer_restart (*fn)(struct hrtimer_dilated *);
-	int restart;
+	int restart = HRTIMER_NORESTART;
 
 	lockdep_assert_held(&cpu_base->lock);
 
 
-	__remove_dilated_hrtimer(timer, base, HRTIMER_STATE_INACTIVE);
+	__remove_dilated_hrtimer(timer, base, HRTIMER_STATE_INACTIVE);	
 	fn = timer->function;
 	cpu_base->running_dilated_timer = timer;
 	
+	
 	raw_spin_unlock(&cpu_base->lock);
-	restart = fn(timer);
+	if(fn)
+		restart = fn(timer);
 	raw_spin_lock(&cpu_base->lock);
 
-
-	if (restart != HRTIMER_NORESTART &&
-	    !(timer->state & HRTIMER_STATE_ENQUEUED))
+	
+	
+	if (restart != HRTIMER_NORESTART && !(timer->state & HRTIMER_STATE_ENQUEUED))
 		enqueue_dilated_hrtimer(timer, base);
+	
 
 	cpu_base->running_dilated_timer = NULL;
 }
 
-static void __dilated_hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktime_t now)
+void a_dilated_hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktime_t now)
 {
 	struct hrtimer_dilated_clock_base *base = &cpu_base->dilated_clock_base;
+	struct hrtimer_dilated *timer;
 	int active = base->clock_active;
 
-	struct timerqueue_node *node;
-	while ((node = timerqueue_getnext(&base->active))) {
-		struct hrtimer_dilated *timer;
+	struct timerqueue_node *next;
+	while ((next = timerqueue_getnext(&base->active))){
 
-		timer = container_of(node, struct hrtimer_dilated, node);
+		if(!next)
+			break;
 
-		if(active == 0){ // all existing hrtimers must be flushed
+		timer = container_of(next, struct hrtimer_dilated, node);
 
-			timer->active = 0;
-			__run_dilated_hrtimer(cpu_base, base, timer);
+		if(!timer)
+			break;
 
-		}
-		else{
-			if (now.tv64 < timer->_softexpires.tv64)
-				break;
-			else{
-				__run_dilated_hrtimer(cpu_base, base, timer);
-			}
+		if (now.tv64 < timer->_softexpires.tv64)
+			break;
 
-		}
+		a_run_dilated_hrtimer(cpu_base, base, timer);
+
 	}
 	
 }
 
+
+void dilated_hrtimer_run_queues_flush(int cpu)
+{
+
+	struct hrtimer_cpu_base *cpu_base = get_cpu_base(cpu);
+	struct hrtimer_dilated_clock_base *base = &cpu_base->dilated_clock_base;
+	struct hrtimer_dilated *timer;
+	int active = base->clock_active;
+
+	struct timerqueue_node *next;
+	while ((next = timerqueue_getnext(&base->active))){
+
+		if(!next)
+			break;
+
+		timer = container_of(next, struct hrtimer_dilated, node);
+
+		if(!timer)
+			break;
+
+		
+		timer->state = HRTIMER_STATE_ENQUEUED;
+		__remove_dilated_hrtimer(timer, base, HRTIMER_STATE_INACTIVE);	
+	}
+	
+}
+EXPORT_SYMBOL_GPL(dilated_hrtimer_run_queues_flush);
 
 
 /*
@@ -363,27 +401,30 @@ static void __dilated_hrtimer_run_queues(struct hrtimer_cpu_base *cpu_base, ktim
  */
 void dilated_hrtimer_run_queues(int cpu)
 {
-	struct hrtimer_cpu_base *cpu_base = &per_cpu(hrtimer_bases, cpu);
+	//struct hrtimer_cpu_base *cpu_base = &per_cpu(hrtimer_bases, cpu);
+	struct hrtimer_cpu_base *cpu_base = get_cpu_base(cpu);
 	ktime_t curr_virt_time;
 	ktime_t expires_next;
 
-	if (!cpu_base || !cpu_base->dilated_clock_base.clock_active)
+	if (!cpu_base || cpu_base->dilated_clock_base.clock_active == 0)
 		return;
 
-	curr_virt_time = cpu_base->dilated_clock_base.get_time();
+	//curr_virt_time = cpu_base->dilated_clock_base.get_time();
+	curr_virt_time.tv64 = init_task.freeze_time;
 	raw_spin_lock(&cpu_base->lock);
+
+	/* Reevaluate the clock bases for the next expiry */
+	expires_next = __dilated_hrtimer_get_next_event(cpu_base);
+	cpu_base->nxt_dilated_expiry.tv64 = expires_next.tv64;
 
 	if(cpu_base->nxt_dilated_expiry.tv64 != 0 && cpu_base->nxt_dilated_expiry.tv64 > curr_virt_time.tv64)
 		goto skip;
 
-	__dilated_hrtimer_run_queues(cpu_base, curr_virt_time);
-
-	/* Reevaluate the clock bases for the next expiry */
-	expires_next = __dilated_hrtimer_get_next_event(cpu_base);
-	cpu_base->nxt_dilated_expiry = expires_next;
+	a_dilated_hrtimer_run_queues(cpu_base, curr_virt_time);
 
 	skip:
 	raw_spin_unlock(&cpu_base->lock);
+	return;
 }
 
 EXPORT_SYMBOL_GPL(dilated_hrtimer_run_queues);
@@ -428,7 +469,7 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 	},
 	.dilated_clock_base = 
 	{	
-		.clock_active = 0,
+		.clock_active = 1,
 		.get_time = &get_curr_dilated_time,
 	},
 	.nxt_dilated_expiry =  {

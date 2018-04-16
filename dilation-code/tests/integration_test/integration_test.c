@@ -142,7 +142,7 @@ int main(int argc, char * argv[]){
 
    printf("Initializing Exp ...\n");
 
-   ret = initializeExp();
+   ret = initializeExp(1);
    if(ret <= FAIL){
    		printf("Initialize Exp Failed !\n");
    		exit(-1);
@@ -220,7 +220,7 @@ int main(int argc, char * argv[]){
 
    printf("Progress Experiment for 100 Rounds !\n");
    fflush(stdout);
-   progress_n_rounds(100);
+   progress_n_rounds(1000);
    fflush(stdout);
    printf("Stopping Experiment ... \n");
    fflush(stdout);

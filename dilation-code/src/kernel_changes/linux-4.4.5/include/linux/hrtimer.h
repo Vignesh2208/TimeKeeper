@@ -116,13 +116,14 @@ struct hrtimer {
 struct hrtimer_dilated {
 	struct timerqueue_node node;
 	ktime_t 	_softexpires;
-	enum hrtimer_restart		(*function)(struct hrtimer_dilated *);
+	enum hrtimer_restart	(*function)(struct hrtimer_dilated *);
 	struct hrtimer_dilated_clock_base	*base;
 	u8 active;
 	u8	is_rel;
 	u8 state;
 
 };
+
 
 /**
  * struct hrtimer_sleeper - simple sleeper structure
@@ -515,5 +516,16 @@ extern void __init hrtimers_init(void);
 
 /* Show pending timers: */
 extern void sysrq_timer_list_show(void);
+
+
+/** Dilated hrtimer functions **/
+
+
+extern int dilated_hrtimer_cancel(struct hrtimer_dilated *timer);
+extern int dilated_hrtimer_try_to_cancel(struct hrtimer_dilated *timer);
+extern void dilated_hrtimer_start(struct hrtimer_dilated *timer, ktime_t expiry_time, const enum hrtimer_mode mode);
+extern int dilated_hrtimer_init(struct hrtimer_dilated *timer, int cpu, enum hrtimer_mode mode);
+extern int dilated_hrtimer_forward(struct hrtimer_dilated *timer, ktime_t interval);
+extern void dilated_hrtimer_start_range_ns(struct hrtimer_dilated *timer, ktime_t expiry_time, const enum hrtimer_mode mode);
 
 #endif
