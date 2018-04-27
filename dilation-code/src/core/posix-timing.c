@@ -17,6 +17,8 @@ extern struct list_head exp_list;
 extern hashmap sleep_process_lookup;
 extern s64 boottime;
 extern atomic_t is_boottime_set;
+extern atomic_t n_active_syscalls;
+extern atomic_t experiment_stopping;
 
 asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp);
 asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespec __user * tp);
@@ -27,7 +29,7 @@ asmlinkage int (*ref_sys_clock_gettime)(const clockid_t which_clock, struct time
 /***
 Hook for system call clock nanosleep
 ***/
-asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, const struct timespec __user * rqtp, struct timespec __user * rmtp) {
+asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flag, const struct timespec __user * rqtp, struct timespec __user * rmtp) {
 
 	struct list_head *pos;
 	struct list_head *n;
@@ -42,18 +44,98 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	s64 dilated_running_time;
 	current_task = current;
 	s64 wakeup_time;
-	unsigned long flag;
-	struct sleep_helper_struct * helper;
+	//unsigned long flag;
+	struct sleep_helper_struct helper;
 	struct sleep_helper_struct * sleep_helper = &helper;
+	unsigned long flags;
+	int ret;
+	int is_dialated = 0;
 
+	struct timespec tu;
+		struct list_head *list;
+    struct task_struct *taskRecurse;
+
+	if (copy_from_user(&tu, rqtp, sizeof(tu)))
+		return -EFAULT;
+
+
+	acquire_irq_lock(&current->dialation_lock,flags);
+	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && atomic_read(&experiment_stopping) == 0)
+	{		
+		atomic_inc(&n_active_syscalls);
+		is_dialated = 1;
+    	do_gettimeofday(&ktv);
+		now = timeval_to_ns(&ktv);			
+		now_new = get_dilated_time(current);
+
+		init_waitqueue_head(&sleep_helper->w_queue);
+		atomic_set(&sleep_helper->done,0);
+		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
+		release_irq_lock(&current->dialation_lock,flags);
+		
+		s64 wakeup_time = now_new + ((tu.tv_sec*1000000000) + tu.tv_nsec)*Sim_time_scale;
+		PDEBUG_V("Sys Nano Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, tu.tv_sec, tu.tv_nsec, wakeup_time); 
+		
+		while(now_new < wakeup_time) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
+			set_current_state(TASK_RUNNING);
+			atomic_set(&sleep_helper->done,0);
+			
+			now_new = get_dilated_time(current);
+			if(now_new < wakeup_time){  			
+			    if(current->freeze_time == 0 && atomic_read(&experiment_stopping) == 0){
+					kill(current,SIGCONT,NULL);
+					list_for_each(list, &current->children)
+ 		   			{
+            			taskRecurse = list_entry(list, struct task_struct, sibling);     	
+						if (taskRecurse!= NULL &&taskRecurse->pid == 0) {
+							    continue;
+						}
+						//taskRecurse->freeze_time = 0;
+						/* Let other children use the cpu */
+						if(taskRecurse != NULL)
+						kill(taskRecurse, SIGCONT, NULL); 
+					}   
+				}
+			}
+
+		    
+		    if(atomic_read(&experiment_stopping) == 1 || experiment_stopped != RUNNING)
+		    	break;
+		    
+			
+        }
+		acquire_irq_lock(&current->dialation_lock,flags);
+		hmap_remove_abs(&sleep_process_lookup,current->pid);
+		release_irq_lock(&current->dialation_lock,flags);		
+
+		s64 diff = 0;
+		diff = now_new - wakeup_time;
+		PDEBUG_I("Sys Nano Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+		
+		atomic_dec(&n_active_syscalls);
+		return 0; 
+		
+		revert_nano_sleep:
+		release_irq_lock(&current->dialation_lock,flags);
+		atomic_dec(&n_active_syscalls);
+		
+		return 0;
+	} 
+	
+	
+	release_irq_lock(&current->dialation_lock,flags);
+
+	/*
 	acquire_irq_lock(&current->dialation_lock,flag);
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && current->freeze_time == 0)
 	{						
 		now_new = get_dilated_time(current);
 		if (flags & TIMER_ABSTIME)
-			wakeup_time = timespec_to_ns(rqtp);
+			wakeup_time = timespec_to_ns(&tu);
 		else
-			wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale; 
+			wakeup_time = now_new + ((tu.tv_sec*1000000000) + tu.tv_nsec)*Sim_time_scale; 
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		init_waitqueue_head(&sleep_helper->w_queue);
@@ -61,7 +143,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 
-		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, rqtp->tv_sec, wakeup_time); 
+		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, tu.tv_sec, wakeup_time); 
 
 		while(now_new < wakeup_time) {
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -83,8 +165,10 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 			
 	} 
 	release_irq_lock(&current->dialation_lock,flag);
+	*/
 
-    return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
+
+    return ref_sys_clock_nanosleep(which_clock, flag,rqtp, rmtp);
 
 }
 

@@ -51,6 +51,10 @@
 #define DEBUG_LEVEL_INFO 1
 #define DEBUG_LEVEL_VERBOSE 2
 
+#define TK_IOC_MAGIC  'k'
+
+#define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
+
 
 
 #define BITS_PER_LONG 32
@@ -109,7 +113,7 @@
 #if DEBUG_LEVEL == DEBUG_LEVEL_VERBOSE
 	#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
 #else
-	#define PDEBUG_V(fmt,args...)
+	#define PDEBUG_V(fmt,args...) //printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
 #endif
 	
 #define PDEBUG_A(fmt, args...) printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)

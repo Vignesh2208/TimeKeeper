@@ -56,6 +56,12 @@ extern struct sock *nl_sk;
 //task that loops endlessly (64-bit)
 extern struct task_struct *loop_task; 
 
+
+
+s64 round_error = 0;
+s64 n_rounds = 0;
+s64 round_error_sq = 0;
+
 /***
 Gets the PID of our spinner task (only in 64 bit)
 ***/
@@ -78,6 +84,75 @@ int call_usermodehelper_dil(char *path, char **argv, char **envp, int wait)
                 return -ENOMEM;
 
         return call_usermodehelper_exec(info, wait);
+}
+
+
+long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
+
+	int err = 0;
+	int retval = 0;
+    int i = 0;
+	uint8_t mask = 0;
+	unsigned long flags;
+	ioctl_args * args;
+	ioctl_args tmp;
+	char write_buffer[STATUS_MAXSIZE];
+	char * ptr;
+	int ret;
+
+	for(i = 0; i < STATUS_MAXSIZE; i++)
+		write_buffer[i] = '\0';
+
+
+	PDEBUG_I("Got ioctl from : %d\n", current->pid);
+
+	/*
+	 * extract the type and number bitfields, and don't decode
+	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
+	 */
+	if (_IOC_TYPE(cmd) != TK_IOC_MAGIC) return -ENOTTY;
+	
+	/*
+	 * the direction is a bitmask, and VERIFY_WRITE catches R/W
+	 * transfers. `Type' is user-oriented, while
+	 * access_ok is kernel-oriented, so the concept of "read" and
+	 * "write" is reversed
+	 */
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+	else if (_IOC_DIR(cmd) & _IOC_WRITE)
+		err =  !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+
+	if (err) return -EFAULT;
+
+	switch(cmd) {
+
+			case TK_IO_GET_STATS	:
+										args = (ioctl_args *) arg;
+										if(!args)
+											return -EFAULT;
+
+										mutex_lock(&exp_mutex);
+										tmp.round_error = round_error;
+										tmp.round_error_sq = round_error_sq;
+										tmp.n_rounds = n_rounds;
+										mutex_unlock(&exp_mutex);
+
+										PDEBUG_I("IOCTL: Round Error: %llu, Round Error Sq: %llu, N Rounds: %llu\n", round_error, round_error_sq, n_rounds);
+
+										round_error = 0;
+										round_error_sq = 0;
+										n_rounds = 0;
+
+										if(copy_to_user(args, &tmp, sizeof(ioctl_args)))
+											return -EFAULT;
+
+										return 0;
+			default: return -ENOTTY;
+	}
+
+	return retval;
+
 }
 
 /***

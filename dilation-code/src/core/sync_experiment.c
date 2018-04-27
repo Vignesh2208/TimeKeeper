@@ -126,6 +126,10 @@ int dilation_change = 0;
 int experiment_type = NOTSET; 
 int stopped_change = 0;
 
+extern s64 round_error;
+extern s64 n_rounds;
+extern s64 round_error_sq;
+
 
 /* synchronization variables to support parallelization */
 
@@ -326,6 +330,7 @@ void add_to_exp(int pid) {
         struct task_struct* aTask;
         struct dilation_task_struct* list_node;
         aTask = find_task_by_pid(pid);
+        experiment_stopped = NOTRUNNING;
 
         /* maybe I should just skip this pid instead of completely dropping out? */
         if (aTask == NULL)
@@ -387,8 +392,12 @@ void sync_and_freeze() {
 	hmap_init( &select_process_lookup,"int",0);
 	hmap_init( &sleep_process_lookup,"int",0);
 
-	PDEBUG_A("Sync and Freeze: Hooking system calls\n");
-	PDEBUG_A("Catchup Task: Pid = %d\n", catchup_task->pid);
+	round_error = 0;
+	round_error_sq = 0;
+	n_rounds = 0;
+
+	PDEBUG_V("Sync and Freeze: Hooking system calls\n");
+	PDEBUG_V("Catchup Task: Pid = %d\n", catchup_task->pid);
 
 	orig_cr0 = read_cr0();
 	write_cr0(orig_cr0 & ~0x00010000);
@@ -1071,7 +1080,7 @@ int catchup_func(void *data)
             actual_time += expected_increase;
 
 			/* clean up any stopped containers, alter TDFs if necessary */
-			clean_stopped_containers();
+			//clean_stopped_containers();
 			if (dilation_change)
 				change_containers_dilation();
 				
@@ -2718,6 +2727,8 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 	s64 change_vt;
 	s64 rem_time;
 	lxc_schedule_elem * head;
+	s64 err;
+	s32 rem;
 
     
 	if (aTask->linux_task->freeze_time == 0)
@@ -2808,7 +2819,29 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 			atomic_set(&aTask->tl->hrtimer_done,0);
 		}
 		set_current_state(TASK_RUNNING);
+		do_gettimeofday(&now);
+    	now_ns = timeval_to_ns(&now);
+
 		PDEBUG_V("Unfreeze Proc Exp Recurse: Single process on CPU %d resumed\n",CPUID);
+
+		mutex_lock(&exp_mutex);
+
+		if(aTask->linux_task->dilation_factor == 0){
+			err = now_ns - start_ns - aTask->running_time;
+		}
+		else if(aTask->linux_task->dilation_factor > 0){
+			err = div_s64_rem((now_ns - start_ns - aTask->running_time)*1000 ,aTask->linux_task->dilation_factor,&rem);
+		}
+		else{
+			err = 0;
+		}
+
+		if(err >= 0){
+		round_error = round_error + err;
+		round_error_sq = round_error_sq + (err*err);
+		n_rounds = n_rounds + 1;
+		}
+		mutex_unlock(&exp_mutex);
 		
 		aTask->last_run = head;		
 		kill(aTask->linux_task, SIGSTOP, NULL);
@@ -2835,7 +2868,7 @@ int unfreeze_proc_exp_single_core_mode(struct dilation_task_struct *aTask, s64 e
 		
 		
 		atomic_set(&wake_up_signal_sync_drift[CPUID],0);
-		PDEBUG_V(KERN_INFO "TimeKeeper : Unfreeze Proc Exp Recurse: Running next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
+		PDEBUG_V("TimeKeeper : Unfreeze Proc Exp Recurse: Running next valid task on CPU : %d for lxc : %d\n",CPUID, aTask->linux_task->pid);
 		rem_time  = run_schedule_queue_single_core_mode(aTask, head, rem_time, expected_time);
 		set_all_freeze_times_recurse(aTask->linux_task,start_ns + aTask->running_time - rem_time,aTask->running_time,0);
 		i++;	

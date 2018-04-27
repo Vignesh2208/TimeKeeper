@@ -3,17 +3,24 @@
 
 #include "includes.h"
 
+typedef struct ioctl_arg_struct {
+	s64 round_error;
+	s64 n_rounds;
+	s64 round_error_sq;
+} ioctl_args;
 
 /***
 The callback functions for the TimeKeeper status file
 ***/
 ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_off);
 ssize_t status_write(struct file *file, const char __user *buffer, size_t count, loff_t *data);
+long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 static const struct file_operations proc_file_fops = {
  .read = status_read,
  .write = status_write,
+ .unlocked_ioctl = tk_ioctl,
+ .owner = THIS_MODULE,
 };
-
 
 
 typedef struct sched_queue_element{

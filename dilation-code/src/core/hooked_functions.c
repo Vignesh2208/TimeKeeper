@@ -116,10 +116,15 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 	struct list_head *list;
     struct task_struct *taskRecurse;
 
+
+    struct timespec tu;
+
+	if (copy_from_user(&tu, rqtp, sizeof(tu)))
+		return -EFAULT;
 	
 
 	acquire_irq_lock(&current->dialation_lock,flags);
-	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET && atomic_read(&experiment_stopping) == 0)
+	if (experiment_stopped == RUNNING && current->virt_start_time != 0 && atomic_read(&experiment_stopping) == 0)
 	{		
 		atomic_inc(&n_active_syscalls);
 		is_dialated = 1;
@@ -132,8 +137,8 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 		hmap_put_abs(&sleep_process_lookup,current->pid,sleep_helper);
 		release_irq_lock(&current->dialation_lock,flags);
 		
-		s64 wakeup_time = now_new + ((rqtp->tv_sec*1000000000) + rqtp->tv_nsec)*Sim_time_scale;
-		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, rqtp->tv_sec, rqtp->tv_nsec, wakeup_time); 
+		s64 wakeup_time = now_new + ((tu.tv_sec*1000000000) + tu.tv_nsec)*Sim_time_scale;
+		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %d Nano Secs: %llu, New wake up time : %lld\n",current->pid, tu.tv_sec, tu.tv_nsec, wakeup_time); 
 		
 		while(now_new < wakeup_time) {
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -171,7 +176,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 		s64 diff = 0;
 		diff = now_new - wakeup_time;
-		PDEBUG_V("Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+		PDEBUG_I("Sys Sleep: Resumed Sleep Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 		
 		atomic_dec(&n_active_syscalls);
 		return 0; 
@@ -224,6 +229,14 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	struct list_head *list;
     struct task_struct *taskRecurse;	
 	
+
+    if (copy_from_user(&tv, tvp, sizeof(tv)))
+			return ref_sys_select(k,inp,outp,exp,tvp);
+
+	secs_to_sleep = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
+	nsecs_to_sleep = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
+	time_to_sleep = (secs_to_sleep*1000000000) + nsecs_to_sleep;
+
 	rcu_read_lock();
 	fdt = files_fdtable(current->files);
 	max_fds = fdt->max_fds;
@@ -231,21 +244,19 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	if (k > max_fds)
 		k = max_fds;
 
-
 	
 	acquire_irq_lock(&current->dialation_lock,flags);
-	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && tvp != NULL && atomic_read(&experiment_stopping) == 0){	
+	if(experiment_stopped == RUNNING && current->virt_start_time != 0 && time_to_sleep > 0 && atomic_read(&experiment_stopping) == 0){	
 
 		atomic_inc(&n_active_syscalls);	
 		is_dialated = 1;
 		if (copy_from_user(&tv, tvp, sizeof(tv)))
 			goto revert_select;
 
-		secs_to_sleep = tv.tv_sec + (tv.tv_usec / USEC_PER_SEC);
-		nsecs_to_sleep = (tv.tv_usec % USEC_PER_SEC) * NSEC_PER_USEC;
-		time_to_sleep = (secs_to_sleep*1000000000) + nsecs_to_sleep;
 		if(experiment_type != CS && time_to_sleep < expected_increase)
 			goto revert_select;
+
+		
 		    
 
 		ret = -EINVAL;
@@ -301,7 +312,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		
 		
 		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 	
-		PDEBUG_V("Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
+		PDEBUG_I("Sys Select: Select Process Waiting %d. Timeout sec %d, nsec %d, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
 		
 		while(1){
 			
@@ -356,12 +367,12 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		s64 diff = 0;
 		if(wakeup_time >  now_new){
 			diff = wakeup_time - now_new; 
-			PDEBUG_V("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_I("Sys Select: Resumed Select Process Early %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 
 		}
 		else{
 			diff = now_new - wakeup_time;
-			PDEBUG_V("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
+			PDEBUG_I("Sys Select: Resumed Select Process Expiry %d. Resume time = %llu. Difference = %llu\n",current->pid, now_new,diff );
 		}		 
 		
 		ret = select_helper->ret;
@@ -427,10 +438,13 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	struct list_head *list;
     struct task_struct *taskRecurse;
 	
+    if(timeout_msecs <= 0){
+    	return ref_sys_poll(ufds, nfds, timeout_msecs);
+    }
 
 	
 	acquire_irq_lock(&current->dialation_lock,flags);
-	if(experiment_stopped == RUNNING && current->virt_start_time != NOTSET && timeout_msecs >= 0 && atomic_read(&experiment_stopping) == 0){
+	if(experiment_stopped == RUNNING && current->virt_start_time != 0 && timeout_msecs > 0 && atomic_read(&experiment_stopping) == 0){
 	
 		atomic_inc(&n_active_syscalls);
 		is_dialated = 1;
@@ -465,6 +479,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		poll_helper->err = -EFAULT;
 		atomic_set(&poll_helper->done,0);
 		poll_helper->walk = head;
+		poll_helper->nfds = nfds;
 		walk = head;
 		init_waitqueue_head(&poll_helper->w_queue);
 
@@ -505,7 +520,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		now_new = get_dilated_time(current);
 		s64 wakeup_time;
 		wakeup_time = now_new + ((secs_to_sleep*1000000000) + nsecs_to_sleep)*Sim_time_scale; 
-		PDEBUG_V("Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
+		PDEBUG_I("Sys Poll: Poll Process Waiting %d. Timeout sec %d, nsec %d.",current->pid,secs_to_sleep,nsecs_to_sleep);
 		hmap_put_abs(&poll_process_lookup,current->pid,poll_helper);			
 		release_irq_lock(&current->dialation_lock,flags);
 
@@ -592,7 +607,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		}
 		kfree(head);
 		kfree(poll_helper->table);		
-		PDEBUG_V("Sys Poll: Poll Process Finished %d",current->pid);
+		PDEBUG_I("Sys Poll: Poll Process Finished %d",current->pid);
 		atomic_dec(&n_active_syscalls);			
 		return err;
 		
