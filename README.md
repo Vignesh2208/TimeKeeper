@@ -6,6 +6,16 @@ Ubuntu 14.04 and Ubuntu 16.04 64-bit with Linux Kernel 4.4.50.
 
 Outlined below are basic installation instructions. See the installation/usage guide found in the documentation directory for additional assistance 
 or contact me at: vig2208@gmail.com
+
+
+The following list of papers were published over the course of TimeKeeper's development. Please cite relevant papers from this list if TimeKeeper is used in 
+any Research Effort or data generation initiative.
+
+1. Temporal Integration of Emulation and Network Simulators on Linux Multiprocessors, ACM TOMACS 2018
+2. Melody: Synthesized datasets for evaluating intrusion detection systems for the smart grid, WSC 2017
+3. Emulation/simulation of PLC networks with the S3F network simulator, WSC 2016
+
+
 ```
 
 ## TimeKeeper configuration
