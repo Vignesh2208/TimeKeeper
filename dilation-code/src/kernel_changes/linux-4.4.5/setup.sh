@@ -17,16 +17,16 @@ sudo echo "Starting Kernel Setup. Continuing with sudo permissions."
 echo "deb http://archive.ubuntu.com/ubuntu precise main universe multiverse" | sudo tee /etc/apt/sources.list.d/precise.list
 sudo apt-get update
 
-cd $base/scripts/bin
+cd $base/scripts
 echo "Compiling helper scripts"
 make 2>/dev/null
 echo "Copying helper scripts to /bin"
-sudo cp ping /bin/
-sudo cp print_time /bin/
+#sudo cp ping /bin/
+#sudo cp print_time /bin/
 sudo cp x64_synchronizer /bin/
 
 #echo "Installing required dependencies"
-sudo apt-get install git-core libncurses5 libncurses5-dev libelf-dev binutils-dev linux-source qt3-dev-tools libqt3-mt-dev fakeroot build-essential crash kexec-tools makedumpfile kernel-wedge kernel-package python-dev uml-utilities vtun autoconf automake1.11 lua5.2-dev flex bison bridge-utils cgroup-lite libcap-dev
+sudo apt-get install git-core libncurses5 libncurses5-dev libssl-dev libelf-dev binutils-dev linux-source qt3-dev-tools libqt3-mt-dev fakeroot build-essential crash kexec-tools makedumpfile kernel-wedge kernel-package python-dev uml-utilities vtun autoconf automake1.11 lua5.2-dev flex bison bridge-utils cgroup-lite libcap-dev
 
 sudo ln -s /etc/apparmor.d/usr.bin.lxc-start /etc/apparmor.d/disable/
 sudo mkdir -p /usr/local/var/lib/lxc
