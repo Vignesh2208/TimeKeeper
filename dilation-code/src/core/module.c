@@ -159,8 +159,9 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
 	for(i = 0; i < STATUS_MAXSIZE; i++)
 		write_buffer[i] = '\0';
 
+	set_current_state(TASK_RUNNING);
 
-	PDEBUG_V("Got ioctl from : %d\n", current->pid);
+	PDEBUG_V("TK-IO: Got ioctl from : %d\n", current->pid);
 
 	/*
 	 * extract the type and number bitfields, and don't decode
@@ -203,6 +204,8 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
 											if(copy_from_user(write_buffer, ptr, STATUS_MAXSIZE)){
 												return -EFAULT;
 											}
+
+											current->virt_start_time = 0;
 											mutex_lock(&file_lock);
 											ret = handle_tracer_results(write_buffer + 2);
 											mutex_unlock(&file_lock);
@@ -211,23 +214,23 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
 											curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
 											if(!curr_tracer){
 												mutex_unlock(&exp_lock);
-												PDEBUG_I("Status Read: Tracer : %d, not registered\n", current->pid);
+												PDEBUG_I("TK-IO: Tracer : %d, not registered\n", current->pid);
 												return -1;
 											}
 											mutex_unlock(&exp_lock);
 											
-											PDEBUG_I("Status Read: Tracer : %d, Waiting for next command\n", current->pid);
+											PDEBUG_I("TK-IO: Tracer : %d, Waiting for next command\n", current->pid);
 											
 											set_current_state(TASK_INTERRUPTIBLE);
 											atomic_inc(&n_waiting_tracers);
 											wake_up_interruptible(&progress_sync_proc_wqueue);
 											wait_event_interruptible(curr_tracer->w_queue, atomic_read(&curr_tracer->w_queue_control) == 0);
-											
-
-											PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
-											
-
 											set_current_state(TASK_RUNNING);
+
+											PDEBUG_V("TK-IO: Tracer : %d, Resuming from wait\n", current->pid);
+											
+
+											
 											if(copy_to_user(ptr, curr_tracer->run_q_buffer, curr_tracer->buf_tail_ptr + 1 )){
 												PDEBUG_I("Status Read: Tracer : %d, Resuming from wait. Error copying to user buf\n", current->pid);	
 												return -EFAULT;
@@ -235,7 +238,7 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
 
 											if(strcmp(curr_tracer->run_q_buffer, "STOP") == 0){
 												// free up memory
-												PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
+												PDEBUG_I("TK-IO: Tracer: %d, STOPPING\n", current->pid);
 												if(curr_tracer->spinner_task != NULL){
 													//kill_p(curr_tracer->spinner_task, SIGKILL);
 													curr_tracer->spinner_task = NULL;
@@ -247,19 +250,34 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg){
 												kfree(curr_tracer);
 												mutex_unlock(&exp_lock);
 
+												
+
 												/*if(atomic_read(&n_waiting_tracers) == 0){
 													cleanup_experiment_components();
 												}*/
 												atomic_dec(&n_waiting_tracers);
 												wake_up_interruptible(&expstop_call_proc_wqueue);
 
+												set_current_state(TASK_RUNNING);
+
+											/*clear_thread_flag(TIF_NEED_RESCHED);
+											clear_thread_flag(TIF_NOTIFY_RESUME);
+											clear_thread_flag(TIF_SIGPENDING);
+											clear_thread_flag(TIF_USER_RETURN_NOTIFY);
+											clear_thread_flag(TIF_UPROBE);*/
 												return 0;
 
 											}
 											atomic_dec(&n_waiting_tracers);
 											ret = curr_tracer->buf_tail_ptr;
-											PDEBUG_V("Status Read: Tracer: %d, Returning value: %d\n", current->pid, ret);
+											PDEBUG_V("TK-IO: Tracer: %d, Returning value: %d\n", current->pid, ret);
 
+											set_current_state(TASK_RUNNING);
+											/*clear_thread_flag(TIF_NEED_RESCHED);
+											clear_thread_flag(TIF_NOTIFY_RESUME);
+											clear_thread_flag(TIF_SIGPENDING);
+											clear_thread_flag(TIF_USER_RETURN_NOTIFY);
+											clear_thread_flag(TIF_UPROBE);*/
 											return 0;
 
 
@@ -292,6 +310,8 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 		buffer_size = count;
 
 	}
+
+	set_current_state(TASK_RUNNING);
 
 	PDEBUG_V("Got Generic write to proc file from : %d, count = %d\n", current->pid, count);
 
@@ -362,6 +382,7 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 	}
 
 
+	set_current_state(TASK_RUNNING);
 	
 	if(ret < 0)
 		return ret;
@@ -380,6 +401,8 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		int i;
 		int ret;
 		tracer * curr_tracer;
+
+		set_current_state(TASK_RUNNING);
 
 		PDEBUG_V("Status Read: Tracer : %d, Entered.\n", current->pid);
 		if(experiment_status != INITIALIZED){
@@ -402,11 +425,11 @@ ssize_t status_read(struct file *pfil, char __user *pBuf, size_t len, loff_t *p_
 		atomic_inc(&n_waiting_tracers);
 		wake_up_interruptible(&progress_sync_proc_wqueue);
 		wait_event_interruptible(curr_tracer->w_queue, atomic_read(&curr_tracer->w_queue_control) == 0);
-		
+		set_current_state(TASK_RUNNING);		
 
 		PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
 		
-		set_current_state(TASK_RUNNING);
+		
 
 		
 		if(copy_to_user(pBuf, curr_tracer->run_q_buffer, curr_tracer->buf_tail_ptr + 1 )){

@@ -102,6 +102,8 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 	struct timespec rmt;
 	rem.tv64 = 0;
 
+	set_current_state(TASK_RUNNING);
+
 	if(is_tracer_task(current) >= 0){
 		return ref_sys_clock_nanosleep(which_clock, flags,rqtp, rmtp);
 	}
@@ -157,7 +159,7 @@ asmlinkage long sys_clock_nanosleep_new(const clockid_t which_clock, int flags, 
 		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, New wake up time : %lld\n",current->pid, tu.tv_sec, wakeup_time); 
 
 		while(now < wakeup_time) {
-			set_current_state(TASK_INTERRUPTIBLE);
+			//set_current_state(TASK_INTERRUPTIBLE);
 			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&sleep_helper->done,0);
@@ -221,6 +223,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 	s64 undialated_time_ns = timeval_to_ns(&curr_tv);
 	//s64 boottime = 0;
 
+	set_current_state(TASK_RUNNING);
 	current_task = current;
 
 	if(which_clock != CLOCK_REALTIME && which_clock != CLOCK_MONOTONIC && which_clock != CLOCK_MONOTONIC_RAW && which_clock != CLOCK_REALTIME_COARSE && which_clock != CLOCK_MONOTONIC_COARSE)
@@ -296,6 +299,7 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 	sleep_helper->process_pid = current->pid;
 
+	set_current_state(TASK_RUNNING);
 
 	if(is_tracer_task(current) >= 0){
 		return ref_sys_sleep(rqtp,rmtp);
@@ -396,12 +400,10 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 
 		PDEBUG_V("Sys Sleep: PID : %d, Sleep Secs: %llu Nano Secs: %llu, New wake up time : %llu\n",current->pid, tu.tv_sec, tu.tv_nsec, wakeup_time); 
 		
-		//set_current_state(TASK_INTERRUPTIBLE);
-		//schedule();
 
 		
 		while(now < wakeup_time) {
-			set_current_state(TASK_INTERRUPTIBLE);
+			//set_current_state(TASK_INTERRUPTIBLE);
 			wait_event(sleep_helper->w_queue,atomic_read(&sleep_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&sleep_helper->done,0);
@@ -452,13 +454,14 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp, struct timespec __us
 		atomic_dec(&n_active_syscalls);
 		wake_up_interruptible(&expstop_call_proc_wqueue);
 		
+		set_current_state(TASK_RUNNING);
 		return ref_sys_sleep(rqtp,rmtp);
 	} 
 	
 	
 	release_irq_lock(&syscall_lookup_lock,flags);
 	
-
+	set_current_state(TASK_RUNNING);
     return ref_sys_sleep(rqtp,rmtp);
 }
 
@@ -489,6 +492,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 	tracer * curr_tracer;
 	int cpu;
 
+	set_current_state(TASK_RUNNING);
 
 	current_task = current;
 
@@ -602,7 +606,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		PDEBUG_V("Sys Select: Select Process Waiting %d. Timeout sec %llu, nsec %llu, wakeup_time = %llu\n",current->pid,secs_to_sleep,nsecs_to_sleep,wakeup_time);
 		
 		while(now < wakeup_time) {
-			set_current_state(TASK_INTERRUPTIBLE);
+			//set_current_state(TASK_INTERRUPTIBLE);
 			wait_event(select_helper->w_queue,atomic_read(&select_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&select_helper->done,0);
@@ -701,6 +705,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		wake_up_interruptible(&expstop_call_proc_wqueue);
 		//if(atomic_read(&experiment_stopping) == 1)
 		//	kill_p(current, SIGKILL);
+		set_current_state(TASK_RUNNING);
 		return ret;
 		
 		revert_select:
@@ -708,11 +713,12 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp, fd_set __user *outp, fd
 		atomic_dec(&n_active_syscalls);
 
 		wake_up_interruptible(&expstop_call_proc_wqueue);
-		
+		set_current_state(TASK_RUNNING);
 		return ref_sys_select(k,inp,outp,exp,tvp);
 	}
 	
 	release_irq_lock(&syscall_lookup_lock,flags);	
+	set_current_state(TASK_RUNNING);
 	return ref_sys_select(k,inp,outp,exp,tvp);
 }
 
@@ -736,6 +742,8 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 	struct poll_helper_struct * poll_helper =  &helper;
 	tracer * curr_tracer;
 	int cpu;
+
+	set_current_state(TASK_RUNNING);
 
 	if(timeout_msecs <= 0){
 		return ref_sys_poll(ufds,nfds,timeout_msecs);
@@ -849,7 +857,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 
 
 		while(now < wakeup_time) {
-			set_current_state(TASK_INTERRUPTIBLE);
+			//set_current_state(TASK_INTERRUPTIBLE);
 			wait_event(poll_helper->w_queue,atomic_read(&poll_helper->done) != 0);
 			set_current_state(TASK_RUNNING);
 			atomic_set(&poll_helper->done,0);
@@ -952,7 +960,8 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 
 		wake_up_interruptible(&expstop_call_proc_wqueue);
 		//if(atomic_read(&experiment_stopping) == 1)
-		//	kill_p(current, SIGKILL);		
+		//	kill_p(current, SIGKILL);	
+		set_current_state(TASK_RUNNING);	
 		return err;
 		
 		
@@ -961,11 +970,14 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds, unsigned int nfds, int 
 		atomic_dec(&n_active_syscalls);
 
 		wake_up_interruptible(&expstop_call_proc_wqueue);
+		set_current_state(TASK_RUNNING);
    			
    		return ref_sys_poll(ufds,nfds,timeout_msecs);
 
 	}
-	
+
+	set_current_state(TASK_RUNNING);
+
    	release_irq_lock(&syscall_lookup_lock,flags);	
     return ref_sys_poll(ufds,nfds,timeout_msecs);
 }

@@ -933,9 +933,10 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 		PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
 
 		acquire_irq_lock(&syscall_lookup_lock,flags);
-		task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
+		/*task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
 		task_select_helper = hmap_get_abs(&select_process_lookup,curr_elem->pid);
 		task_sleep_helper = hmap_get_abs(&sleep_process_lookup, curr_elem->pid);
+		*/
 
 		if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
 
@@ -1008,9 +1009,11 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 
 
 				acquire_irq_lock(&syscall_lookup_lock,flags);
-				task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
+				
+				/*task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
 				task_select_helper = hmap_get_abs(&select_process_lookup,curr_elem->pid);
 				task_sleep_helper = hmap_get_abs(&sleep_process_lookup, curr_elem->pid);
+				*/
 
 				if(task_poll_helper == NULL && task_select_helper == NULL && task_sleep_helper == NULL){
 					

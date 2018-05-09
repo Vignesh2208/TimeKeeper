@@ -117,7 +117,7 @@ void setup_all_traces(hashmap * tracees, llist * tracee_list) {
 }
 
 
-int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, struct libperf_data * pd) {
+int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, struct libperf_data * pd, int cpu_assigned) {
 
 	llist_elem * head = tracee_list->head;
 	tracee_entry * new_tracee;
@@ -131,12 +131,16 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 
 	char buffer[100];
 	pid_t new_child_pid;
+	struct libperf_data * pd_tmp;
+	u32 n_insns = 1000;
 	
 
 	curr_tracee = hmap_get_abs(tracees, pid);
 	if(curr_tracee->vfork_stop)	//currently inside a vfork stop
 		return TID_FORK_EVT;
 
+	retry:
+	status = 0;
 	flush_buffer(buffer, 100);
 	errno = 0;
 	do{
@@ -154,6 +158,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 	if((pid_t)ret != pid){
 		if(errno == EBREAK_SYSCALL){
 			LOG("Waitpid: Breaking out. Process entered blocking syscall\n");
+			//printf("Waitpid: Breaking out. Process entered blocking syscall\n");
 			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);	
 			libperf_finalize(pd, 0); 
 			curr_tracee->syscall_blocked = 1;
@@ -289,8 +294,35 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 
 	}
 	else{
+
+
+
 		libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);			
-        libperf_finalize(pd, 0); 	
+        libperf_finalize(pd, 0);
+
+        if(WIFSTOPPED(status) && WSTOPSIG(status) >= SIGUSR1 && WSTOPSIG(status) <= SIGALRM ){
+			printf("Received Signal: %d\n", WSTOPSIG(status));
+			errno = 0;
+			n_insns = 1000;
+			pd_tmp = libperf_initialize((int)pid,cpu_assigned); /* init lib */
+			libperf_ioctlrefresh(pd_tmp, LIBPERF_COUNT_HW_INSTRUCTIONS, (uint64_t )n_insns);
+			libperf_enablecounter(pd_tmp, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
+			//libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
+			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
+
+			printf("PTRACE RESUMING process After signal. ret = %d, error_code = %d. pid = %d\n",ret, errno, pid);
+			fflush(stdout);
+
+			#ifdef DEBUG_VERBOSE
+			sprintf(buffer, "PTRACE RESUMING process After signal. ret = %d, error_code = %d. pid = %d",ret, errno, pid);
+			print_curr_time(buffer);
+			#endif
+
+			ret = ptrace(PTRACE_CONT, pid, 0, WSTOPSIG(status));
+			goto retry;
+
+			
+		} 	
 	}
 
 
@@ -345,6 +377,9 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			if(test_bit(flags, PTRACE_ENTER_SYSCALL_FLAG) == 0){
 				curr_tracee->syscall_blocked = 0;
 
+				//printf("Process: %d no longer blocked inside syscall.\n",pid);
+				//fflush(stdout);
+
 				#ifdef DEBUG_VERBOSE
 				LOG("Process: %d , ret = %d, errno = %d, flags = %lX\n", pid, ret, errno, flags);
 				#endif
@@ -352,12 +387,15 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			else {
 				
 
-				int sleep_duration = (int)n_insns*(rel_cpu_speed/1000.0);
+				int sleep_duration = (int)n_insns*((float)rel_cpu_speed/1000.0);
 
 				LOG("Process: %d is still blocked inside syscall. Sleeping for: %d\n",pid, sleep_duration);
-
-				if(sleep_duration >= 1)
+				//printf("Process: %d is still blocked inside syscall. Sleeping for: %d\n",pid, sleep_duration);
+				//fflush(stdout);
+				if(sleep_duration >= 1){
 					usleep(sleep_duration);
+				}
+				
 				return SUCCESS;
 			}
 	
@@ -424,7 +462,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 		}
 
 
-		ret = wait_for_ptrace_events(tracees, tracee_list, pid, pd);
+		ret = wait_for_ptrace_events(tracees, tracee_list, pid, pd, cpu_assigned);
 		
 
 		switch(ret) {
@@ -721,6 +759,7 @@ int main(int argc, char * argv[]){
 
 
 			LOG("Tracer: %d, Cmd no = %d, Received Command: %s, read_ret = %d\n", tracer_id, cmd_no, nxt_cmd, read_ret);
+			//printf("Tracer: %d, Cmd no = %d, Received Command: %s, read_ret = %d\n", tracer_id, cmd_no, nxt_cmd, read_ret);
 			while(tail_ptr != -1){
 				tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);
 
