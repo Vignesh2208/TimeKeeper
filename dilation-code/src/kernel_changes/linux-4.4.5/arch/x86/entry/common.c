@@ -286,23 +286,47 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 		local_irq_enable();
 
 		if (cached_flags & _TIF_NEED_RESCHED) {
+			if(current->pid != init_task.pid && current->freeze_time > 0 && current->virt_start_time == 0){
+				trace_printk("Tracer: %d, _TIF_NEED_RESCHED, Syscall no : %lu\n", current->pid, regs->orig_ax);
+				set_current_state(TASK_RUNNING);
+				schedule();
+				local_irq_disable();
+				break;
+			}
+			else{
 			schedule();
+			}
 		}
 
-		if (cached_flags & _TIF_UPROBE)
+		if (cached_flags & _TIF_UPROBE){
+			if(current->pid != init_task.pid && current->freeze_time > 0 && current->virt_start_time == 0){
+				trace_printk("Tracer: %d, TIF_UPROBE, Syscall no : %lu\n", current->pid, regs->orig_ax);
+			}
 			uprobe_notify_resume(regs);
+		}
 
 		/* deal with pending signal delivery */
-		if (cached_flags & _TIF_SIGPENDING)
+		if (cached_flags & _TIF_SIGPENDING){
+			if(current->pid != init_task.pid && current->freeze_time > 0 && current->virt_start_time == 0){
+				trace_printk("Tracer: %d, TIF_SIGPENDING, Syscall no : %lu\n", current->pid, regs->orig_ax);
+			}
 			do_signal(regs);
+		}
 
 		if (cached_flags & _TIF_NOTIFY_RESUME) {
 			clear_thread_flag(TIF_NOTIFY_RESUME);
+			if(current->pid != init_task.pid && current->freeze_time > 0 && current->virt_start_time == 0){
+				trace_printk("Tracer: %d, TIF_NOTIFYRESUME, Syscall no : %lu\n", current->pid, regs->orig_ax);
+			}
 			tracehook_notify_resume(regs);
 		}
 
-		if (cached_flags & _TIF_USER_RETURN_NOTIFY)
+		if (cached_flags & _TIF_USER_RETURN_NOTIFY){
+			if(current->pid != init_task.pid && current->freeze_time > 0 && current->virt_start_time == 0){
+				trace_printk("Tracer: %d, TIF_USERRETURN NOTIFY, Syscall no : %lu\n", current->pid, regs->orig_ax);
+			}
 			fire_user_return_notifiers();
+		}
 
 		/* Disable IRQs and retry */
 		local_irq_disable();
@@ -328,8 +352,11 @@ __visible inline void prepare_exit_to_usermode(struct pt_regs *regs)
 	cached_flags =
 		READ_ONCE(pt_regs_to_thread_info(regs)->flags);
 
+	
 	if (unlikely(cached_flags & EXIT_TO_USERMODE_LOOP_FLAGS))
 		exit_to_usermode_loop(regs, cached_flags);
+	
+
 
 	user_enter();
 }

@@ -43,7 +43,6 @@ struct timerfd_ctx {
 	bool might_cancel;
 	struct task_struct * owner_task;
 	s64 wakeup_time;
-	struct hrtimer_dilated dilated_tmr;
 };
 
 static LIST_HEAD(cancel_list);
@@ -53,18 +52,21 @@ s64 get_dilated_task_time(struct task_struct * task)
 {
 	s64 temp_past_physical_time;
 	struct timeval tv;
-	s64 now;
+
 	do_gettimeofday(&tv);
-	now = timeval_to_ns(&tv);
+	s64 now = timeval_to_ns(&tv);
 
 	if(task->virt_start_time != 0){
 		if (task->group_leader != task) { //use virtual time of the leader thread
-            task = task->group_leader;
+                       	task = task->group_leader;
         }
 	
 		return task->freeze_time;
+	
 	}
+
 	return now;
+
 }
 
 static inline bool isalarm(struct timerfd_ctx *ctx)
@@ -78,7 +80,7 @@ static inline bool isalarm(struct timerfd_ctx *ctx)
  * flag, but we do not re-arm the timer (in case it's necessary,
  * tintv.tv64 != 0) until the timer is accessed.
  */
-void timerfd_triggered(struct timerfd_ctx *ctx)
+static void timerfd_triggered(struct timerfd_ctx *ctx)
 {
 	unsigned long flags;
 	
@@ -87,30 +89,31 @@ void timerfd_triggered(struct timerfd_ctx *ctx)
 	ctx->ticks++;
 	wake_up_locked(&ctx->wqh);
 	spin_unlock_irqrestore(&ctx->wqh.lock, flags);
-
-	if(ctx->owner_task && ctx->owner_task->virt_start_time > 0)
-	trace_printk("Fired TimerFD timer at %llu, pid: %d\n", ctx->owner_task->freeze_time, ctx->owner_task->pid);
-
-}
-
-
-enum hrtimer_restart dilated_timerfd_tmrproc(struct hrtimer_dilated *htmr)
-{
-	struct timerfd_ctx *ctx = container_of(htmr, struct timerfd_ctx,
-					       dilated_tmr);
-
-	s64 dilated_running_time;
-	struct task_struct * owner_task = ctx->owner_task;
-	trace_printk("Entered Dilated TimerFD fire, pid: %d\n", owner_task->pid);
-	timerfd_triggered(ctx);
-	return HRTIMER_NORESTART;
 }
 
 static enum hrtimer_restart timerfd_tmrproc(struct hrtimer *htmr)
 {
 	struct timerfd_ctx *ctx = container_of(htmr, struct timerfd_ctx,
 					       t.tmr);
+
+	s64 dilated_running_time;
+	struct task_struct * owner_task = ctx->owner_task;
+	if(owner_task->virt_start_time != 0 ){
+		dilated_running_time = get_dilated_task_time(owner_task);
+		if(ctx->wakeup_time <= dilated_running_time){
+			timerfd_triggered(ctx);
+			//printk(KERN_INFO "TimerFD: Waking up dilated task. Pid = %d. Wakeup time = %lu. Interval = %lu\n", owner_task->pid, ctx->wakeup_time,ktime_to_ns(ctx->tintv));
+			return HRTIMER_NORESTART;
+		}
+		else{
+			hrtimer_forward_now(&ctx->t.tmr,ns_to_ktime(100000));
+			return HRTIMER_RESTART;
+		}
+
+	}
+	else{
 	timerfd_triggered(ctx);
+	}
 	return HRTIMER_NORESTART;
 }
 
@@ -119,7 +122,7 @@ static enum alarmtimer_restart timerfd_alarmproc(struct alarm *alarm,
 {
 	struct timerfd_ctx *ctx = container_of(alarm, struct timerfd_ctx,
 					       t.alarm);
-	
+	//timerfd_triggered(ctx);
 
 	s64 dilated_running_time;
 	struct task_struct * owner_task = ctx->owner_task;
@@ -127,16 +130,17 @@ static enum alarmtimer_restart timerfd_alarmproc(struct alarm *alarm,
 		dilated_running_time = get_dilated_task_time(owner_task);
 		if(ctx->wakeup_time <= dilated_running_time){
 			timerfd_triggered(ctx);
+			//printk(KERN_INFO "TimerFD: Waking up dilated alarm task. Pid = %d\n", owner_task->pid);
 			return ALARMTIMER_NORESTART;
 		}
 		else{
-			alarm_forward_now(&ctx->t.alarm,ns_to_ktime(100000));
+			hrtimer_forward_now(&ctx->t.tmr,ns_to_ktime(100000));
 			return ALARMTIMER_RESTART;
 		}
 
 	}
 	else{
-		timerfd_triggered(ctx);
+	timerfd_triggered(ctx);
 	}
 	return ALARMTIMER_NORESTART;
 }
@@ -208,14 +212,8 @@ static ktime_t timerfd_get_remaining(struct timerfd_ctx *ctx)
 
 	if (isalarm(ctx))
 		remaining = alarm_expires_remaining(&ctx->t.alarm);
-	else{
-		if(ctx->owner_task != NULL && ctx->owner_task->virt_start_time != 0){
-			remaining.tv64 = ctx->wakeup_time - get_dilated_task_time(ctx->owner_task);	
-		}
-		else{
-			remaining = hrtimer_expires_remaining_adjusted(&ctx->t.tmr);
-		}
-	}
+	else
+		remaining = hrtimer_expires_remaining_adjusted(&ctx->t.tmr);
 
 	return remaining.tv64 < 0 ? ktime_set(0, 0): remaining;
 }
@@ -241,7 +239,11 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 				relative_expiry_duration = 0;
 			}
 			else {
-				relative_expiry_duration = ctx->wakeup_time - curr_dilated_time;				
+				relative_expiry_duration = ctx->wakeup_time - curr_dilated_time;
+				//relative_expiry_duration = 1000000;
+			}
+			if(relative_expiry_duration > 0) {
+                		printk(KERN_INFO "TimerFD: ABS Setting up timer fire period %llu, Wakeup Time = %llu, Curr time = %llu. Current = %d, owner = %d\n", relative_expiry_duration, ctx->wakeup_time, curr_dilated_time, current->pid, ctx->owner_task->pid);
 			}
 
 		}
@@ -249,7 +251,13 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 			curr_dilated_time = get_dilated_task_time(ctx->owner_task);
 			relative_expiry_duration = timespec_to_ns(&ktmr->it_value);
 			ctx->wakeup_time = curr_dilated_time + relative_expiry_duration;
+
+			if(relative_expiry_duration > 0) {
+                		printk(KERN_INFO "TimerFD: REL Setting up timer fire period %llu, Wakeup Time = %llu, Curr time = %llu. Current = %d, owner = %d\n", relative_expiry_duration, ctx->wakeup_time, curr_dilated_time, current->pid, ctx->owner_task->pid);
+			}
+
 		}
+
 	}
 
 	texp = timespec_to_ktime(ktmr->it_value);
@@ -265,17 +273,14 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 	} else {
 
 		if(ctx->owner_task->virt_start_time != 0){
-			//hrtimer_init(&ctx->t.tmr, clockid, HRTIMER_MODE_REL);
-			//hrtimer_set_expires(&ctx->t.tmr, ns_to_ktime(relative_expiry_duration));
-			dilated_hrtimer_init(&ctx->dilated_tmr,0,HRTIMER_MODE_REL);
-			ctx->dilated_tmr.function = dilated_timerfd_tmrproc;
+			hrtimer_init(&ctx->t.tmr, clockid, HRTIMER_MODE_REL);
+			hrtimer_set_expires(&ctx->t.tmr, ns_to_ktime(relative_expiry_duration));
 		}
 		else{
 			hrtimer_init(&ctx->t.tmr, clockid, htmode);
 			hrtimer_set_expires(&ctx->t.tmr, texp);
-			ctx->t.tmr.function = timerfd_tmrproc;
 		}
-		
+		ctx->t.tmr.function = timerfd_tmrproc;
 	}
 
 	if (texp.tv64 != 0) {
@@ -287,9 +292,7 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 		} else {
 
 			if(ctx->owner_task->virt_start_time != 0){
-				//hrtimer_start(&ctx->t.tmr, ns_to_ktime(relative_expiry_duration), HRTIMER_MODE_REL);
-				trace_printk("Started TimerFD timer at : %llu, for : %llu, pid: %d\n", ctx->owner_task->freeze_time, relative_expiry_duration, ctx->owner_task->pid);
-				dilated_hrtimer_start(&ctx->dilated_tmr, ns_to_ktime(relative_expiry_duration), HRTIMER_MODE_REL);
+				hrtimer_start(&ctx->t.tmr, ns_to_ktime(relative_expiry_duration), HRTIMER_MODE_REL);
 			}
 			else {
 				hrtimer_start(&ctx->t.tmr, texp, htmode);
@@ -312,15 +315,8 @@ static int timerfd_release(struct inode *inode, struct file *file)
 
 	if (isalarm(ctx))
 		alarm_cancel(&ctx->t.alarm);
-	else{
-
-		if(ctx->owner_task && ctx->owner_task->virt_start_time != 0){
-			dilated_hrtimer_cancel(&ctx->dilated_tmr);
-		}
-		else{
-			hrtimer_cancel(&ctx->t.tmr);
-		}
-	}
+	else
+		hrtimer_cancel(&ctx->t.tmr);
 	kfree_rcu(ctx, rcu);
 	return 0;
 }
@@ -348,8 +344,6 @@ static ssize_t timerfd_read(struct file *file, char __user *buf, size_t count,
 	struct timerfd_ctx *ctx = file->private_data;
 	ssize_t res;
 	u64 ticks = 0;
-	struct task_struct * owner_task ;
-	s64 intervalns;
 
 	if (count < sizeof(ticks))
 		return -EINVAL;
@@ -381,13 +375,13 @@ static ssize_t timerfd_read(struct file *file, char __user *buf, size_t count,
 			 * short timer period.
 			 */
 
-			owner_task = ctx->owner_task;
-			
-			if(owner_task && owner_task->virt_start_time != 0 ){
-				//printk(KERN_INFO "TimerFD: Read operation woken up for dilated task %d, actual wakeup time = %llu\n", owner_task->pid, get_dilated_task_time(owner_task));
+			struct task_struct * owner_task = ctx->owner_task;
+			s64 intervalns;
+			if(owner_task->virt_start_time != 0 ){
+				printk(KERN_INFO "TimerFD: Read operation woken up for dilated task %d, actual wakeup time = %lu\n", owner_task->pid, get_dilated_task_time(owner_task));
 				intervalns = ktime_to_ns(ctx->tintv);
 				
-				////ctx->wakeup_time = ctx->wakeup_time + intervalns;
+				//ctx->wakeup_time = ctx->wakeup_time + intervalns;
 				ctx->wakeup_time = get_dilated_task_time(ctx->owner_task) + intervalns;
 
 
@@ -398,18 +392,9 @@ static ssize_t timerfd_read(struct file *file, char __user *buf, size_t count,
 					&ctx->t.alarm, ctx->tintv) - 1;
 				alarm_restart(&ctx->t.alarm);
 			} else {
-
-				if(ctx->owner_task && ctx->owner_task->virt_start_time != 0){
-					dilated_hrtimer_cancel(&ctx->dilated_tmr);
-					dilated_hrtimer_init(&ctx->dilated_tmr, 0, HRTIMER_MODE_REL);
-					ctx->dilated_tmr.function = dilated_timerfd_tmrproc;
-					dilated_hrtimer_start(&ctx->dilated_tmr, ctx->tintv, HRTIMER_MODE_REL);
-				}
-				else{
-					ticks += hrtimer_forward_now(&ctx->t.tmr,
-								     ctx->tintv) - 1;
-					hrtimer_restart(&ctx->t.tmr);
-				}
+				ticks += hrtimer_forward_now(&ctx->t.tmr,
+							     ctx->tintv) - 1;
+				hrtimer_restart(&ctx->t.tmr);
 			}
 
 			if(owner_task->virt_start_time != 0 )
@@ -540,12 +525,8 @@ SYSCALL_DEFINE2(timerfd_create, int, clockid, int, flags)
 			   ctx->clockid == CLOCK_REALTIME_ALARM ?
 			   ALARM_REALTIME : ALARM_BOOTTIME,
 			   timerfd_alarmproc);
-	else{
-		if(current->virt_start_time != 0){
-			dilated_hrtimer_init(&ctx->dilated_tmr, 0, HRTIMER_MODE_REL);
-		}
+	else
 		hrtimer_init(&ctx->t.tmr, clockid, HRTIMER_MODE_ABS);
-	}
 
 	ctx->moffs = ktime_mono_to_real((ktime_t){ .tv64 = 0 });
 	ctx->owner_task = current;
@@ -590,14 +571,8 @@ static int do_timerfd_settime(int ufd, int flags,
 			if (alarm_try_to_cancel(&ctx->t.alarm) >= 0)
 				break;
 		} else {
-			if(ctx->owner_task && ctx->owner_task->virt_start_time != 0){
-				if(dilated_hrtimer_try_to_cancel(&ctx->dilated_tmr) >= 0)
-					break;
-			}
-			else{
-				if (hrtimer_try_to_cancel(&ctx->t.tmr) >= 0)
-					break;
-			}
+			if (hrtimer_try_to_cancel(&ctx->t.tmr) >= 0)
+				break;
 		}
 		spin_unlock_irq(&ctx->wqh.lock);
 		cpu_relax();
@@ -612,13 +587,8 @@ static int do_timerfd_settime(int ufd, int flags,
 	if (ctx->expired && ctx->tintv.tv64) {
 		if (isalarm(ctx))
 			alarm_forward_now(&ctx->t.alarm, ctx->tintv);
-		else if(ctx->owner_task && ctx->owner_task->virt_start_time != 0){
-			//dilated_hrtimer_forward(&ctx->dil)
-		}
-		else{
+		else
 			hrtimer_forward_now(&ctx->t.tmr, ctx->tintv);
-		}
-		
 	}
 
 	old->it_value = ktime_to_timespec(timerfd_get_remaining(ctx));
@@ -638,21 +608,19 @@ static int do_timerfd_gettime(int ufd, struct itimerspec *t)
 {
 	struct fd f;
 	struct timerfd_ctx *ctx;
-	struct task_struct * owner_task;
-	s64 intervalns;
 	int ret = timerfd_fget(ufd, &f);
 	if (ret)
 		return ret;
 	ctx = f.file->private_data;
-	owner_task = ctx->owner_task;
+	struct task_struct * owner_task = ctx->owner_task;
 
 	spin_lock_irq(&ctx->wqh.lock);
 	if (ctx->expired && ctx->tintv.tv64) {
 		ctx->expired = 0;
 
 		
-		if(owner_task && owner_task->virt_start_time != 0 ){
-
+		s64 intervalns;
+		if(owner_task->virt_start_time != 0 ){
 			intervalns = ktime_to_ns(ctx->tintv);
 			ctx->wakeup_time = ctx->wakeup_time + intervalns;
 		}
@@ -662,12 +630,7 @@ static int do_timerfd_gettime(int ufd, struct itimerspec *t)
 				alarm_forward_now(
 					&ctx->t.alarm, ctx->tintv) - 1;
 			alarm_restart(&ctx->t.alarm);
-		} 
-		if(ctx->owner_task && ctx->owner_task->virt_start_time != 0){
-			ctx->wakeup_time = get_dilated_task_time(ctx->owner_task) + ktime_to_ns(ctx->tintv);
-			dilated_hrtimer_start(&ctx->dilated_tmr, ctx->tintv, HRTIMER_MODE_REL);
-		}
-		else {
+		} else {
 			ctx->ticks +=
 				hrtimer_forward_now(&ctx->t.tmr, ctx->tintv)
 				- 1;
@@ -675,14 +638,14 @@ static int do_timerfd_gettime(int ufd, struct itimerspec *t)
 		}
 	}
 
-	if(owner_task && owner_task->virt_start_time != 0) {
+	if(owner_task->virt_start_time != 0) {
 		s64 curr_time = get_dilated_task_time(owner_task);
 		s64 rem_time; 
-		if (ctx->wakeup_time <= curr_time) {
+		if (owner_task->wakeup_time <= curr_time) {
 			rem_time = 0;
 		}
 		else{
-			rem_time = ctx->wakeup_time - curr_time;
+			rem_time = owner_task->wakeup_time - curr_time;
 		}
 		
 		t->it_value = ns_to_timespec(rem_time);
