@@ -16,6 +16,7 @@ build_tracer:
 	 @chmod 777 cmd_sender
 	 @mv tracer /usr/bin
 	 @mv cmd_sender /usr/bin
+	 @cp /usr/local/lib/libperf.so.0 /usr/lib/
 
 build_tracer_debug:
 	@gcc -w -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D DEBUG tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer -lperf -ltkapi
@@ -24,6 +25,7 @@ build_tracer_debug:
 	@chmod 777 cmd_sender
 	@mv tracer /usr/bin
 	@mv cmd_sender /usr/bins
+	@cp /usr/local/lib/libperf.so.0 /usr/lib/
 
 build_tracer_test: 
 	@gcc -w -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D TEST tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer_test -lperf -ltkapi
@@ -32,6 +34,7 @@ build_tracer_test:
 	@chmod 777 cmd_sender
 	@mv tracer_test /usr/bin
 	@mv cmd_sender /usr/bin
+	@cp /usr/local/lib/libperf.so.0 /usr/lib/
 
 clean: 
 	@cd libperf && $(MAKE) clean

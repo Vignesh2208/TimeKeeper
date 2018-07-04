@@ -1,0 +1,13 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libperf 
+Description: A library interfacing with the Linux Kernel Performance Counters subsytem.
+Requires.private:
+Version: 0.1
+URL: https://github.com
+Libs: -L${libdir} -lperf
+Cflags: -I${includedir}/perf -I${libdir}/perf/include
+

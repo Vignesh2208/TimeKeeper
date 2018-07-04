@@ -2,7 +2,7 @@
 
 clean:
 	@rm -f usleep
-	@rm -f integration_test
+	@rm -f usleep_test
 	@rm -f *.txt
 	
 
