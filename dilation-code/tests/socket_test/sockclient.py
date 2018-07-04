@@ -62,12 +62,15 @@ try :
 		amount_received += len(data)
 		print '%s' % data,
 		sys.stdout.flush()
+
+	#while 1 :
+	#	pass
 finally:
 	print >>sys.stderr, 'Closing Socket'
+	#sock.close()	
 	sock.close()
-
-
-
+while 1 :
+	pass
 '''
 # Commonly used flag setes
 READ_ONLY = select.POLLIN | select.POLLPRI | select.POLLHUP | select.POLLERR

@@ -1,7 +1,8 @@
 #!/bin/bash
 
-for i in {1..10}
-do
-	sudo ./integration_test 100 3
-	sleep 1
-done
+sudo ./usleep_test 1 > /tmp/usleep_test.log
+if grep -nr "Succeeded" /tmp/usleep_test.log; then
+	echo "STATUS: COMPLETED. Check Logs at /tmp/usleep_test.log"
+else
+	echo "STATUS: FAILED. Check Logs at /tmp/usleep_test.log"
+fi

@@ -5055,11 +5055,13 @@ static void perf_pending_event(struct irq_work *entry)
 		__perf_event_disable(event);
 	}
 
+	if(event->attr.config == PERF_COUNT_HW_INSTRUCTIONS) {
 	
 	if(event->hw.target != NULL) {
 		tsk = event->hw.target;
 		
 		sample_period = event->attr.sample_period;
+
 		n_ints = (u64) tsk->n_ints;
 		counter_val = perf_event_read_value(event, &enabled, &running);
 
@@ -5107,9 +5109,8 @@ static void perf_pending_event(struct irq_work *entry)
 
 		}
 		tsk->n_ints = 0;
-
 	}
-
+	}
 
 	if (event->pending_wakeup) {
 		event->pending_wakeup = 0;		
@@ -6710,6 +6711,9 @@ static int perf_swevent_match(struct perf_event *event,
 				struct perf_sample_data *data,
 				struct pt_regs *regs)
 {
+	if(!event)
+		return 0;
+	
 	if (event->attr.type != type)
 		return 0;
 

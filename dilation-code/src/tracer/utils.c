@@ -174,17 +174,18 @@ int run_command(char * full_command_str, pid_t * child_pid) {
     		while(args[i] != NULL){
     			if(strcmp(args[i],">>") == 0 || strcmp(args[i],">") == 0){
     				args[i] = '\0';
-    				int fd; /*file descriptor to the file we will redirect ls's output*/
+    				/*file descriptor to the file we will redirect ls's output*/
+    				int fd; 
 
     				if(args[i+1]){
-						if((fd = open(args[i+1], O_RDWR | O_CREAT))==-1){ /*open the file */
+						if((fd = open(args[i+1], O_RDWR | O_CREAT))==-1){ \
 						  perror("open");
 						  exit(-1);
 						}
-
-						dup2(fd,STDOUT_FILENO); /*copy the file descriptor fd into standard output*/
-						//dup2(fd,STDERR_FILENO); /* same, for the standard error */
-						close(fd); /* close the file descriptor as we don't need it more  */
+						/*copy the file descriptor fd into standard output*/
+						dup2(fd,STDOUT_FILENO); 
+						/* close the file descriptor as we don't need it more  */
+						close(fd); 
 					}
     				break;
     			}
@@ -204,10 +205,6 @@ int run_command(char * full_command_str, pid_t * child_pid) {
     	}
 		
 	*child_pid = child;
-	//param.sched_priority = 99;
-	//ret = sched_setscheduler(child, SCHED_RR, &param);
-	//if(ret == 0)
-	//	printf("Priority set successfull\n");
 
 	#ifdef TEST
 	sched_setaffinity(child, sizeof(set), &set);

@@ -171,27 +171,6 @@ GLOBAL(entry_SYSCALL_64_after_swapgs)
 	pushq	%r11				/* pt_regs->r11 */
 	sub	$(6*8), %rsp			/* pt_regs->bp, bx, r12-15 not saved */
 
-	/*ALLOC_PT_GPREGS_ON_STACK
-	SAVE_C_REGS
-	SAVE_EXTRA_REGS
-
-	call	get_current_asm
-	movq TI_ptrace_msteps(%rax), %rcx	// get value of ptrace_msteps of current task in rcx 
-	cmpl %ecx, $0				// if current->ptrace_msteps > 0
-	jle skip
-	movq %rcx, TI_ptrace_msteps(%rax)
-	testl %ecx, %ecx
-	jnz debug_error_exit
-	
-
-skip:
-	RESTORE_EXTRA_REGS
-	RESTORE_C_REGS
-	REMOVE_PT_GPREGS_FROM_STACK 8 */
-
-	//testl	$_TIF_WORK_SYSCALL_ENTRY, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	//jnz	tracesys
-
 	jmp	tracesys
 entry_SYSCALL_64_fastpath:
 #if __SYSCALL_MASK == ~0
@@ -532,10 +511,7 @@ END(irq_entries_start)
 	 */
 	SWAPGS
 
-	call	get_current_asm
-	movq TI_nints(%rax), %rcx	/* get value of n_ints of current task in rcx */
-	incl %ecx
-	movq %rcx, TI_nints(%rax)
+	
 	
 
 	/*
@@ -547,6 +523,17 @@ END(irq_entries_start)
 	 * TRACE_IRQS_OFF is a no-op if lockdep is off.
 	 */
 	TRACE_IRQS_OFF
+
+	/** New **/
+	pushq %rax
+	pushq %rcx
+	call	get_current_asm
+	movq TI_nints(%rax), %rcx	
+	incl %ecx
+	movq %rcx, TI_nints(%rax)
+	popq %rcx
+	popq %rax
+
 
 #ifdef CONFIG_CONTEXT_TRACKING
 	call enter_from_user_mode
@@ -831,10 +818,14 @@ ENTRY(\sym)
 1:
 	call	error_entry
 
+	pushq %rax
+	pushq %rcx
 	call	get_current_asm
-	movq TI_nints(%rax), %rcx	/* increment value of n_ints for current task */
+	movq TI_nints(%rax), %rcx	
 	incl %ecx
 	movq %rcx, TI_nints(%rax)
+	popq %rcx
+	popq %rax
 
 
 	movq	%rsp, %rdi			/* pt_regs pointer */
@@ -926,11 +917,6 @@ ENTRY(\sym)
 	 */
 1:
 	call	debug_error_entry
-
-	/*call	get_current_asm
-	movq TI_nints(%rax), %rcx	
-	incl %ecx
-	movq %rcx, TI_nints(%rax)*/
 
 	call	get_current_asm
 	movq TI_ptrace_msteps(%rax), %rcx	/* get value of ptrace_msteps of current task in rcx */
@@ -1479,11 +1465,7 @@ ENTRY(nmi)
 	pushq	%r14		/* pt_regs->r14 */
 	pushq	%r15		/* pt_regs->r15 */
 
-
-	call	get_current_asm
-	movq TI_nints(%rax), %rcx	/* get value of n_ints of current task in rcx */
-	incl %ecx
-	movq %rcx, TI_nints(%rax)
+	
 
 	/*
 	 * At this point we no longer need to worry about stack damage

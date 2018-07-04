@@ -6,6 +6,6 @@ clean:
 	
 
 build:
-	@gcc socket_test.c -o socket_test -ltkapi
+	@gcc -w socket_test.c -o socket_test -ltkapi
 	@chmod 777 socket_test
 	

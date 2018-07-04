@@ -95,16 +95,6 @@ int main(int argc, char * argv[]){
 
     n_tracers = 2;
 
-    if(n_tracers <= 0 || n_processes_per_tracer <= 0){
-    		printf("Both arguments must be greater than 0");
-    		exit(-1);
-    }
-
-    if(n_tracers > N_MAX_TRACERS){
-    	printf("Max number of Tracers is 100. Resetting\n");
-    	n_tracers = N_MAX_TRACERS;
-    }
-
     sprintf(cmd1, "python %s/sockserver.py", cwd);
     sprintf(cmd2, "python %s/sockclient.py", cwd);
 
@@ -219,9 +209,12 @@ int main(int argc, char * argv[]){
 
     usleep(1000000);
 
-    printf("Progress Experiment for 100 Rounds !\n");
+    printf("Progress Experiment for 2000 Rounds !\n");
     fflush(stdout);
-    progress_n_rounds(2000);
+    for(i = 0; i < 2000; i++){
+      printf("%d,", i);
+      progress_n_rounds(1);
+    }
     fflush(stdout);
     printf("Stopping Experiment ... \n");
     fflush(stdout);

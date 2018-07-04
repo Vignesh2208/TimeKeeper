@@ -7,7 +7,7 @@ clean:
 
 
 build:
-	@gcc alarm_test.c -o alarm_test -ltkapi
-	@gcc alarm.c -o cmd
+	@gcc -w alarm_test.c -o alarm_test -ltkapi
+	@gcc -w alarm.c -o cmd
 	@chmod 777 alarm_test
 	@chmod 777 cmd

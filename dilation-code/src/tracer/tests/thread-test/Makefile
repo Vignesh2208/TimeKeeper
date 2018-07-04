@@ -6,7 +6,7 @@ clean:
 
 
 build:
-	@gcc thread_test.c -o thread_test -lpthread
+	@gcc -w thread_test.c -o thread_test -lpthread
 	@echo ${current_dir}/thread_test > cmds.txt
 	chmod 777 thread_test
 

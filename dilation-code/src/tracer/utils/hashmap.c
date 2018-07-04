@@ -22,14 +22,6 @@ int default_key_comparer(void * key1, void * key2){
 int int_key_comparer(int * key1, int * key2){
 	
 	if(key1 == NULL || key2 == NULL) {
-		/*if(key1 == NULL && key2 != NULL) {
-			printk(KERN_INFO "LLIST Key1 NULL, Key2 = %d\n", *key2);
-		}
-		
-		if(key2 == NULL && key1 != NULL) {
-			printk(KERN_INFO "LLIST Key2 NULL, Key1 = %d\n", *key1);
-		}*/
-	
 		return 1;
 	}
 	

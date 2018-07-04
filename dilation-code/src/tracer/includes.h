@@ -65,6 +65,10 @@
 #define PTRACE_BREAK_WAITPID_FLAG	2
 #define PTRACE_ENTER_FORK_FLAG		3
 
+#define INFO 0
+#define WARNING 1
+#define FATAL 2
+
 
 #define   test_bit(_n,_p)     !! ( _n & ( 1u << _p))
 

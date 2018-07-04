@@ -8,7 +8,7 @@ clean:
 
 
 build:
-	@gcc -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${tracer_dir}/utils insn_tester.c ${tracer_dir}/utils/linkedlist.c ${tracer_dir}/utils/hashmap.c -o insn_tester -lperf
+	@gcc -w -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${tracer_dir}/utils insn_tester.c ${tracer_dir}/utils/linkedlist.c ${tracer_dir}/utils/hashmap.c -o insn_tester -lperf
 	@gcc test.c -o test
 	@echo ${current_dir}/test > cmds.txt
 	@chmod 777 test

@@ -223,6 +223,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 	s64 undialated_time_ns = timeval_to_ns(&curr_tv);
 	//s64 boottime = 0;
 
+	
 	set_current_state(TASK_RUNNING);
 	current_task = current;
 
@@ -254,7 +255,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock, struct timespe
 		return 0;						
 	}
 	release_irq_lock(&syscall_lookup_lock,flags);
-
+	
 	return ref_sys_clock_gettime(which_clock,tp);
 
 }

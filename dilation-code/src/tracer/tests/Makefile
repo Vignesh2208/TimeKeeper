@@ -7,6 +7,7 @@ build:
 	@cd socket-test && $(MAKE) build;
 	@cd vfork-test && $(MAKE) clean && $(MAKE) build;
 	@cd thread-test && $(MAKE) clean && $(MAKE) build;
+	@cd repeatability-test && $(MAKE) clean && $(MAKE) build;
 
 run_repeatability_test:
 	@@cd repeatability-test && $(MAKE) start

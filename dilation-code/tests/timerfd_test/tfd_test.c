@@ -218,7 +218,7 @@ int main(int argc, char * argv[]){
 
    usleep(1000000);
 
-   printf("Progress Experiment for 100 Rounds !\n");
+   printf("Progress Experiment for 100000 Rounds !\n");
    fflush(stdout);
    progress_n_rounds(100000);
    fflush(stdout);

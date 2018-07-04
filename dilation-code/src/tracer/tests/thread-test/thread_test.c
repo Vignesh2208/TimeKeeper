@@ -7,15 +7,7 @@
     long tid;
     int i = 0;
     int child;
-    tid = (long)threadid;
-
-//    child = fork();
-
-//    if(child == 0) {
-//	fprintf(stderr,"Hello World! It'me forked process inside thread #%ld!\n", tid);
-//	exit(0);
-//    }
-	
+    tid = (long)threadid;	
     fprintf(stderr,"Hello World! It's me, thread #%ld!\n", tid);
     fflush(stdout);
     pthread_exit(NULL);
@@ -42,7 +34,7 @@
     printf("In main: Before join\n");
     /* Last thing that main() should do */
     for(t=0; t<NUM_THREADS; t++) {
-	pthread_join(threads[t], NULL);
+	     pthread_join(threads[t], NULL);
     }
 
     printf("In main: Finishing\n");

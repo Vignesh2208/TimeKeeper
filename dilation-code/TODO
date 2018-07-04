@@ -1,5 +1,9 @@
+1. Alarm Test has a bug which needs to be fixed. The alarm mechanism is not working reliably under TimeKeeper. Need to look at the kernel/time/hrtimer.c file.
 
-1. There is some weird nvidid-384 module build error during compilation  which can be read in this file:
+2. nmi counting was disabled in arc/x86/entry/entry64.S to make Socket-Test Pass. Need to figure out the root cause/design another mechanism to enable
+   nmi counting. NMI counting may not be necessary because repeatability-test passes
+
+2. There is some weird nvidid-384 module build error during compilation  which can be read in this file:
 /var/lib/dkms/nvidia-384/384.111/build/make.log
 
 The error states:
@@ -11,9 +15,9 @@ make[3]: *** No rule to make target '/Kbuild'.  Stop
 
 
 
-2. There is also a forking problem which occurs during compilation. It causes fork() resource to be temporarily unavailable sometimes. 
+3. There is also a forking problem which occurs during compilation. It causes fork() resource to be temporarily unavailable sometimes. 
 Need to check if this is because of any of the kernel modifications.
 
 
 
-3. Disable module verification during kernel compilation in the menu config state.
+4. Disable module verification during kernel compilation in the menu config state.

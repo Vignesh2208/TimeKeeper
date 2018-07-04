@@ -47,7 +47,7 @@ struct sched_param param;
 #define TID_NOT_MONITORED 10
 
 #define SUCCESS 1
-#define FAIL 0
+#define FAIL -1
 #define PTRACE_MULTISTEP 0x42f0
 #define PTRACE_GET_REM_MULTISTEP 0x42f1
 #define PTRACE_SET_REM_MULTISTEP 0x42f2
@@ -139,32 +139,28 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 			}
 				
 		}
-                i++;
-        }
+        i++;
+    }
 	full_command_str[i] = NULL;
 
 	
 	child = fork();
-    	if (child == (pid_t)-1) {
-        	fprintf(stderr, "fork() failed: %s.\n", strerror(errno));
-        	exit(-1);
-    	}
+	if (child == (pid_t)-1) {
+    	fprintf(stderr, "fork() failed: %s.\n", strerror(errno));
+    	exit(-1);
+	}
 
-    	if (!child) {
+	if (!child) {
 		ptrace(PTRACE_TRACEME,0,NULL, NULL);
-        	fflush(stdout);
-        	fflush(stderr);
-        	execvp(args[0], &args[0]);
+		fflush(stdout);
+		fflush(stderr);
+		execvp(args[0], &args[0]);
 		free(args);
-        	exit(2);
-    	}
+		exit(2);
+	}
 		
 	*child_pid = child;
 	param.sched_priority = 99;
-	//ret = sched_setscheduler(child, SCHED_RR, &param);
-	//if(ret == 0)
-	//	printf("Priority set successfull\n");
-
 	cpu_set_t set;
 	CPU_ZERO(&set);
 	CPU_SET(0, &set);
@@ -189,16 +185,15 @@ int flush_buffer(char * buf, int len) {
 void init_msg_buffer(struct nlmsghdr *nlh, struct sockaddr_nl * dst_addr) {
 
 	memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
-    	nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
-    	nlh->nlmsg_pid = getpid();
-    	nlh->nlmsg_flags = 0;
+	nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
+	nlh->nlmsg_pid = getpid();
+	nlh->nlmsg_flags = 0;
 	iov.iov_base = (void *)nlh;
-    	iov.iov_len = nlh->nlmsg_len;
-    	msg.msg_name = (void *)dst_addr;
-    	msg.msg_namelen = sizeof(*dst_addr);
-    	msg.msg_iov = &iov;
-    	msg.msg_iovlen = 1;
-
+	iov.iov_len = nlh->nlmsg_len;
+	msg.msg_name = (void *)dst_addr;
+	msg.msg_namelen = sizeof(*dst_addr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
 }
 
 
@@ -243,7 +238,6 @@ void setup_all_traces(llist * active_tids) {
 		if(errno == ESRCH) {
 			printf("Child is dead. Removing from active tids ...\n");
 			llist_remove(active_tids, tid);
-
 		}
 		else{
 			if(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
@@ -252,13 +246,9 @@ void setup_all_traces(llist * active_tids) {
 				if(errno == ESRCH)
 					printf("Error setting ptrace options\n");
 			}
-
 		}
-		
 		head = head->next;		
-		
 	}
-
 }
 
 
@@ -292,7 +282,6 @@ unsigned long wait_for_ptrace_events(llist * active_tids, pid_t pid, unsigned lo
 	} while(ret == (pid_t) - 1 && errno == EINTR);
 
 	if((pid_t)ret != pid){
-		// Check if errno == SPECIAL SIGNAL HERE. If so, query the process structure to determine if this is a syscall enter. return TID_SYSCALL_ENTER
 		if(errno == EBREAK_SYSCALL){
 			printf("Waitpid: Breaking out. Process entered blocking syscall\n");
 			return SUCCESS;
@@ -323,10 +312,10 @@ unsigned long wait_for_ptrace_events(llist * active_tids, pid_t pid, unsigned lo
 		else if(status >>8 == (SIGTRAP | PTRACE_EVENT_CLONE << 8)) {
 		
 			ptrace(PTRACE_GETEVENTMSG, NULL, new_pid);
-                        printf("Detected new cloned thread with tid: %d. Setting trace options.\n", *new_pid);
+			printf("Detected new cloned thread with tid: %d. Setting trace options.\n", *new_pid);
 			ptrace(PTRACE_SETOPTIONS, (pid_t)*new_pid, NULL, PTRACE_O_EXITKILL | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEFORK);
-		        llist_append(active_tids, new_pid);
-                        return SUCCESS;
+			llist_append(active_tids, new_pid);
+			return SUCCESS;
 		}
 		else if(status >>8 == (SIGTRAP | PTRACE_EVENT_EXIT << 8)) {
 			printf("Detected process exit for : %d\n", pid);
@@ -338,13 +327,8 @@ unsigned long wait_for_ptrace_events(llist * active_tids, pid_t pid, unsigned lo
 
 			uint64_t counter = libperf_readcounter(pd,LIBPERF_COUNT_HW_INSTRUCTIONS);/* obtain counter value */
 			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);/* disable HW counter */
-			//fprintf(stdout, "N HW instructions counter read: %"PRIu64"\n", counter); /* printout */
-
-          		libperf_finalize(pd, 0); /* log all counter values */
-			//printf("Single step completed for Process : %d\n", pid);
+			libperf_finalize(pd, 0); /* log all counter values */
 			ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-			//printf("Rip: %lX\n\n", regs.rip);
-			
 			if(ret == -1){
 				printf("ERROR in GETREGS.\n");
 				return FAIL;
@@ -403,23 +387,17 @@ int run_commanded_process(llist * active_tids, pid_t pid, int n_instructions){
 			pd = libperf_initialize((int)pid,0); /* init lib */
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
-			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (unsigned long *)&n_insns);
-			ret = ptrace(PTRACE_MULTISTEP, pid, 0, (unsigned long *)&n_insns);
-			//sprintf(buffer, "PTRACE RESUMING process. ret = %d, error_code = %d",ret,errno);
-			//print_curr_time(buffer);		
+			ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (unsigned long *)&n_insns);
+			ptrace(PTRACE_MULTISTEP, pid, 0, (unsigned long *)&n_insns);		
 		}
 		else{
-
 			n_insns = n_insns - 500;
 			pd = libperf_initialize((int)pid,0); /* init lib */
 			libperf_ioctlrefresh(pd, LIBPERF_COUNT_HW_INSTRUCTIONS, (uint64_t )n_insns);
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); /* enable HW counter */
 			libperf_enablecounter(pd, LIBPERF_COUNT_SW_CONTEXT_SWITCHES); /* enable CONTEXT SWITCH counter */
-			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (unsigned long *)&n_insns);
-			ret = ptrace(PTRACE_CONT, pid, 0, 0);
-			//sprintf(buffer, "PTRACE RESUMING process. error_code = %d",errno);
-			//print_curr_time(buffer);
-
+			ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (unsigned long *)&n_insns);
+			ptrace(PTRACE_CONT, pid, 0, 0);
 		}
 		
 		if(ret == -1)
@@ -466,12 +444,8 @@ int main(int argc, char * argv[]){
 	unsigned long ret1, ret2;
 
 	srand(time(NULL));   // should only be called once
-
-
-	
 	llist_init(&active_tids);
 	llist_set_equality_checker(&active_tids,llist_elem_comparer);
-
 	printf("My Pid: %d\n", (pid_t)getpid());
  
 	
@@ -482,60 +456,49 @@ int main(int argc, char * argv[]){
         	fprintf(stderr, "\n");
         	fprintf(stderr, "This program executes all COMMANDs specified in the CMD file path in trace mode\n");
         	fprintf(stderr, "\n");
-        	return 1;
+        	return FAIL;
     	}
 
 
 	sock_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_USERSOCK);
-    	if (sock_fd < 0){
+	if (sock_fd < 0){
 		printf("SOCKET Error\n");
-        	return -1;
-
+    	return FAIL;
 	}
 
-    	memset(&src_addr, 0, sizeof(src_addr));
-    	src_addr.nl_family = AF_NETLINK;
-    	src_addr.nl_pid = getpid(); /* self pid */
+	memset(&src_addr, 0, sizeof(src_addr));
+	src_addr.nl_family = AF_NETLINK;
+	src_addr.nl_pid = getpid(); /* self pid */
 
 	bind(sock_fd, (struct sockaddr *)&src_addr, sizeof(src_addr));
-
-    	memset(&dest_addr, 0, sizeof(dest_addr));
-    	memset(&dest_addr, 0, sizeof(dest_addr));
-    	dest_addr.nl_family = AF_NETLINK;
-    	dest_addr.nl_pid = 1234; /* For Linux Kernel */
+	memset(&dest_addr, 0, sizeof(dest_addr));
+	memset(&dest_addr, 0, sizeof(dest_addr));
+	dest_addr.nl_family = AF_NETLINK;
+	dest_addr.nl_pid = 1234; /* For Linux Kernel */
    	dest_addr.nl_groups = 0; /* unicast */
-
 	nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
 	if(!nlh) {
 		printf("Message space allocation failure\n");
-		exit(-1);
+		exit(FAIL);
 	}
-
 
 
 	cmd_file_path = argv[1];
 	fp = fopen(cmd_file_path,"r");
 	if(fp == NULL) 
-		exit(-1);
+		exit(FAIL);
 
 	while ((read = getline(&line, &len, fp)) != -1) {
-        	printf("Running Command: %s", line);
+        printf("Starting Command: %s", line);
 		run_command(line, &cmd_pid[0]);
 		llist_append(&active_tids, &cmd_pid[0]);
-
 		run_command(line, &cmd_pid[1]);
 		llist_append(&active_tids, &cmd_pid[1]);
-    	}
+   	}
 
 	setup_all_traces(&active_tids);
 	ret_acc = 0;
 	while(n_cmds < 100) {
-
-		
-		//get_next_command(sock_fd, &dest_addr, &msg,  nlh, &n_insns);
-		//if(n_insns == -1)
-		//	break;
-
 
 		n_insns = rand() % n_max_insns; 
 
@@ -547,12 +510,12 @@ int main(int argc, char * argv[]){
 
 		if(ret1 == 0 || ret2 == 0){
 		  printf("TEST FAILED. Couldn't run command\n");
-		  return 0;
+		  return FAIL;
 		}
 
 		if(ret1 != ret2) {
 		  	printf("TEST FAILED. Command = %d, ret1  = %lX, ret2 = %lX\n", n_insns, ret1, ret2);
-			return 0;
+			return FAIL;
 		}
 		else{
 			printf("COMMAND SUCCEEDED. Cmd = %d, Result = %lX\n", n_insns, ret1);
@@ -561,9 +524,7 @@ int main(int argc, char * argv[]){
 		n_cmds ++;
 		
 	}
-
-	printf("TEST SUCCESS.\n");
-		
-	return 0;
+	printf("TEST SUCCESS.\n");	
+	return SUCCESS;
 
 }

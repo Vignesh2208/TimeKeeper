@@ -4,7 +4,7 @@ clean:
 	@rm -f test > /dev/null
 
 build:
-	@gcc test.c -o test 
+	@gcc -w test.c -o test 
 	chmod 777 test
 
 run:

@@ -7,8 +7,8 @@ clean:
 	
 
 build:
-	@gcc usleep_test.c -o usleep_test -ltkapi
-	@gcc usleep.c -o usleep
+	@gcc -w usleep_test.c -o usleep_test -ltkapi
+	@gcc -w usleep.c -o usleep
 	@chmod 777 usleep_test
 	@chmod 777 usleep
 	

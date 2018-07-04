@@ -4,7 +4,7 @@ clean:
 	@rm -f vfork_test > /dev/null
 
 build:
-	@gcc vfork_test.c -o vfork_test
+	@gcc -w vfork_test.c -o vfork_test
 	@echo ${current_dir}/vfork_test > cmds.txt
 	chmod 777 vfork_test
 

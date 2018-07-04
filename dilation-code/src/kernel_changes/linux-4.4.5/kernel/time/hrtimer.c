@@ -164,10 +164,6 @@ int enqueue_dilated_hrtimer(struct hrtimer_dilated *timer,
 			   struct hrtimer_dilated_clock_base *base)
 {
 
-	if(timer->state & HRTIMER_STATE_ENQUEUED){
-		trace_printk("Dilated hrtimer not enqueued. pid: %d\n", current->pid);
-		return;
-	}
 	timer->state = HRTIMER_STATE_ENQUEUED;
 	return timerqueue_add(&base->active, &timer->node);
 }
@@ -1373,14 +1369,48 @@ void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 	struct hrtimer_clock_base *base, *new_base;
 	unsigned long flags;
 	int leftmost;
+	ktime_t duration;
+	ktime_t tmp;
 
 	base = lock_hrtimer_base(timer, &flags);
 
 	/* Remove an active timer from the queue: */
 	remove_hrtimer(timer, base, true);
 
-	if (mode & HRTIMER_MODE_REL)
+	if (mode & HRTIMER_MODE_REL){
+		duration.tv64 = tim.tv64;
 		tim = ktime_add_safe(tim, base->get_time());
+	}
+
+	#ifdef CONFIG_TIMER_STATS
+	/* Not matter what function is called to set the expiry time (through any of the expires api in hrtimer.h), this function is the only entry point to start the timer 
+	 * So we can always get the most up to date run duration in virtual time at this location. We compute the duration to run by looking at the difference between
+	 * current expiry time and current system clock time which are both in real time. We simply treat this difference as the amount by which the timer should sleep in virtual time
+	 */
+	if(current->virt_start_time != 0){
+		tmp = base->get_time();
+		if(tim.tv64 > tmp.tv64 && (mode & HRTIMER_MODE_REL)){
+			//duration.tv64 = tim.tv64 - tmp.tv64;
+			current->wakeup_time = current->freeze_time + duration.tv64;
+			tim.tv64 = tmp.tv64 + 100000;
+			trace_printk("RELATIVE Dilated Hrtimer, Duration : %llu, Wakeup time : %llu, Curr virt time: %llu\n", duration.tv64, current->wakeup_time, current->freeze_time);
+		}
+		else{
+			//duration.tv64 = 0;
+			if(mode & HRTIMER_MODE_REL){ //wakeup immediately because tim.tv64 > tmp.tv64 and mode is REL
+				current->wakeup_time = current->freeze_time;
+				tim.tv64 = current->wakeup_time;
+			}
+			else { //else mode is abs => tim.tv64 should have the correct virtual wakeup time.
+				current->wakeup_time = tim.tv64;
+				trace_printk("ABSOLUTE Dilated Hrtimer, Wakeup time: %llu, Curr virt time: %llu\n", current->wakeup_time, current->freeze_time);
+			}
+		}
+
+		trace_printk("Hrtimer for dilated: Wakeup time: %llu, PID: %d\n", current->wakeup_time, current->pid);
+		timer->start_pid = current->pid;	
+	}
+	#endif
 
 	tim = hrtimer_update_lowres(timer, tim, mode);
 
@@ -1600,6 +1630,17 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 {
 	enum hrtimer_restart (*fn)(struct hrtimer *);
 	int restart;
+	struct task_struct * calling_task = NULL;
+	ktime_t duration;
+	ktime_t tmp;
+
+	#ifdef CONFIG_TIMER_STATS
+	if(timer->start_pid > 0)
+	calling_task = pid_task(find_vpid(timer->start_pid), PIDTYPE_PID);
+
+	if(calling_task != NULL && calling_task->virt_start_time == 0)
+		calling_task = NULL;
+	#endif
 
 	lockdep_assert_held(&cpu_base->lock);
 
@@ -1634,7 +1675,32 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 	 */
 	raw_spin_unlock(&cpu_base->lock);
 	trace_hrtimer_expire_entry(timer, now);
-	restart = fn(timer);
+	if(calling_task != NULL && calling_task->virt_start_time != 0 && calling_task->wakeup_time > calling_task->freeze_time) // calling task is dilated and not ready to be woken yet
+	{
+		restart = HRTIMER_RESTART; //note we do not actually call the function here.
+		hrtimer_forward_now(timer, ns_to_ktime(100000)); // wakeup time should not change.
+		//trace_printk("Hrtimer for dilated. Forwarding by 100us. Pid: %d, Curr time: %llu, Wakeup time =  %llu\n", calling_task->pid, calling_task->freeze_time, calling_task->wakeup_time);
+	}
+	else{
+		restart = fn(timer);
+
+		if(base){
+			tmp = base->get_time();
+
+			if(calling_task != NULL && calling_task->virt_start_time != 0 && restart == HRTIMER_RESTART){
+				if(timer->_softexpires.tv64 > tmp.tv64){
+					duration.tv64 = timer->_softexpires.tv64 - tmp.tv64;
+					calling_task->wakeup_time = calling_task->freeze_time + duration.tv64; 
+					trace_printk("Executed Hrtimer dilated RESTART fn. Pid: %d, Curr time: %llu, New Wakeup time: %llu\n", calling_task->pid, calling_task->freeze_time, calling_task->wakeup_time);
+				}
+				else {
+					calling_task->wakeup_time = calling_task->freeze_time; // wakeup immediately.
+					trace_printk("Executed Hrtimer. Restart immediately. Pid: %d, Curr time: %llu\n", calling_task->pid, calling_task->freeze_time);
+				}
+
+			}
+		}
+	}
 	trace_hrtimer_expire_exit(timer);
 	raw_spin_lock(&cpu_base->lock);
 
@@ -1648,8 +1714,17 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 	 * for us already.
 	 */
 	if (restart != HRTIMER_NORESTART &&
-	    !(timer->state & HRTIMER_STATE_ENQUEUED))
+	    !(timer->state & HRTIMER_STATE_ENQUEUED)){
 		enqueue_hrtimer(timer, base);
+
+	}
+	else if(restart == HRTIMER_NORESTART){
+		#ifdef CONFIG_TIMER_STATS
+		if(calling_task != NULL && calling_task->virt_start_time > 0){
+			calling_task->wakeup_time = 0; // reset wakeup time
+		}
+		#endif
+	}
 
 	/*
 	 * Separate the ->running assignment from the ->state assignment.

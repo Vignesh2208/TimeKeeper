@@ -38,9 +38,6 @@ void main() {
 	print_curr_time();
 	while(i < 50000000) {
 		i++;
-		/*if(i % 1000000 == 0){		
-			break;
-		}*/
 	}
 	print_curr_time();
 	fprintf(stderr, "GoodBye World\n");
