@@ -73,7 +73,7 @@ void print_curr_time(char * str) {
   tm_info = localtime(&tv.tv_sec);
 
   strftime(buffer, 26, "%Y:%m:%d %H:%M:%S", tm_info);
-  LOG("%s.%03d >> %s\n", buffer, millisec, str);
+  LOG(">> %s.%03d >> %s\n", buffer, millisec, str);
   fflush(stdout);
 
 

@@ -146,23 +146,20 @@ int main(int argc, char * argv[]){
 
 
     pid_t child;
-    char tracer_id[5];
-    char rel_cpu_speed[5];
+    char tracer_id[10];
+    char rel_cpu_speed[10];
     char n_round_insns[15];
-    char create_spinner[5];
 
 
     for(i = 0 ; i < n_tracers; i++){
 
-    		flush_buffer(tracer_id,5);
-    		flush_buffer(rel_cpu_speed,5);
+    		flush_buffer(tracer_id,10);
+    		flush_buffer(rel_cpu_speed,10);
     		flush_buffer(n_round_insns,15);
-    		flush_buffer(create_spinner,5);
 
-    		sprintf(tracer_id,"%d",i);
-    		sprintf(rel_cpu_speed,"%d",1);
-    		sprintf(n_round_insns,"%d",test_n_insns);
-    		sprintf(create_spinner, "%d", 0);
+    		sprintf(tracer_id,"-i %d",i);
+    		sprintf(rel_cpu_speed,"-r %d",1);
+    		sprintf(n_round_insns,"-n %d",test_n_insns);
 
     		child = fork();
       	if (child == (pid_t)-1) {
@@ -175,7 +172,7 @@ int main(int argc, char * argv[]){
           	fflush(stderr);
 
 
-          	execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, cmds_file[i], rel_cpu_speed, n_round_insns,create_spinner, (char *)NULL);
+          	execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, "-f", cmds_file[i], rel_cpu_speed, n_round_insns, (char *)NULL);
           	fflush(stdout);
           	fflush(stderr);
           	exit(2);

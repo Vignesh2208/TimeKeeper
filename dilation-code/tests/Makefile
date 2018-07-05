@@ -12,8 +12,11 @@ clean:
 	@cd timerfd_test && make clean
 	@cd alarm_test && make clean
 	@cd producer_consumer_test && make clean
+	@rm -f /usr/bin/run_test
 
 build:
+	@gcc -w run_test.c -o run_test -ltkapi
+	@mv run_test /usr/bin
 	@cd integration_test && make build
 	@cd usleep_test && make build
 	@cd socket_test && make build

@@ -28,7 +28,7 @@ build_tracer_debug:
 	@cp /usr/local/lib/libperf.so.0 /usr/lib/
 
 build_tracer_test: 
-	@gcc -w -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D TEST tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer_test -lperf -ltkapi
+	@gcc -w -I/usr/local/include/perf -I/usr/local/lib/perf/include -I${current_dir}/utils -D TEST -D DEBUG_VERBOSE tracer.c utils.c utils/linkedlist.c utils/hashmap.c -o tracer_test -lperf -ltkapi
 	@gcc  -w tests/cmd_sender.c -o cmd_sender
 	@chmod 777 tracer_test
 	@chmod 777 cmd_sender

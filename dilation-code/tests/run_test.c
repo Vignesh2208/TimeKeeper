@@ -64,12 +64,13 @@ int main(int argc, char * argv[]){
 	pid_t ret_val;
 	int n_exited_tracers = 0;
 	int status;
-	int test_n_insns = 1000000;
+	int test_n_insns;
+  int num_progress_rounds;
 
-	if (argc < 3 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+	if (argc < 5 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "\n");
     	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
-    	fprintf(stderr,	"		%s NUMBER_OF_TRACERS NUM_PROCESSES_PER_TRACER\n", argv[0]);
+    	fprintf(stderr,	"		%s NUMBER_OF_TRACERS NUM_PROCESSES_PER_TRACER NUM_PROGRESS_ROUNDS NUM_INSNS_PER_ROUND\n", argv[0]);
     	fprintf(stderr, "\n");
     	fprintf(stderr, "This program spanws N tracers\n");
     	fprintf(stderr, "\n");
@@ -94,11 +95,23 @@ int main(int argc, char * argv[]){
        perror("getcwd() error");
 
 
-   sprintf(cwd + strlen(cwd), "%s", argv[0] + 1);
-   printf("Script dir: %s\n", cwd);
+   //sprintf(cwd + strlen(cwd), "%s", argv[0] + 1);
+   //printf("Script dir: %s\n", cwd);
 
    n_tracers = atoi(argv[1]);
    n_processes_per_tracer = atoi(argv[2]);
+   num_progress_rounds = atoi(argv[3]);
+   test_n_insns = atoi(argv[4]);
+
+   if(num_progress_rounds <= 0 ){
+    printf("Num progress rounds must be positive\n");
+    exit(-1);
+   }
+
+   if(test_n_insns <= 0 ){
+    printf("Num insns per round must be positive\n");
+    exit(-1);
+   }
 
    if(n_tracers <= 0 || n_processes_per_tracer <= 0){
    		printf("Both arguments must be greater than 0");
@@ -128,9 +141,7 @@ int main(int argc, char * argv[]){
 	   		printf("Error opening cmds file for Tracer: %d\n",i);
 	   		exit(-1);
 	   	}
-
 	   	for(j = 0 ; j < n_processes_per_tracer; j++){
-	   		//fwrite( cmd, 1 , sizeof(cmd) , fp );
 	   		fprintf(fp,"%s",cmd);
 	   	}
 
@@ -152,26 +163,25 @@ int main(int argc, char * argv[]){
 
    
    pid_t child;
-   char tracer_id[5];
-   char rel_cpu_speed[5];
+   char tracer_id[10];
+   char rel_cpu_speed[10];
    char n_round_insns[15];
-   char create_spinner[5];
+   int create_spinner = 0;
    
 
    for(i = 0 ; i < n_tracers; i++){
 
-   		flush_buffer(tracer_id,5);
-   		flush_buffer(rel_cpu_speed,5);
+   		flush_buffer(tracer_id,10);
+   		flush_buffer(rel_cpu_speed,10);
    		flush_buffer(n_round_insns,15);
-   		flush_buffer(create_spinner,5);
 
-   		sprintf(tracer_id,"%d",i);
-   		sprintf(rel_cpu_speed,"%d",1);
-   		sprintf(n_round_insns,"%d",test_n_insns);
+   		sprintf(tracer_id,"-i %d",i);
+   		sprintf(rel_cpu_speed,"-r %d",1);
+   		sprintf(n_round_insns,"-n %d",test_n_insns);
    		if(i < 10)
-   			sprintf(create_spinner, "%d", 1);
+   			create_spinner = 1;
    		else
-   			sprintf(create_spinner, "%d", 0);
+   			create_spinner = 0;
 
    		child = fork();
     	if (child == (pid_t)-1) {
@@ -183,8 +193,10 @@ int main(int argc, char * argv[]){
         	fflush(stdout);
         	fflush(stderr);
 
-
-        	execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, cmds_file[i], rel_cpu_speed, n_round_insns,create_spinner, (char *)NULL);
+          if(create_spinner)
+        	   execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, "-f", cmds_file[i], rel_cpu_speed, n_round_insns,"-s", (char *)NULL);
+          else
+             execl("/usr/bin/tracer", "/usr/bin/tracer", tracer_id, "-f", cmds_file[i], rel_cpu_speed, n_round_insns, (char *)NULL);
         	fflush(stdout);
         	fflush(stderr);
         	exit(2);
@@ -210,7 +222,6 @@ int main(int argc, char * argv[]){
    		printf("Sync and Freeze Failed. Retrying in 1 sec\n");
       fflush(stdout);
    		usleep(1000000);
-   		//exit(-1);
    }
 
    printf("Synchronize and Freeze succeeded !\n");
@@ -218,9 +229,9 @@ int main(int argc, char * argv[]){
 
    usleep(1000000);
 
-   printf("Progress Experiment for 100000 Rounds !\n");
+   printf("Progress Experiment for %d Rounds !\n",num_progress_rounds);
    fflush(stdout);
-   progress_n_rounds(1000);
+   progress_n_rounds(num_progress_rounds);
    fflush(stdout);
    printf("Stopping Experiment ... \n");
    fflush(stdout);

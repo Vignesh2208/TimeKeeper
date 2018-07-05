@@ -10,7 +10,7 @@ build:
 
 run:
 	@echo "Starting Vfork Test ..."
-	tracer_test 0 cmds.txt
+	tracer_test -f cmds.txt
 	@echo "VFork test Finished ..."
 
 start: run

@@ -10,7 +10,7 @@ build:
 run:
 	@echo "Starting Sleep Test ..."
 	@echo ${current_dir}/test > cmds.txt
-	tracer_test 0 cmds.txt
+	tracer_test -f cmds.txt
 
 	@echo "Sleep Test Finished ..."
 

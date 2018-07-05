@@ -18,9 +18,6 @@ run:
 	@echo Starting Repeatability Test ...
 	@echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 	./insn_tester cmds.txt
-
 	@echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
-
 	@echo Repeatability Test Finished ...
 
-start: run

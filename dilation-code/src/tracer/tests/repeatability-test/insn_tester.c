@@ -525,6 +525,6 @@ int main(int argc, char * argv[]){
 		
 	}
 	printf("TEST SUCCESS.\n");	
-	return SUCCESS;
+	return 0;
 
 }

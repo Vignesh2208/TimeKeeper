@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #define _GNU_SOURCE
 #include <sched.h>
+#include <getopt.h>
 
 #define TK_IOC_MAGIC  'k'
 #define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
@@ -182,10 +183,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 		// check for different types of events and determine whether this is a system call stop
 		// detected fork or clone event. get new tid.
 		if(status >>8 == (SIGTRAP | PTRACE_EVENT_CLONE << 8) || status >>8 == (SIGTRAP | PTRACE_EVENT_FORK << 8)) {
-		
-			
-			
-
+							
 			ret = ptrace(PTRACE_GETEVENTMSG,pid, NULL, (u32*)&new_child_pid);
 			status = 0;
 			do{
@@ -300,7 +298,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 
 		libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);			
         libperf_finalize(pd, 0);
-        /*
+        
         if(WIFSTOPPED(status) && WSTOPSIG(status) >= SIGUSR1 && WSTOPSIG(status) <= SIGALRM ){
 			printf("Received Signal: %d\n", WSTOPSIG(status));
 			errno = 0;
@@ -322,8 +320,7 @@ int wait_for_ptrace_events(hashmap * tracees, llist * tracee_list, pid_t pid, st
 			goto retry;
 
 			
-		} 
-		*/	
+		} 	
 	}
 
 
@@ -410,7 +407,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			libperf_enablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS); //enable HW counter
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
 
-			LOG("PTRACE RESUMING MULTI-STEPPING OF process. ret = %d, error_code = %d",ret,errno);
+			LOG("PTRACE RESUMING MULTI-STEPPING OF process. ret = %d, error_code = %d, pid = %d, n_insns = %d\n",ret,errno, pid, n_insns);
 
 			#ifdef DEBUG_VERBOSE
 			sprintf(buffer, "PTRACE RESUMING MULTI-STEPPING OF process. ret = %d, error_code = %d",ret,errno);
@@ -528,6 +525,24 @@ void write_results(int fp, char * command){
   #endif
 }
 
+void print_usage_normal_mode(int argc, char* argv[]){
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
+	fprintf(stderr,	"		%s -i TRACER_ID [-f CMDS_FILE_PATH or -c \"CMD with args\"] -r RELATIVE_CPU_SPEED -n N_ROUND_INSTRUCTIONS -s CREATE_SPINNER\n", argv[0]);
+	fprintf(stderr, "\n");
+	fprintf(stderr, "This program executes all COMMANDs specified in the CMD file path or the specified CMD with arguments in trace mode under the control of TimeKeeper\n");
+	fprintf(stderr, "\n");
+}
+
+void print_usage_test_mode(int argc, char* argv[]) {
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
+	fprintf(stderr,	"		%s [-f CMDS_FILE_PATH or -c \"CMD with args\"]\n", argv[0]);
+	fprintf(stderr, "\n");
+	fprintf(stderr, "This program executes all COMMANDs specified in the CMD file path in trace mode\n");
+	fprintf(stderr, "\n");
+}
+
 
 int main(int argc, char * argv[]){
 
@@ -560,37 +575,66 @@ int main(int argc, char * argv[]){
 	pid_t spinned_pid;
 	int cmd_no = 0;
 	FILE* fp1;
-
+	int option = 0;
+	int read_from_file = 1;
 
 	hmap_init(&tracees, 1000);
 	llist_init(&tracee_list);
 	llist_set_equality_checker(&tracee_list,llist_elem_comparer);
  
 
-	#ifndef TEST	
+	#ifndef TEST
+
 	if (argc < 6 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-        fprintf(stderr, "\n");
-    	fprintf(stderr, "Usage: %s [ -h | --help ]\n", argv[0]);
-    	fprintf(stderr,	"		%s TRACER_ID CMDS_FILE_PATH RELATIVE_CPU_SPEED N_ROUND_INSTRUCTIONS CREATE_SPINNER\n", argv[0]);
-    	fprintf(stderr, "\n");
-    	fprintf(stderr, "This program executes all COMMANDs specified in the CMD file path in trace mode\n");
-    	fprintf(stderr, "\n");
-    	return FAIL;
+        print_usage_normal_mode(argc,argv);
+    	exit(FAIL);
+    }
+	
+
+	while ((option = getopt(argc, argv,"i:f:r:n:sc:h")) != -1) {
+        switch (option) {
+             case 'i' : tracer_id = atoi(optarg);
+                 break;
+             case 'r' : rel_cpu_speed = atof(optarg);
+                 break;
+             case 'f' : cmd_file_path = optarg; 
+                 break;
+             case 'n' : n_round_insns = (u32) atoi(optarg);
+                 break;
+             case 's' : create_spinner = 1;
+             	 break;
+             case 'c' : flush_buffer(command,MAX_BUF_SIZ);
+             			sprintf(command,"%s\n",optarg);
+             			read_from_file = 0;
+             			break;
+             case 'h' :
+             default: print_usage_normal_mode(argc,argv); 
+                 exit(FAIL);
+        }
     }
 
+	
 
-    tracer_id = atoi(argv[1]);
-	rel_cpu_speed = atof(argv[3]);
-	n_round_insns = (u32) atoi(argv[4]);
-	create_spinner = atoi(argv[5]);
-	cmd_file_path = argv[2];
-
-	if(create_spinner)
-		create_spinner = 1;
-	else
-		create_spinner = 0;
 	#else
-	cmd_file_path = argv[1];
+	if (argc < 2 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+        print_usage_test_mode(argc,argv);
+    	exit(FAIL);
+    }
+	
+
+	while ((option = getopt(argc, argv,"f:c:h")) != -1) {
+        switch (option) {
+             case 'f' : cmd_file_path = optarg; 
+                 break;
+             case 'c' : flush_buffer(command,MAX_BUF_SIZ);
+             			sprintf(command,"%s\n",optarg);
+             			read_from_file = 0;
+             			break;
+             case 'h' :
+             default: print_usage_test_mode(argc,argv); 
+                 exit(FAIL);
+        }
+    }
 	#endif
 
 	
@@ -605,28 +649,46 @@ int main(int argc, char * argv[]){
 	#endif
 
 	LOG("Tracer PID: %d\n", (pid_t)getpid());
+	#ifndef TEST 
 	LOG("TracerID: %d\n", tracer_id);
-	LOG("CMDS_FILE_PATH: %s\n",cmd_file_path);
 	LOG("REL_CPU_SPEED: %f\n",rel_cpu_speed);
 	LOG("N_ROUND_INSNS: %lu\n",n_round_insns);
 	LOG("N_EXP_CPUS: %d", n_cpus);
-	fp1 = fopen(cmd_file_path,"r");
-	if(fp1 == NULL){
-		LOG("ERROR opening cmds file\n");
-		exit(FAIL);
-	}
+	#endif 
+	
 
-	while ((line_read = getline(&line, &len, fp1)) != -1) {
-		count ++;
-       	LOG("TracerID: %d, Starting Command: %s", tracer_id, line);
-		run_command(line, &new_cmd_pid);
+	if(read_from_file)
+		LOG("CMDS_FILE_PATH: %s\n",cmd_file_path);
+	else
+		LOG("CMD TO RUN: %s\n", command);
+
+
+
+	if(read_from_file) {
+		fp1 = fopen(cmd_file_path,"r");
+		if(fp1 == NULL){
+			LOG("ERROR opening cmds file\n");
+			exit(FAIL);
+		}
+		while ((line_read = getline(&line, &len, fp1)) != -1) {
+			count ++;
+	       	LOG("TracerID: %d, Starting Command: %s", tracer_id, line);
+			run_command(line, &new_cmd_pid);
+			new_entry = alloc_new_tracee_entry(new_cmd_pid);
+			llist_append(&tracee_list, new_entry);
+			hmap_put_abs(&tracees, new_cmd_pid, new_entry);
+	    }
+	    fclose(fp1);
+	} else {
+		LOG("TracerID: %d, Starting Command: %s", tracer_id, command);
+		run_command(command, &new_cmd_pid);
 		new_entry = alloc_new_tracee_entry(new_cmd_pid);
 		llist_append(&tracee_list, new_entry);
 		hmap_put_abs(&tracees, new_cmd_pid, new_entry);
-    }
+	}	
 
 	setup_all_traces(&tracees, &tracee_list);
-	fclose(fp1);
+	
 
 	#ifdef TEST 
 		sock_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_USERSOCK);

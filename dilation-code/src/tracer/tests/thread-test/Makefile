@@ -12,14 +12,14 @@ build:
 
 run:
 	@echo "Starting Thread Test ..."
-	tracer_test 0 cmds.txt
+	tracer_test -f cmds.txt
 
 	@echo "Thread Test Finished ..."
 
 run_python:
 	@echo "Starting Thread Test ..."
 	@echo "python thread.py" > cmds.txt
-	tracer_test 0 cmds.txt
+	tracer_test -f cmds.txt
 	@echo "Thread Test Finished ..."
 
 
