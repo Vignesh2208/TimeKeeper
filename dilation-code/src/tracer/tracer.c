@@ -8,6 +8,7 @@
 #define _GNU_SOURCE
 #include <sched.h>
 #include <getopt.h>
+#include <string.h>
 
 #define TK_IOC_MAGIC  'k'
 #define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
@@ -388,7 +389,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 			}
 			else {
 				int sleep_duration = (int)n_insns*((float)rel_cpu_speed/1000.0);
-				LOG("Process: %d is still blocked inside syscall. Sleeping for: %d\n",pid, sleep_duration);
+				//LOG("Process: %d is still blocked inside syscall. Sleeping for: %d\n",pid, sleep_duration);
 				if(sleep_duration >= 1){
 					usleep(sleep_duration);
 				}
@@ -469,6 +470,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 							hmap_remove_abs(tracees, pid);
 							print_tracee_list(tracee_list);
 							ptrace(PTRACE_CONT, pid, 0, 0);  // For now, we handle this case like this.
+							usleep(10);
 							return FAIL;
 	
 	
@@ -476,8 +478,8 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid, u32
 							hmap_remove_abs(tracees, pid);
 							print_tracee_list(tracee_list);
 							ptrace(PTRACE_CONT, pid, 0, 0); // Exit is still not fully complete. need to do this to complete it.
+							usleep(10);
 							return SUCCESS;
-							break;
 
 			default:		return SUCCESS;	
 
@@ -569,6 +571,7 @@ int main(int argc, char * argv[]){
 	u32 n_round_insns;
 	int cpu_assigned;
 	char command[MAX_BUF_SIZ];
+	int ignored_pids[MAX_BUF_SIZ];
 	int n_cpus = get_nprocs();
 	int read_ret = -1;
 	int create_spinner = 0;
@@ -577,6 +580,7 @@ int main(int argc, char * argv[]){
 	FILE* fp1;
 	int option = 0;
 	int read_from_file = 1;
+	int i;
 
 	hmap_init(&tracees, 1000);
 	llist_init(&tracee_list);
@@ -653,7 +657,7 @@ int main(int argc, char * argv[]){
 	LOG("TracerID: %d\n", tracer_id);
 	LOG("REL_CPU_SPEED: %f\n",rel_cpu_speed);
 	LOG("N_ROUND_INSNS: %lu\n",n_round_insns);
-	LOG("N_EXP_CPUS: %d", n_cpus);
+	LOG("N_EXP_CPUS: %d\n", n_cpus);
 	#endif 
 	
 
@@ -756,20 +760,24 @@ int main(int argc, char * argv[]){
 			LOG("TracerID: %d, PROC File open error\n", tracer_id);
 			exit(FAIL);
 		}
-
+		flush_buffer(nxt_cmd, MAX_PAYLOAD);
+		sprintf(nxt_cmd, "%c,0,", TRACER_RESULTS);
 		while(1){
-			flush_buffer(nxt_cmd, MAX_PAYLOAD);
+			
 			tail_ptr = 0;
 			new_cmd_pid = 0;
 			n_insns = 0;
 			read_ret = -1;
 			cmd_no ++;
+
+			for(i = 0; i < MAX_BUF_SIZ; i++)
+				ignored_pids[i] = 0;
 			
-			LOG("TracerID: %d: Writing cmd Results and  Waiting for next command ...\n", tracer_id);
-			sprintf(nxt_cmd, "%c,%s,", TRACER_RESULTS,"0");
+			i = 0;
+			//LOG("TracerID: %d: Writing cmd Results and  Waiting for next command ...\n", tracer_id);
 			write_results(fp,nxt_cmd);
 
-			LOG("TraceID: %d, Cmd no: %d, Command: %s\n", tracer_id, cmd_no, nxt_cmd);
+			//LOG("TraceID: %d, Cmd no: %d, Command: %s\n", tracer_id, cmd_no, nxt_cmd);
 			while(tail_ptr != -1){
 				tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);
 
@@ -781,11 +789,26 @@ int main(int argc, char * argv[]){
 				if(new_cmd_pid == 0)
 					break;
 				run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned, rel_cpu_speed);
-				LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);				
-			}
+				LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
 
-			flush_buffer(command,MAX_BUF_SIZ);
-			sprintf(command, "%c,%s,", TRACER_RESULTS,"0");
+				if(!hmap_get_abs(&tracees,new_cmd_pid)) {
+					if( i < MAX_BUF_SIZ - 1) {
+						ignored_pids[i] = new_cmd_pid;
+						i++;
+					}
+				}
+
+			}
+			flush_buffer(nxt_cmd, MAX_PAYLOAD);
+			sprintf(nxt_cmd,"%c,",TRACER_RESULTS);
+			for(i = 0; ignored_pids[i] != 0; i++) {
+				sprintf(nxt_cmd + strlen(nxt_cmd),"%d,", ignored_pids[i]);
+			}
+			
+			strcat(nxt_cmd,"0,");
+			
+			//flush_buffer(command,MAX_BUF_SIZ);
+			//sprintf(command, "%c,%s,", TRACER_RESULTS,"0");
 		}
 		end:
 		close(fp);

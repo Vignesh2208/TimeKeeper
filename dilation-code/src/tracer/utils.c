@@ -139,7 +139,7 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 
 	i = 0;
 	
-	while(full_command_str[i] != '\n'){
+	while(full_command_str[i] != '\n' && full_command_str[i] != '\0'){
 		if(i == 0){
 			args[0] = full_command_str;
 			token_no ++;
@@ -188,6 +188,22 @@ int run_command(char * full_command_str, pid_t * child_pid) {
 						close(fd); 
 					}
     				break;
+    			}
+    			if(strcmp(args[i],"<") == 0){
+    				args[i] = '\0';
+    				/*file descriptor to the file we will redirect ls's output*/
+    				int fd; 
+    				//printf("Stdin file : %s\n", args[i+1]);
+    				if(args[i+1]){
+						if((fd = open(args[i+1], O_RDONLY)) < 0){ \
+						  perror("open");
+						  exit(-1);
+						}
+						/*copy the file descriptor fd into standard input*/
+						dup2(fd,0); 
+						/* close the file descriptor as we don't need it more  */
+						close(fd); 
+					}
     			}
     			i++;
     		}

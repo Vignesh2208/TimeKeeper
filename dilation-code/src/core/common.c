@@ -73,7 +73,7 @@ int pop_schedule_list(tracer * tracer_entry){
 	if(head != NULL){
 		pid = head->pid;
 		hmap_remove_abs(&tracer_entry->valid_children, head->pid);
-		hmap_remove_abs(&tracer_entry->ignored_children, head->pid);
+		//hmap_remove_abs(&tracer_entry->ignored_children, head->pid);
 		kfree(head);
 		return pid;
 	}
@@ -110,7 +110,7 @@ void clean_up_schedule_list(tracer * tracer_entry){
 	
 	while( pid != 0){
 		pid = pop_schedule_list(tracer_entry);
-
+		hmap_remove_abs(&tracer_entry->ignored_children, pid);
 		if(pid){
 			pid_struct = find_get_pid(pid); 	 
 			task = pid_task(pid_struct,PIDTYPE_PID); 
@@ -185,7 +185,7 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 
 	if(!tracee || hmap_get_abs(&tracer_entry->ignored_children, tracee->pid) != NULL || hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL){
 
-		if(tracee && hmap_get_abs(&tracer_entry->valid_children, tracee->pid) != NULL && tracee != tracer_entry->spinner_task){
+		if(tracee && hmap_get_abs(&tracer_entry->ignored_children, tracee->pid) == NULL && tracee != tracer_entry->spinner_task){
 			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee %d is already present. Updating its attributes\n", tracer_entry->tracer_id, tracee->pid);
 			update_tracer_schedule_queue_elem(tracer_entry, tracee);
 		}
@@ -198,11 +198,17 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tr
 		else{
 			if(!tracee)
 			PDEBUG_V("Add to tracer schedule queue: Tracer %d, tracee is NULL \n", tracer_entry->tracer_id);
+			
+			
 		}
 
 		return;
 	}
 
+	if(hmap_get_abs(&tracer_entry->ignored_children, tracee->pid) != NULL ){
+		PDEBUG_A("Tracee: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
+		return;
+	}
 	if(tracee && tracer_entry->spinner_task && tracee->pid == tracer_entry->spinner_task->pid ){
 		PDEBUG_A("Tracee spinner: %d ignored and not added to Tracer: %d schedule queue\n", tracee->pid, tracer_entry->tracer_id);
 		return ;
@@ -691,6 +697,7 @@ int handle_tracer_results(char * buffer){
 			break;
 		}
 
+		/*
 		//result is overshoot_n_insns
 		if(result){
 
@@ -707,6 +714,12 @@ int handle_tracer_results(char * buffer){
 			overshoot_time = overshoot_time + rem;
 			curr_tracer->tracer_task->freeze_time = curr_tracer->tracer_task->freeze_time + overshoot_time;
 			break;
+		}*/
+		if(result){ //result is a pid to be ignored
+			PDEBUG_V("Handle tracer results: Pid: %d, Tracer ID: %d, Ignoring Process: %d\n", current->pid, curr_tracer->tracer_id, result);
+			pid_struct = find_get_pid(result); 	 
+			task = pid_task(pid_struct,PIDTYPE_PID); 
+			hmap_put_abs(&curr_tracer->ignored_children, result, current);
 		}
 	}
 

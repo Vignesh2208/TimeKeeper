@@ -845,6 +845,54 @@ void resume_all_syscall_blocked_processes(tracer * curr_tracer){
 
 }
 
+
+/***
+Searches an tracer for the process with given pid. returns success if found
+***/
+
+struct task_struct * search_tracer(struct task_struct * aTask, int pid){
+
+
+	struct list_head *list;
+	struct task_struct *taskRecurse;
+	struct task_struct *me;
+	struct task_struct *t;
+
+	
+	if (aTask == NULL) {
+		PDEBUG_E("Search lxc: Task does not exist\n");
+		return NULL;
+	}
+
+	if (aTask->pid == 0) {
+		PDEBUG_E("Search lxc: pid 0 error\n");
+		return NULL;
+	}
+
+	me = aTask;
+	t = me;
+
+	if(t->pid == pid)
+		return t;
+
+	do {
+		if (t->pid == pid) {
+			return t;			
+       	}
+	} while_each_thread(me, t);
+
+	list_for_each(list, &aTask->children) {
+		taskRecurse = list_entry(list, struct task_struct, sibling);
+		if (taskRecurse->pid == 0) {
+			continue;
+		}
+		t =  search_tracer(taskRecurse, pid);
+		if(t != NULL)
+			return t;
+	}
+
+	return NULL;
+}
 void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 
 	struct pid *pid_struct;
@@ -876,9 +924,10 @@ void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 			return;	
 
 		PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. n_scheduled_processes: %d\n", curr_elem->pid, n_scheduled_processes);
+		/*
 		pid_struct = find_get_pid(curr_elem->pid); 	 
 		task = pid_task(pid_struct,PIDTYPE_PID); 
-
+		
 		if(task == NULL || hmap_get_abs(&curr_tracer->ignored_children, curr_elem->pid) != NULL){
 			
 			if(task == NULL){ // task is dead
@@ -890,6 +939,26 @@ void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 			else{ // task is ignored
 				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is ignored\n", curr_elem->pid);
 				hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
+			}
+
+			
+		}
+		else
+			requeue_schedule_list(curr_tracer);
+		*/
+		task = search_tracer(curr_tracer->tracer_task, curr_elem->pid);
+		if( task == NULL || hmap_get_abs(&curr_tracer->ignored_children, curr_elem->pid) != NULL){
+			
+			if(task == NULL){ // task is dead
+				//hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
+				//hmap_remove_abs(&curr_tracer->ignored_children, curr_elem->pid);
+				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is dead\n", curr_elem->pid);
+				pop_schedule_list(curr_tracer);
+			}
+			else{ // task is ignored
+				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is ignored\n", curr_elem->pid);
+				//hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
+				pop_schedule_list(curr_tracer);
 			}
 
 			
@@ -930,7 +999,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 		}
 
 		PDEBUG_V("Update all runnable task timeslices: Processing Curr elem Left\n");
-		PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
+		PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns left: %llu\n", curr_elem->pid, curr_elem->n_insns_left);
 
 		acquire_irq_lock(&syscall_lookup_lock,flags);
 		/*task_poll_helper = hmap_get_abs(&poll_process_lookup,curr_elem->pid);
@@ -1005,7 +1074,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer){
 					return;
 
 				PDEBUG_V("Update all runnable task timeslices: Processing Curr elem Share\n");
-				PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns: %llu\n", curr_elem->pid, total_insns);
+				PDEBUG_V("Update all runnable task timeslices: Curr elem is %d. Quantum n_insns current round: %llu\n", curr_elem->pid, curr_elem->n_insns_curr_round);
 
 
 				acquire_irq_lock(&syscall_lookup_lock,flags);
@@ -1141,7 +1210,8 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 	/* for adding any new tasks that might have been spawned */
 	refresh_tracer_schedule_queue(curr_tracer);
 	clean_up_all_irrelevant_processes(curr_tracer);
-
+	
+	
 	resume_all_syscall_blocked_processes(curr_tracer);
 
 	update_all_runnable_task_timeslices(curr_tracer);
