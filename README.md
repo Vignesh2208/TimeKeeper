@@ -28,7 +28,7 @@ fi
 ```
 Installation Instructions
 
-* Clone Repository into /home/${username} directory
+* Clone Repository into /home/${username} directory. Checkout TimeKeeper-4.0 branch
 
 * Setup Kernel
 	@cd ~/TimeKeeper/dilation_code
