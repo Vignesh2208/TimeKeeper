@@ -5082,31 +5082,16 @@ static void perf_pending_event(struct irq_work *entry)
 			delta = sample_period - counter_val;
 			delta = 500 + delta;
 		}
-		
-
-		//trace_printk("perf pending event: Overflow for tsk: %d, Counter val = %llu. Task cpu: %d\n", tsk->pid, counter_val, tsk->cpus_allowed );
-		//trace_printk("perf pending event: sample period: %llu, n_ints = %llu, delta = %lu\n", sample_period, n_ints, (unsigned long) delta);
-
-		
-		
 		if(delta > 0) {
 			tsk->ptrace_msteps = (unsigned long) delta;
-			//tsk->ptrace_msteps = 1;
 			tsk->ptrace_mflags = 0;
-			//user_enable_single_step(tsk);
-			//tsk->exit_code = 0;			
-			//wake_up_state(tsk, __TASK_TRACED);
-			 enable_single_stepping(tsk);
+			enable_single_stepping(tsk);
 
 		}
 		else{
 			tsk->ptrace_msteps = 1;
 			tsk->ptrace_mflags = 0;
-			//user_enable_single_step(tsk);
-			//tsk->exit_code = 0;			
-			//wake_up_state(tsk, __TASK_TRACED);
 			enable_single_stepping(tsk);
-
 		}
 		tsk->n_ints = 0;
 	}

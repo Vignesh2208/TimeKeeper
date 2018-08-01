@@ -189,6 +189,15 @@ int progress(){
     return -1;
 }
 
+int fire_timers(){
+	if (is_root() && isModuleLoaded()) {
+		char command[100];
+		flush_buffer(command,100);
+		sprintf(command, "%c,", RUN_DILATED_HRTIMERS);
+		return send_to_timekeeper(command);
+    }
+    return -1;
+}
 
 int write_tracer_results(char * result){
 

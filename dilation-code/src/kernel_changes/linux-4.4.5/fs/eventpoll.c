@@ -1568,29 +1568,19 @@ static inline struct timespec ep_set_mstimeout(long ms)
 
 s64 curr_dilated_time(void)
 {
-	s64 temp_past_physical_time;
-	s32 rem;
-	s64 real_running_time;
-	s64 dilated_running_time;
 	s64 now;
 	struct timeval ktv;
 	do_gettimeofday(&ktv);
 	struct task_struct* task;
 	task = current;
-	unsigned long flags;
 	now = timeval_to_ns(&ktv);	
 	if(task->virt_start_time != 0){
 		if (task->group_leader != task) { //use virtual time of the leader thread
-                       	task = task->group_leader;
-               	}
-
+            task = task->group_leader;
+       	}
 		return task->freeze_time;
-	
 	}
 	return now;	
-
-
-
 }
 
 

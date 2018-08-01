@@ -58,6 +58,7 @@ extern wait_queue_head_t expstop_call_proc_wqueue;
 extern int initialize_experiment_components(char * write_buffer);
 extern unsigned long **aquire_sys_call_table(void);
 extern int round_sync_task(void *data);
+extern void run_dilated_hrtimers();
 
 
 s64 round_error = 0;
@@ -375,6 +376,11 @@ ssize_t status_write(struct file *file, const char __user *buffer, size_t count,
 	else if(write_buffer[0] == INITIALIZE_EXP){
 		ret = initialize_experiment_components(write_buffer + 2);
 		mutex_unlock(&file_lock);
+	}
+	else if(write_buffer[0] == RUN_DILATED_HRTIMERS){
+		run_dilated_hrtimers();
+		mutex_unlock(&file_lock);
+		ret = SUCCESS;
 	}
 	else{
 		mutex_unlock(&file_lock);

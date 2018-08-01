@@ -9,13 +9,11 @@
 #define UPDATE_TRACER_PARAMS 'E'
 #define PROGRESS  'F'
 #define PROGRESS_N_ROUNDS	'G'
-
 #define START_EXP 'H'
 #define STOP_EXP 'I'
-
 #define TRACER_RESULTS 'J'
-
 #define INITIALIZE_EXP 'K'
+#define RUN_DILATED_HRTIMERS 'L'
 
 
 #endif

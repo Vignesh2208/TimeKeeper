@@ -596,13 +596,8 @@ extern struct task_struct *find_task_by_pid(int);
 
 s64 get_current_dilated_time(struct task_struct *task)
 {
-	s64 temp_past_physical_time;
 	struct timeval tv;
 	s64 virt_start_time;
-	s64 freeze_time;
-	s64 task_past_physical_time;
-	s64 past_virtual_time;
-	int dilation_factor;
 	s64 now;
 
 	do_gettimeofday(&tv);
@@ -612,19 +607,10 @@ s64 get_current_dilated_time(struct task_struct *task)
 		return now;
 
 	virt_start_time = task->virt_start_time;
-	freeze_time = task->freeze_time;
-	task_past_physical_time = task->past_physical_time;
-	past_virtual_time = task->past_virtual_time;
-	dilation_factor = task->dilation_factor;
-
 	if(virt_start_time > 0){
-	
 		return init_task.freeze_time;
-	
 	}
-
 	return now;
-
 }
 
 EXPORT_SYMBOL(get_current_dilated_time);

@@ -72,32 +72,6 @@ SYSCALL_DEFINE1(time, time_t __user *, tloc)
 		            	task = current->group_leader;
 		}
 		s64 now = timeval_to_ns(&ktv);
-		s32 rem;
-		s64 real_running_time;
-		s64 dilated_running_time;
-
-
-		/*
-		if(task->freeze_time == 0){
-			real_running_time = now - task->virt_start_time;
-		}
-		else{
-			real_running_time = task->freeze_time - task->virt_start_time;
-		}
-	
-		if (task->dilation_factor > 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - task->past_physical_time)*1000 ,task->dilation_factor,&rem) + task->past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}
-		else if (task->dilation_factor < 0) {
-			dilated_running_time = div_s64_rem( (real_running_time - task->past_physical_time)*(task->dilation_factor*-1),1000,&rem) + task->past_virtual_time;
-			now =  dilated_running_time + task->virt_start_time;
-		}
-		else {
-			dilated_running_time = (real_running_time - task->past_physical_time) + task->past_virtual_time;
-			now = dilated_running_time + task->virt_start_time;
-		}*/
-
 		now = task->freeze_time;
 
 		struct timespec tmp = ns_to_timespec(now);
@@ -155,49 +129,22 @@ SYSCALL_DEFINE1(stime, time_t __user *, tptr)
 SYSCALL_DEFINE3(gettimepid, pid_t, pid, struct timeval __user *, tv,
                 struct timezone __user *, tz)
 {
-	s64 temp_past_physical_time;
 	if (likely(tv != NULL)) {
 		struct timeval ktv;
 		do_gettimeofday(&ktv);
-			struct task_struct* task;
-			rcu_read_lock();
-        		task=pid_task(find_vpid(pid), PIDTYPE_PID);
-        		rcu_read_unlock();
-        		if (task == NULL) {
-				printk(KERN_INFO "Task %d does not exist, can not get virtual time\n", pid);
-				return -EFAULT;
-			}
+		struct task_struct* task;
+		rcu_read_lock();
+        task=pid_task(find_vpid(pid), PIDTYPE_PID);
+        rcu_read_unlock();
+        if (task == NULL) {
+			trace_printk(KERN_INFO "Task %d does not exist, cannot get virtual time\n", pid);
+			return -EFAULT;
+		}
 		if(task->virt_start_time != 0){
 			if (task->group_leader != task) { //use virtual time of the leader thread
-                        	task = task->group_leader;
-                	}
+                task = task->group_leader;
+            }
 			s64 now = timeval_to_ns(&ktv);
-			s32 rem;
-			s64 real_running_time;
-			s64 dilated_running_time;
-			real_running_time = now - task->virt_start_time;
-
-
-			/*
-			if (task->freeze_time != 0)
-				temp_past_physical_time = task->past_physical_time + (now - task->freeze_time);
-			else
-				temp_past_physical_time = task->past_physical_time;
-
-			if (task->dilation_factor > 0) {
-				dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*1000 ,task->dilation_factor,&rem) + task->past_virtual_time;
-				now = dilated_running_time + task->virt_start_time;
-			}
-			else if (task->dilation_factor < 0) {
-				dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*(task->dilation_factor*-1),1000,&rem) + task->past_virtual_time;
-				now =  dilated_running_time + task->virt_start_time;
-			}
-			else {
-				dilated_running_time = (real_running_time - temp_past_physical_time) + task->past_virtual_time;
-				now = dilated_running_time + task->virt_start_time;
-			}
-			*/
-
 			now = task->freeze_time;
 			ktv = ns_to_timeval(now);
 		}
@@ -220,39 +167,13 @@ SYSCALL_DEFINE2(gettimeofday, struct timeval __user *, tv,
 		do_gettimeofday(&ktv);
 		if(current->virt_start_time != 0){
 			struct task_struct* task;
-        		task = current;
+        	task = current;
 			if (current->group_leader != current) { //use virtual time of the leader thread
-                        	task = current->group_leader;
-                	}
+               	task = current->group_leader;
+            }
 			s64 now = timeval_to_ns(&ktv);
-			s32 rem;
-			s64 real_running_time;
-			s64 dilated_running_time;
-			s64 temp_past_physical_time;
-			/*
-			real_running_time = now - task->virt_start_time;
-			if (task->freeze_time != 0)
-				temp_past_physical_time = task->past_physical_time + (now - task->freeze_time);
-			else
-				temp_past_physical_time = task->past_physical_time;
-
-			if (task->dilation_factor > 0) {
-				dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*1000 ,task->dilation_factor,&rem) + task->past_virtual_time;
-				now = dilated_running_time + task->virt_start_time;
-			}
-			else if (task->dilation_factor < 0) {
-				dilated_running_time = div_s64_rem( (real_running_time - temp_past_physical_time)*(task->dilation_factor*-1),1000,&rem) + task->past_virtual_time;
-				now =  dilated_running_time + task->virt_start_time;
-			}
-			else {
-				dilated_running_time = (real_running_time - temp_past_physical_time) + task->past_virtual_time;
-				now = dilated_running_time + task->virt_start_time;
-			}
-			*/
-
 			now = task->freeze_time;
 			ktv = ns_to_timeval(now);
-
 		}
 		if (copy_to_user(tv, &ktv, sizeof(ktv)))
 			return -EFAULT;
@@ -268,16 +189,16 @@ SYSCALL_DEFINE2(gettimeofdayreal, struct timeval __user *, tv,
                  struct timezone __user *, tz)
 {
 	if (likely(tv != NULL)) {
-                struct timeval ktv;
-                do_gettimeofday(&ktv);
-                if (copy_to_user(tv, &ktv, sizeof(ktv)))
-                        return -EFAULT;
-        }
-        if (unlikely(tz != NULL)) {
-                if (copy_to_user(tz, &sys_tz, sizeof(sys_tz)))
-                        return -EFAULT;
-        }
-        return 0;
+        struct timeval ktv;
+        do_gettimeofday(&ktv);
+        if (copy_to_user(tv, &ktv, sizeof(ktv)))
+            return -EFAULT;
+    }
+    if (unlikely(tz != NULL)) {
+        if (copy_to_user(tz, &sys_tz, sizeof(sys_tz)))
+            return -EFAULT;
+    }
+    return 0;
 }
 
 /*
