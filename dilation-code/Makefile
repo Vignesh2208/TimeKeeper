@@ -13,7 +13,7 @@ clean: clean_build clean_core clean_utils clean_api clean_tracer clean_tests cle
 
 build: build_scripts build_core build_api build_tracer build_tests
 
-setup_kernel: compile_4_4_kernel
+setup_kernel: download_4_4_kernel compile_4_4_kernel
 
 download_4_4_kernel:
 	@cd src/kernel_changes/linux-4.4.5 && ./setup.sh

@@ -64,6 +64,7 @@ atomic_t n_workers_running = ATOMIC_INIT(0);
 atomic_t progress_n_rounds = ATOMIC_INIT(0);
 atomic_t progress_n_enabled = ATOMIC_INIT(0);
 atomic_t experiment_stopping = ATOMIC_INIT(0);
+int app_driven_hrtimer_firing = 0;
 
 static wait_queue_head_t sync_worker_wqueue;
 static wait_queue_head_t progress_call_proc_wqueue;
@@ -201,6 +202,7 @@ int initialize_experiment_components(char * write_buffer){
 	round_error = 0;
 	round_error_sq = 0;
 	n_rounds = 0;
+	app_driven_hrtimer_firing = 0;
 
 	mutex_init(&exp_lock);
 	spin_lock_init(&syscall_lookup_lock);
@@ -327,7 +329,7 @@ int cleanup_experiment_components(){
     for(i=0; i < EXP_CPUS; i++) {
     	llist_destroy(&per_cpu_tracer_list[i]);
     }
-	
+	app_driven_hrtimer_firing = 0;
 	kfree(syscall_running);
 	kfree(syscall_control_queue);
 	kfree(per_cpu_tracer_list);
@@ -581,6 +583,21 @@ int per_cpu_worker(void *data)
 	return 0;
 }
 
+void run_dilated_hrtimers() {
+
+	//set app_driven_hrtimer_firing if this function is called.
+	if(!app_driven_hrtimer_firing)
+		app_driven_hrtimer_firing = 1;
+
+	PDEBUG_V("App driven hrtimer firing: Calling dilated hrtimer run queues\n");
+	preempt_disable();
+	local_irq_disable();
+	dilated_hrtimer_run_queues(0);
+	local_irq_enable();
+	preempt_enable();	
+	PDEBUG_V("App driven hrtimer firing: Finished dilated hrtimer run queues\n");
+} 
+
 /***
 The main synchronization thread (For CBE mode). When all tasks in a round have completed, this will get
 woken up, increment the experiment virtual time,  and then wake up every other synchronization thread 
@@ -716,15 +733,16 @@ int round_sync_task(void *data)
 					 update_all_tracers_virtual_time(i);
 				}
 
-				PDEBUG_V("Calling dilated hrtimer run queues\n");
+				if(!app_driven_hrtimer_firing) {
+					PDEBUG_V("App driven firing not configured: Calling dilated hrtimer run queues\n");
+					preempt_disable();
+					local_irq_disable();
+					dilated_hrtimer_run_queues(0);
+					local_irq_enable();
+					preempt_enable();
+					PDEBUG_V("App driven firing not configured: Finished dilated hrtimer run queues\n");
+				}
 
-				preempt_disable();
-				local_irq_disable();
-				dilated_hrtimer_run_queues(0);
-				local_irq_enable();
-				preempt_enable();
-				
-				PDEBUG_V("Finished dilated hrtimer run queues\n");
 				set_current_state(TASK_RUNNING);
 				schedule();
 				//msleep(1);
@@ -924,28 +942,6 @@ void clean_up_all_irrelevant_processes(tracer * curr_tracer){
 			return;	
 
 		PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. n_scheduled_processes: %d\n", curr_elem->pid, n_scheduled_processes);
-		/*
-		pid_struct = find_get_pid(curr_elem->pid); 	 
-		task = pid_task(pid_struct,PIDTYPE_PID); 
-		
-		if(task == NULL || hmap_get_abs(&curr_tracer->ignored_children, curr_elem->pid) != NULL){
-			
-			if(task == NULL){ // task is dead
-				//hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
-				//hmap_remove_abs(&curr_tracer->ignored_children, curr_elem->pid);
-				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is dead\n", curr_elem->pid);
-				pop_schedule_list(curr_tracer);
-			}
-			else{ // task is ignored
-				PDEBUG_V("Clean up irrelevant processes: Curr elem: %d. Task is ignored\n", curr_elem->pid);
-				hmap_remove_abs(&curr_tracer->valid_children, curr_elem->pid);
-			}
-
-			
-		}
-		else
-			requeue_schedule_list(curr_tracer);
-		*/
 		task = search_tracer(curr_tracer->tracer_task, curr_elem->pid);
 		if( task == NULL || hmap_get_abs(&curr_tracer->ignored_children, curr_elem->pid) != NULL){
 			

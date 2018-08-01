@@ -15,6 +15,7 @@
 
 #define TRACER_RESULTS 'J'
 #define INITIALIZE_EXP 'K'
+#define RUN_DILATED_HRTIMERS 'L'
 
 
 #endif

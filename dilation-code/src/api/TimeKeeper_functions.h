@@ -52,6 +52,7 @@ int progress_n_rounds(int n_rounds);
 int progress();
 int hello();
 int get_experiment_stats(ioctl_args * args);
+int fire_timers();
 
 
 #endif

@@ -9,6 +9,8 @@ build_api:
 	 @cp TimeKeeper_functions.h /usr/local/include
 	 @cp utility_functions.h /usr/local/include
 
+	 @python setup.py install
+
 clean:
 
 	@rm -f *.o

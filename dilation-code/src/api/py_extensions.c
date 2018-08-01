@@ -159,6 +159,14 @@ static PyObject * py_progress(PyObject *self, PyObject *args)
     return Py_BuildValue("i", ret);
 }
 
+static PyObject * py_fire_timers(PyObject *self, PyObject *args)
+{
+
+    int ret;
+
+    ret = fire_timers();
+    return Py_BuildValue("i", ret);
+}
 
 static PyObject * py_synchronizeAndFreeze(PyObject *self, PyObject *args)
 {
@@ -220,6 +228,7 @@ static PyMethodDef timekeeper_functions_methods[] = {
    { "initializeExp", py_initializeExp, METH_VARARGS, NULL },
    { "progress_n_rounds", py_progress_n_rounds, METH_VARARGS, NULL },
    { "progress", py_progress, METH_VARARGS, NULL },
+   { "fire_timers", py_fire_timers, METH_VARARGS, NULL},
    { "get_experiment_stats", py_get_experiment_stats, METH_VARARGS, NULL },
    { "hello", py_hello, METH_VARARGS, NULL },
    { "o_get_experiment_stats", py_o_get_experiment_stats, METH_VARARGS, NULL },

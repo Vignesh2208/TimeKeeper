@@ -51,7 +51,6 @@ static DEFINE_SPINLOCK(cancel_lock);
 
 s64 get_dilated_task_time(struct task_struct * task)
 {
-	s64 temp_past_physical_time;
 	struct timeval tv;
 	s64 now;
 	do_gettimeofday(&tv);

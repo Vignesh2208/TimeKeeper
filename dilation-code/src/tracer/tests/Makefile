@@ -10,19 +10,19 @@ build:
 	@cd repeatability-test && $(MAKE) clean && $(MAKE) build;
 
 run_repeatability_test:
-	@@cd repeatability-test && $(MAKE) start
+	@cd repeatability-test && $(MAKE) start
 
 run_sleep_test:
-	@@cd sleep-test && $(MAKE) start
+	@cd sleep-test && $(MAKE) start
 
 run_socket_test:
-	@@cd socket-test && $(MAKE) start
+	@cd socket-test && $(MAKE) start
 
 run_vfork_test:
-	@@cd vfork-test && $(MAKE) start
+	@cd vfork-test && $(MAKE) start
 
 run_thread_test:
-	@@cd thread-test && $(MAKE) start
+	@cd thread-test && $(MAKE) start
 
 
 clean:

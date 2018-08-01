@@ -22,3 +22,44 @@ fi
 
 * Ensure that /etc/rc.local has execute permissions.
 ```
+
+```
+Installation Instructions
+
+* Clone Repository into /home/${username} directory
+
+* Setup Kernel
+	@cd ~/TimeKeeper/dilation_code
+	@sudo make setup_kernel
+	
+	During the setup process do not allow kexec tools to handle kernel reboots.
+	Over the course of kernel setup, a menu config would appear. Append a local
+	kernel version name in the menu config. For example it could be linux-4.4.5-VT
+
+* Reboot machine and boot into new kernel
+
+* Build and Install TimeKeeper-4.0
+	@cd ~/TimeKeeper/dilation_code
+	@sudo make clean
+	@sudo make build install
+```
+
+```
+Verifying installation
+
+* Running tests:
+	Repeatability Test
+	
+	@cd ~/TimeKeeper/dilation-code/src/tracer/tests && sudo make run_repeatability_test
+
+	Run All Other Tests
+		-Alarm Test
+		-Timerfd Test
+		-Usleep Test
+		-Socket Test
+		-Producer Consumer Test
+
+	@cd ~/TimeKeeper/dilation-code/tests && sudo make run
+
+* All tests should produce a TEST_SUCCEEDED/ TEST_COMPLETED message
+```
