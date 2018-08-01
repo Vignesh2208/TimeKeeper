@@ -4,12 +4,14 @@
 TimeKeeper-4.0 is a work in progress. There are several changes which are planned from the previous version. Most notably, it will use a new technique
 to control advancement of virtual time. Virtual time will be controlled based on the number of instructions executed by a dilated process. 
 
-TimeKeeper-4.0 is currently under development phase and is expected to be completed by May 2018.
+TimeKeeper-4.0 is currently under development phase and is expected to be completed by Aug 2018.
 Refer to TODO file for currently tracked bugs.
 ```
 
 ```
 Setup Requirements:
+
+* Ubuntu 16.04 (Has been Tested with Ubuntu 16.04.5)
 
 * Disable Transparent HugePages: (Add the following to /etc/rc.local to permanently disable them)
 
