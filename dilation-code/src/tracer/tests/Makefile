@@ -10,7 +10,7 @@ build:
 	@cd repeatability-test && $(MAKE) clean && $(MAKE) build;
 
 run_repeatability_test:
-	@cd repeatability-test && $(MAKE) start
+	@cd repeatability-test && $(MAKE) run
 
 run_sleep_test:
 	@cd sleep-test && $(MAKE) start
