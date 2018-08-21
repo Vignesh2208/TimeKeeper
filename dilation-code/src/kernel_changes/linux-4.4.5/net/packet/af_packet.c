@@ -449,6 +449,26 @@ static __u32 tpacket_get_timestamp(struct sk_buff *skb, struct timespec *ts,
 {
 	struct skb_shared_hwtstamps *shhwtstamps = skb_hwtstamps(skb);
 
+	struct task_struct * result;
+	s64 dilated_time = 0;
+	result = NULL;
+
+	if(skb->dev != NULL && skb->dev->owner_pid != NULL)
+		result = pid_task(skb->dev->owner_pid,PIDTYPE_PID);
+
+	if(result != NULL) {
+
+		if(skb->tstamp.tv64 == 0) {
+			dilated_time = get_current_dilated_time(result);
+			skb->tstamp.tv64 = dilated_time;
+		}
+
+		if (ktime_to_timespec_cond(skb->tstamp, ts))
+			return TP_STATUS_TS_SOFTWARE;
+
+		return 0;
+	}
+
 	if (shhwtstamps &&
 	    (flags & SOF_TIMESTAMPING_RAW_HARDWARE) &&
 	    ktime_to_timespec_cond(shhwtstamps->hwtstamp, ts))
@@ -2108,9 +2128,24 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 	getnstimeofday(&new_time);
 	
 
-	if(skb->tstamp.tv64 > 0) {
-		new_time = ns_to_timespec(skb->tstamp.tv64);
-	}	
+	struct task_struct * result;
+	s64 dilated_time = 0;
+	result = NULL;
+
+	if(skb->dev != NULL && skb->dev->owner_pid != NULL) {
+		result = pid_task(skb->dev->owner_pid, PIDTYPE_PID);
+
+		if(result != NULL) {
+			dilated_time = get_current_dilated_time(result);
+			skb->tstamp.tv64 = dilated_time;
+			new_time = ns_to_timespec(skb->tstamp.tv64);
+		}
+
+	} else {
+		if(skb->tstamp.tv64 > 0) {
+			new_time = ns_to_timespec(skb->tstamp.tv64);
+		}
+	}
 
 	if (skb->pkt_type == PACKET_LOOPBACK)
 		goto drop;

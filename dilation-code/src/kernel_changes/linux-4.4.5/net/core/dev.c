@@ -1711,14 +1711,6 @@ void net_disable_timestamp(void)
 }
 EXPORT_SYMBOL(net_disable_timestamp);
 
-static inline void net_timestamp_set(struct sk_buff *skb)
-{
-	if(skb->tstamp.tv64 > 0)
-		return;
-	skb->tstamp.tv64 = 0;
-	if (static_key_false(&netstamp_needed))
-		__net_timestamp(skb);
-}
 
 extern s64 get_current_dilated_time(struct task_struct *);
 
@@ -1735,10 +1727,28 @@ static inline void __set_dilated_timestamp(struct sk_buff * skb, struct pid * ow
 	}
 }
 
+static inline void net_timestamp_set(struct sk_buff *skb)
+{
+	struct task_struct * result;
+	s64 dilated_time = 0;
+	
+
+	if(skb->tstamp.tv64 > 0)
+		return;
+	skb->tstamp.tv64 = 0;
+	if (static_key_false(&netstamp_needed)) {
+		if(skb->dev != NULL && skb->dev->owner_pid != NULL) {
+			__set_dilated_timestamp(skb, skb->dev->owner_pid);
+			return;
+		}
+		__net_timestamp(skb);
+	}
+}
+
 #define net_timestamp_check(COND, SKB)			\
 	if (static_key_false(&netstamp_needed)) {		\
 		if((COND) && (SKB) ->dev !=NULL) {   \
-			if((SKB)->dev->owner_pid > 0)    \
+			if((SKB)->dev->owner_pid != NULL)    \
 				__set_dilated_timestamp(SKB,(SKB)->dev->owner_pid); \
 		} \
 		if ((COND) && !(SKB)->tstamp.tv64)	\
