@@ -35,8 +35,16 @@ Installation Instructions
 	@sudo make setup_kernel
 	
 	During the setup process do not allow kexec tools to handle kernel reboots.
-	Over the course of kernel setup, a menu config would appear. Append a local
-	kernel version name in the menu config. For example it could be linux-4.4.5-VT
+	Over the course of kernel setup, a menu config would appear. 
+
+	The following additional config steps should also be performed inside menuconfig:
+		Under General setup -->
+			Append a local kernel version name. For example it could be -ins-VT.
+		Under kernel_hacking -->
+			enable Collect kernel timers statistics
+		Under Processor types and features -->
+			Transparent Huge Page support -->
+				Transparent Huge Page support sysfs defaults should be set to always
 
 * Reboot machine and boot into new kernel
 
