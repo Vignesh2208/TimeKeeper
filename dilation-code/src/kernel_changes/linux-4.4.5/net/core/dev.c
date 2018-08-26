@@ -1733,9 +1733,9 @@ static inline void net_timestamp_set(struct sk_buff *skb)
 	s64 dilated_time = 0;
 	
 
-	if(skb->tstamp.tv64 > 0)
-		return;
-	skb->tstamp.tv64 = 0;
+	//if(skb->tstamp.tv64 > 0)
+	//	return;
+	//skb->tstamp.tv64 = 0;
 	if (static_key_false(&netstamp_needed)) {
 		if(skb->dev != NULL && skb->dev->owner_pid != NULL) {
 			__set_dilated_timestamp(skb, skb->dev->owner_pid);

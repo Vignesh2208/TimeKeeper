@@ -5041,6 +5041,7 @@ static void perf_pending_event(struct irq_work *entry)
 	u64 n_ints = 0;
 	u64 sample_period;
 	u64 delta = 0;
+	u64 buffer_window_size = 500;
 	//int cpu = raw_smp_processor_id(); 
 	
 
@@ -5059,12 +5060,17 @@ static void perf_pending_event(struct irq_work *entry)
 	
 	if(event->hw.target != NULL) {
 		tsk = event->hw.target;
-		
+		if(tsk->past_physical_time > 0)
+			buffer_window_size = tsk->past_physical_time;
+
 		sample_period = event->attr.sample_period;
 
 		n_ints = (u64) tsk->n_ints;
 		counter_val = perf_event_read_value(event, &enabled, &running);
-
+		if(counter_val > sample_period) {
+			// overshoot error magnitude
+			tsk->past_virtual_time = (counter_val - sample_period);
+		}
 		if(n_ints > counter_val)
 			counter_val = 0;
 		else
@@ -5072,15 +5078,15 @@ static void perf_pending_event(struct irq_work *entry)
 
 		if(counter_val > sample_period) {
 			delta = counter_val - sample_period;
-			if(delta < 500)
-				delta = 500 - delta;
+			if(delta < buffer_window_size)
+				delta = buffer_window_size - delta;
 			else
 				delta = 0;			
 
 		}
 		else{
 			delta = sample_period - counter_val;
-			delta = 500 + delta;
+			delta = buffer_window_size + delta;
 		}
 		if(delta > 0) {
 			tsk->ptrace_msteps = (unsigned long) delta;

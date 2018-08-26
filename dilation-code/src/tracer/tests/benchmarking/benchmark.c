@@ -332,12 +332,14 @@ unsigned long wait_for_ptrace_events(llist * active_tids, pid_t pid, unsigned lo
 			uint64_t counter = libperf_readcounter(pd,LIBPERF_COUNT_HW_INSTRUCTIONS);/* obtain counter value */
 			libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);/* disable HW counter */
 			libperf_finalize(pd, 0); /* log all counter values */
-			unsigned long overshoot_err;
+			unsigned long overshoot_err = 0;
+
+			/*
 			ret = ptrace(PTRACE_GET_OVERSHOOT_ERROR, pid, NULL, &overshoot_err);
 			if(ret == -1){
 				printf("ERROR in PTRACE_GET_OVERSHOOT_ERROR.\n");
 				return FAIL;
-			}
+			}*/
 			return overshoot_err;
 
 		}
@@ -384,6 +386,7 @@ int run_commanded_process(llist * active_tids, pid_t pid, int n_instructions, in
 
 	flush_buffer(buffer, 100);
 
+	singlestepmode = 1;
     	
 
 	while(1) {

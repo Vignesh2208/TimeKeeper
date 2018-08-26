@@ -26,8 +26,7 @@ sudo cp print_time /bin/
 sudo cp x64_synchronizer /bin/
 
 #echo "Installing required dependencies"
-sudo apt-get install git-core libncurses5 libncurses5-dev libelf-dev binutils-dev linux-source qt3-dev-tools libqt3-mt-dev fakeroot build-essential crash kexec-tools makedumpfile kernel-wedge kernel-package python-dev uml-utilities vtun autoconf automake1.11 lua5.2-dev flex bison bridge-utils cgroup-lite libcap-dev
-
+sudo apt-get install git-core libncurses5 libncurses5-dev libelf-dev binutils-dev linux-source qt3-dev-tools libqt3-mt-dev fakeroot build-essential crash kexec-tools makedumpfile kernel-wedge kernel-package python-dev uml-utilities vtun autoconf automake1.11 lua5.2-dev flex bison bridge-utils cgroup-lite libcap-dev libssl-dev
 sudo ln -s /etc/apparmor.d/usr.bin.lxc-start /etc/apparmor.d/disable/
 sudo mkdir -p /usr/local/var/lib/lxc
 sudo mkdir -p /cgroup

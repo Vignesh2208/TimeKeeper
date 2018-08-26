@@ -1,0 +1,47 @@
+./benchmark cmds.txt
+My Pid: 5637
+Starting Command: /home/vignesh/TimeKeeper/dilation-code/src/tracer/tests/benchmarking/test
+My Pid: 5637
+Starting Command: /home/vignesh/TimeKeeper/dilation-code/src/tracer/tests/benchmarking/test
+My Pid: 5637
+Starting Command: /home/vignesh/TimeKeeper/dilation-code/src/tracer/tests/benchmarking/test
+Waiting for Child : 5638
+Child stopped. Setting trace options 
+Waiting for Child : 5639
+Child stopped. Setting trace options 
+TEST SUCCESS.
+N-Insns: 1000
+Avg overshoot_err: 27.850000
+Std overshoot_err: 4.881344
+Avg time_elapsed_window: 402.649994
+Std time_elapsed_window: 270.816791
+Avg time_elapsed_nowindow: 185.649994
+Std time_elapsed_nowindow: 112.410086
+N-Insns: 10000
+Avg overshoot_err: 26.900000
+Std overshoot_err: 7.049114
+Avg time_elapsed_window: 402.549988
+Std time_elapsed_window: 259.254791
+Avg time_elapsed_nowindow: 188.899994
+Std time_elapsed_nowindow: 129.036786
+N-Insns: 100000
+Avg overshoot_err: 28.049999
+Std overshoot_err: 4.964633
+Avg time_elapsed_window: 373.600006
+Std time_elapsed_window: 54.293042
+Avg time_elapsed_nowindow: 193.199997
+Std time_elapsed_nowindow: 43.383870
+N-Insns: 1000000
+Avg overshoot_err: 26.350000
+Std overshoot_err: 7.058861
+Avg time_elapsed_window: 562.349976
+Std time_elapsed_window: 40.604803
+Avg time_elapsed_nowindow: 375.049988
+Std time_elapsed_nowindow: 28.050735
+N-Insns: 10000000
+Avg overshoot_err: 27.900000
+Std overshoot_err: 4.011238
+Avg time_elapsed_window: 2492.350098
+Std time_elapsed_window: 159.422395
+Avg time_elapsed_nowindow: 2294.649902
+Std time_elapsed_nowindow: 140.157055

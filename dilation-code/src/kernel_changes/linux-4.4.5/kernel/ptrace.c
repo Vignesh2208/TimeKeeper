@@ -1147,6 +1147,19 @@ SYSCALL_DEFINE4(ptrace, long, request, long, pid, unsigned long, addr,
                 if(copy_to_user(datalp, &flags, sizeof(unsigned long)))
                         return -EFAULT;
                 return 0;	
+	} else if(request == PTRACE_SET_DELTA_BUFFER_WINDOW) {
+		if (__get_user(n_steps,datalp))
+			return -EFAULT;
+		child->past_physical_time = n_steps;
+		trace_printk("Ptrace: Pid: %d, set rem delta buffer window size: %lu\n",  child->pid, child->past_physical_time);
+		return 0;
+	} else if(request == PTRACE_GET_OVERSHOOT_ERROR) {
+		unsigned long error = child->past_virtual_time;
+		child->past_virtual_time = 0;
+		if(copy_to_user(datalp, &error, sizeof(unsigned long)))
+                        return -EFAULT;
+        trace_printk("Ptrace: Pid: %d, overshoot error: %lu\n",  child->pid, child->past_virtual_time);
+        return 0;
 	}
 
 	ret = ptrace_check_attach(child, request == PTRACE_KILL ||
