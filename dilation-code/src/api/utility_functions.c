@@ -7,31 +7,26 @@
 #include <sys/syscall.h>
 #include "utility_functions.h"
 
-//const char *FILENAME = "/proc/dilation/status"; //where TimeKeeper LKM is reading commands
 const char *FILENAME = "/proc/status";
 /*
-Sends a specific command to the TimeKeeper Kernel Module. To communicate with the TLKM, you send messages to the location specified by FILENAME
+Sends a specific command to the TimeKeeper Kernel Module.
+To communicate with the TLKM, you send messages to the location
+specified by FILENAME
 */
 int send_to_timekeeper(char * cmd) {
-    //FILE *fp;
-    //fp = fopen(FILENAME, "a");
     int fp = open(FILENAME, O_RDWR);
     int ret = 0;
     if (fp < 0) {
         printf("Error communicating with TimeKeeper\n");
         return -1;
     }
-    //printf("Sending Command: %s\n", cmd);
-    //fflush(stdout);
-    //ret = fprintf(fp, "%s,", cmd); //add comma to act as last character
     ret = write(fp, cmd, strlen(cmd));
-    //printf("Command Return value: %d\n", ret);
     fflush(stdout);
     close(fp);
     return ret;
 }
 
-int get_stats(ioctl_args * args){
+int get_stats(ioctl_args * args) {
 
     int fp = open(FILENAME, O_RDWR);
     int ret = 0;
@@ -57,17 +52,17 @@ int get_stats(ioctl_args * args){
 Returns the thread id of a process
 */
 int gettid() {
-        return syscall(SYS_gettid);
+    return syscall(SYS_gettid);
 }
 
 /*
 Checks if it is being ran as root or not. All of my code requires root.
 */
 int is_root() {
-        if (geteuid() == 0)
-                return 1;
-        printf("Needs to be ran as root\n");
-        return 0;
+    if (geteuid() == 0)
+        return 1;
+    printf("Needs to be ran as root\n");
+    return 0;
 
 }
 
@@ -75,7 +70,7 @@ int is_root() {
 Returns 1 if module is loaded, 0 otherwise
 */
 int isModuleLoaded() {
-    if( access( FILENAME, F_OK ) != -1 ) {
+    if ( access( FILENAME, F_OK ) != -1 ) {
         return 1;
     } else {
         printf("TimeKeeper kernel module is not loaded\n");
@@ -83,8 +78,8 @@ int isModuleLoaded() {
     }
 }
 
-void flush_buffer(char * buf, int size){
+void flush_buffer(char * buf, int size) {
     int i = 0;
-    for(i =  0; i < size; i++)
+    for (i =  0; i < size; i++)
         buf[i] = '\0';
 }

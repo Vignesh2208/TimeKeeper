@@ -203,8 +203,6 @@ entry_SYSCALL_64_fastpath:
 	 * flags (TIF_NOTIFY_RESUME, TIF_USER_RETURN_NOTIFY, etc) set is
 	 * very bad.
 	 */
-	//testl	$_TIF_ALLWORK_MASK, ASM_THREAD_INFO(TI_flags, %rsp, SIZEOF_PTREGS)
-	//jnz	int_ret_from_sys_call_irqs_off	/* Go to the slow path */
 	
 	jmp	int_ret_from_sys_call_irqs_off
 
@@ -522,6 +520,7 @@ END(irq_entries_start)
 	 * we enter from user mode.  There's no reason to optimize this since
 	 * TRACE_IRQS_OFF is a no-op if lockdep is off.
 	 */
+	 
 	TRACE_IRQS_OFF
 
 	/** New **/

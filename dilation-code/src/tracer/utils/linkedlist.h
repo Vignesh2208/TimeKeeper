@@ -7,7 +7,7 @@
 
 typedef int (*equal_Fn)(void * elem1, void * elem2);
 
-typedef struct llist_elem_struct{
+typedef struct llist_elem_struct {
 
 	void * item;
 	struct llist_elem_struct * next;
@@ -16,7 +16,7 @@ typedef struct llist_elem_struct{
 }
 llist_elem;
 
-typedef struct llist_struct{
+typedef struct llist_struct {
 
 	int size;
 	llist_elem * head;
@@ -37,9 +37,11 @@ void * llist_pop(llist * l);
 void * llist_remove_at(llist * l, int index);
 int llist_remove(llist * l, void *item);
 int llist_size(llist * l);
-void llist_iterate(llist * l, void (*act_on)(void *item, void * args), void * args);
+void llist_iterate(llist * l, void (*act_on)(void *item, void * args),
+                   void * args);
 void llist_destroy(llist * l);
-void llist_set_equality_checker(llist * l, int (*equality_checker)(void * elem1, void * elem2));
+void llist_set_equality_checker(llist * l, int (*equality_checker)(void * elem1,
+                                void * elem2));
 int llist_remove_free(llist * l, void * item);
 
 #endif

@@ -10,7 +10,7 @@ SRC_FILE=$SCRIPT_DIR/$LINE
 DST_DIR=/src/linux-4.4.5/$(dirname $LINE)
 echo Copying $SRC_FILE to $DST_DIR
 mkdir -p $DST_DIR
-cp -v $SRC_FILE $DST_DIR
+#cp -v $SRC_FILE $DST_DIR
 done
 
-echo "" > differences.txt
+#echo "" > differences.txt

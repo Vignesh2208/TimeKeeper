@@ -26,7 +26,7 @@
 #include <time.h>
 #include <sched.h>
 #include <inttypes.h> /* for PRIu64 definition */
-#include <stdint.h>   /* for uint64_t */ 
+#include <stdint.h>   /* for uint64_t */
 #include "libperf.h"  /* standard libperf include */
 #include <poll.h>
 #include <linux/perf_event.h>
@@ -36,7 +36,7 @@
 
 
 #define NETLINK_USER 31
-#define MAX_PAYLOAD 1024 /* maximum payload size*/
+#define MAX_PAYLOAD MAX_BUF_SIZ /* maximum payload size*/
 #define EBREAK_SYSCALL 35
 #define MAX_FNAME_SIZ 100
 
@@ -89,7 +89,7 @@ void printLog(const char *fmt, ...);
 
 
 #if defined DEBUG
-#define LOG(...)    printLog(__VA_ARGS__)
+#define LOG(...)    //printLog(__VA_ARGS__)
 #else
 #define LOG(...)	//printLog(__VA_ARGS__)
 #endif
