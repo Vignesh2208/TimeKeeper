@@ -50,9 +50,9 @@
 #define TK_IO_WRITE_RESULTS _IOW(TK_IOC_MAGIC,  2, int)
 
 /* Define this macro to enable debug kernel logging in INFO mode*/
-#define TIMEKEEPER_DEBUG_VERBOSE
-#define TIMEKEEPER_DEBUG_INFO
-#define IGNORE_BLOCKED_PROCESS_SCHED_MODE
+//#define TIMEKEEPER_DEBUG_VERBOSE
+//#define TIMEKEEPER_DEBUG_INFO
+//#define IGNORE_BLOCKED_PROCESS_SCHED_MODE
 
 /* Define this macro to enable debug kernel logging in VERBOSE mode*/
 //#define TIMEKEEPER_DEBUG_VERBOSE
@@ -124,7 +124,7 @@
 #define PDEBUG_V(fmt,args...)
 #endif
 
-#define PDEBUG_A(fmt, args...) printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)
+#define PDEBUG_A(fmt, args...) //printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)
 #define PDEBUG_E(fmt, args...) printk(KERN_ERR "TimeKeeper: <ERROR> " fmt, ## args)
 
 

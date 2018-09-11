@@ -438,7 +438,7 @@ Copyright (C) 2012 Free Software Foundation, Inc.
 This config.status script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it."
 
-ac_pwd='/home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf'
+ac_pwd='/home/moses/TimeKeeper/dilation-code/src/tracer/libperf'
 srcdir='.'
 INSTALL='/usr/bin/install -c'
 MKDIR_P='/bin/mkdir -p'
@@ -680,7 +680,7 @@ finish_cmds='PATH="\$PATH:/sbin" ldconfig -n $libdir'
 finish_eval=''
 hardcode_into_libs='yes'
 sys_lib_search_path_spec='/usr/lib/gcc/x86_64-linux-gnu/5 /usr/lib/x86_64-linux-gnu /usr/lib /lib/x86_64-linux-gnu /lib '
-configure_time_dlsearch_path='/lib /usr/lib /usr/local/cuda-8.0/targets/x86_64-linux/lib /usr/lib/x86_64-linux-gnu/libfakeroot /usr/local/lib /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu/mesa-egl /usr/lib/x86_64-linux-gnu/mesa /lib32 /usr/lib32 '
+configure_time_dlsearch_path='/lib /usr/lib /usr/lib/x86_64-linux-gnu/libfakeroot /usr/local/lib /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu/mesa-egl /usr/lib/x86_64-linux-gnu/mesa '
 configure_time_lt_sys_library_path=''
 hardcode_action='immediate'
 enable_dlopen='unknown'
@@ -886,12 +886,12 @@ S["mkdir_p"]="$(MKDIR_P)"
 S["MKDIR_P"]="/bin/mkdir -p"
 S["INSTALL_STRIP_PROGRAM"]="$(install_sh) -c -s"
 S["STRIP"]="strip"
-S["install_sh"]="${SHELL} /home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/install-sh"
-S["MAKEINFO"]="${SHELL} /home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing makeinfo"
-S["AUTOHEADER"]="${SHELL} /home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing autoheader"
-S["AUTOMAKE"]="${SHELL} /home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing automake-1.15"
-S["AUTOCONF"]="${SHELL} /home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing autoconf"
-S["ACLOCAL"]="${SHELL} /home/vignesh/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing aclocal-1.15"
+S["install_sh"]="${SHELL} /home/moses/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/install-sh"
+S["MAKEINFO"]="${SHELL} /home/moses/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing makeinfo"
+S["AUTOHEADER"]="${SHELL} /home/moses/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing autoheader"
+S["AUTOMAKE"]="${SHELL} /home/moses/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing automake-1.15"
+S["AUTOCONF"]="${SHELL} /home/moses/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing autoconf"
+S["ACLOCAL"]="${SHELL} /home/moses/TimeKeeper/dilation-code/src/tracer/libperf/build-aux/missing aclocal-1.15"
 S["VERSION"]="0.1"
 S["PACKAGE"]="libperf"
 S["CYGPATH_W"]="echo"

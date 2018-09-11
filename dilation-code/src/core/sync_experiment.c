@@ -1039,6 +1039,8 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer) {
 			curr_elem->n_insns_curr_round = 0;
 			curr_elem->n_insns_left = 0;
 		}
+#else
+		}
 #endif
 
 #endif
