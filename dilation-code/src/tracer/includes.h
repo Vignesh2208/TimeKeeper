@@ -36,7 +36,7 @@
 
 
 #define NETLINK_USER 31
-#define MAX_PAYLOAD MAX_BUF_SIZ /* maximum payload size*/
+#define MAX_IGNORE_PIDS 100
 #define EBREAK_SYSCALL 35
 #define MAX_FNAME_SIZ 100
 

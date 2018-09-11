@@ -365,7 +365,8 @@ retry:
  *		pid:	PID of the tracee which is to be run
  *		n_insns: Number of instructions by which the specified tracee is advanced
  *		cpu_assigned: Cpu on which the tracer is running
- *		rel_cpu_speed: TimeKeeper specific relative cpu speed assigned to the tracer. Equivalent to TDF.
+ *		rel_cpu_speed: TimeKeeper specific relative cpu speed assigned to the
+ 		tracer. Equivalent to TDF.
  * Output:
  *		SUCCESS or FAIL
  */
@@ -475,7 +476,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 				}
 				libperf_disablecounter(pd, LIBPERF_COUNT_HW_INSTRUCTIONS);
 				libperf_finalize(pd, 0);
-				//llist_remove(tracee_list,curr_tracee);
+				llist_remove(tracee_list, curr_tracee);
 				hmap_remove_abs(tracees, pid);
 				print_tracee_list(tracee_list);
 
@@ -497,7 +498,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 			break;
 
 		case TID_IGNORE_PROCESS:
-			//llist_remove(tracee_list, curr_tracee);
+			llist_remove(tracee_list, curr_tracee);
 			hmap_remove_abs(tracees, pid);
 			print_tracee_list(tracee_list);
 			// For now, we handle this case like this.
@@ -507,7 +508,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 
 
 		case TID_EXITED:
-			//llist_remove(tracee_list, curr_tracee);
+			llist_remove(tracee_list, curr_tracee);
 			hmap_remove_abs(tracees, pid);
 			print_tracee_list(tracee_list);
 			// Exit is still not fully complete. need to do this to complete it.
@@ -611,7 +612,7 @@ int main(int argc, char * argv[]) {
 	u32 n_round_insns;
 	int cpu_assigned;
 	char command[MAX_BUF_SIZ];
-	int ignored_pids[MAX_BUF_SIZ];
+	int ignored_pids[MAX_IGNORE_PIDS];
 	int n_cpus = get_nprocs();
 	int read_ret = -1;
 	int create_spinner = 0;
@@ -785,7 +786,8 @@ int main(int argc, char * argv[]) {
 			LOG("TracerID: %d, Assigned CPU: %d\n", tracer_id, cpu_assigned);
 			errno = 0;
 		} else {
-			LOG("TracerID: %d, Registration Error. Errno: %d\n", tracer_id, errno);
+			LOG("TracerID: %d, Registration Error. Errno: %d\n", tracer_id,
+			    errno);
 			exit(FAIL);
 		}
 	} else {
@@ -808,102 +810,51 @@ int main(int argc, char * argv[]) {
 		read_ret = -1;
 		cmd_no ++;
 
-		for (i = 0; i < MAX_BUF_SIZ; i++)
+		for (i = 0; i < MAX_IGNORE_PIDS; i++)
 			ignored_pids[i] = 0;
-
-		/*if(cmd_no >= 2000 && tracer_id == 0) {
-			//usleep(100000);
-			fflush(stdout);
-			char copy_cmd[MAX_PAYLOAD];
-			flush_buffer(copy_cmd, MAX_PAYLOAD);
-			sprintf(copy_cmd,"sudo cp -f /sys/kernel/debug/tracing/trace /log/trace_printk_%d.log", tracer_id);
-			system(copy_cmd);
-		}*/
-
-		//fflush(stdout);
 		i = 0;
-		//LOG("TracerID: %d: Writing cmd Results and  Waiting for next command ...\n", tracer_id);
-
-
 		write_results(fp, nxt_cmd);
-
-		//LOG("TraceID: %d, Cmd no: %d, Command: %s\n", tracer_id, cmd_no, nxt_cmd);
-
 		while (tail_ptr != -1) {
-			tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid, &n_insns);
+			tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid,
+			                                  &n_insns);
 
 
 			if (tail_ptr == -1 && new_cmd_pid == -1) {
-				LOG("TracerID: %d, STOP Command received. Stopping tracer ...\n", tracer_id);
+				LOG("TracerID: %d, STOP Command received. Stopping tracer ...\n",
+				    tracer_id);
 				goto end;
 			}
 
 			if (new_cmd_pid == 0)
 				break;
 
-			LOG("TracerID: %d, Running Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
-
-
-			/*
-			kill(new_cmd_pid, SIGCONT);
-			LOG("TracerID: %d, Sleeping\n", tracer_id);
-			int sleep_duration = (int)n_insns *
-			                     ((float)rel_cpu_speed / 1000.0);
-			usleep(1000);
-			LOG("TracerID: %d, Wokeup\n", tracer_id);
-			kill(new_cmd_pid, SIGSTOP);
-			LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
-			*/
-
-
-			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns, cpu_assigned, rel_cpu_speed);
-			LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id, new_cmd_pid, n_insns);
+			LOG("TracerID: %d, Running Child: %d for %d instructions\n",
+			    tracer_id, new_cmd_pid, n_insns);
+			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns,
+			                      cpu_assigned, rel_cpu_speed);
+			LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id,
+			    new_cmd_pid, n_insns);
 
 			if (!hmap_get_abs(&tracees, new_cmd_pid)) {
-				if ( i < MAX_BUF_SIZ - 1) {
+				if ( i < MAX_IGNORE_PIDS - 1) {
 					ignored_pids[i] = new_cmd_pid;
 					i++;
 				}
 			}
 		}
-
-
-		/*
-		LOG("TracerID: %d. ##################### Round no: %d #####################\n", tracer_id, cmd_no);
-		llist_elem * head = tracee_list.head;
-		while (head != NULL) {
-			new_entry = (tracee_entry *) head->item;
-			n_insns = 200000;
-
-			if (run_commanded_process(&tracees, &tracee_list, new_entry->pid, n_insns, cpu_assigned, rel_cpu_speed) != FAIL) {
-				LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id, new_entry->pid, n_insns);
-			}
-			head = head->next;
-		}*/
 		flush_buffer(nxt_cmd, MAX_PAYLOAD);
 		sprintf(nxt_cmd, "%c,", TRACER_RESULTS);
 		for (i = 0; ignored_pids[i] != 0; i++) {
 			sprintf(nxt_cmd + strlen(nxt_cmd), "%d,", ignored_pids[i]);
 		}
-
-
 		strcat(nxt_cmd, "0,");
-
-		//flush_buffer(command,MAX_BUF_SIZ);
-		//sprintf(command, "%c,%s,", TRACER_RESULTS,"0");
 	}
 end:
 	close(fp);
 
 
 #endif
-
-
 	llist_destroy(&tracee_list);
 	hmap_destroy(&tracees);
-
-
-
 	return 0;
-
 }

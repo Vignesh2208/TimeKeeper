@@ -13,6 +13,7 @@ build_api:
 
 clean:
 
+	@rm -rf build/
 	@rm -f *.o
 	@rm -f /usr/lib/libtkapi.so
 	@rm -f /usr/local/include/TimeKeeper_functions.h

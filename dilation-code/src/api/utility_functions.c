@@ -79,7 +79,6 @@ int isModuleLoaded() {
 }
 
 void flush_buffer(char * buf, int size) {
-    int i = 0;
-    for (i =  0; i < size; i++)
-        buf[i] = '\0';
+    if (size)
+        memset(buf, 0, size * sizeof(char));
 }

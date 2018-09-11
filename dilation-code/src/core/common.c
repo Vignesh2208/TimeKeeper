@@ -774,13 +774,11 @@ int handle_tracer_results(char * buffer) {
 			break;
 		}
 
-		if (result) { //result is a pid to be ignored
+		if (result) {
+			//result is a pid to be ignored
 			PDEBUG_V("Handle tracer results: Pid: %d, Tracer ID: %d, "
 			         "Ignoring Process: %d\n", current->pid,
 			         curr_tracer->tracer_id, result);
-			//pid_struct = find_get_pid(result);
-			//task = pid_task(pid_struct, PIDTYPE_PID);
-
 			hmap_put_abs(&curr_tracer->ignored_children, result, current);
 		}
 	}
@@ -793,9 +791,6 @@ int handle_tracer_results(char * buffer) {
 
 
 int handle_stop_exp_cmd() {
-
-
-	////set_current_state(TASK_INTERRUPTIBLE);
 	atomic_set(&progress_n_enabled, 0);
 	atomic_set(&progress_n_rounds, 0);
 	atomic_set(&experiment_stopping, 1);

@@ -1,7 +1,8 @@
 #include "module.h"
 
 /*
-Has basic functionality for the Kernel Module itself. It defines how the userland process communicates with the kernel module,
+Has basic functionality for the Kernel Module itself. It defines how the
+userland process communicates with the kernel module,
 as well as what should happen when the kernel module is initialized and removed.
 */
 
@@ -179,7 +180,7 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 	for (i = 0; i < STATUS_MAXSIZE; i++)
 		write_buffer[i] = '\0';
 
-	////set_current_state(TASK_RUNNING);
+
 
 	PDEBUG_V("TK-IO: Got ioctl from : %d\n", current->pid);
 
@@ -239,14 +240,11 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 		PDEBUG_I("TK-IO: Tracer : %d, Waiting for next command.\n",
 		         current->pid);
 
-		////set_current_state(TASK_INTERRUPTIBLE);
 		atomic_inc(&n_waiting_tracers);
 		wake_up_interruptible(&progress_sync_proc_wqueue);
 		wait_event_interruptible(
 		    curr_tracer->w_queue,
 		    atomic_read(&curr_tracer->w_queue_control) == 0);
-		////set_current_state(TASK_RUNNING);
-
 		PDEBUG_V("TK-IO: Tracer : %d, Resuming from wait\n", current->pid);
 
 
@@ -266,15 +264,9 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 			PDEBUG_I("TK-IO: Tracer: %d, STOPPING\n", current->pid);
 			get_tracer_struct_write(curr_tracer);
 			if (curr_tracer->spinner_task != NULL) {
-				//kill_p(curr_tracer->spinner_task, SIGKILL);
 				curr_tracer->spinner_task = NULL;
 			}
 			put_tracer_struct_write(curr_tracer);
-			//mutex_lock(&exp_lock);
-			//ret = curr_tracer->buf_tail_ptr;
-			//kfree(curr_tracer);
-			//mutex_unlock(&exp_lock);
-
 			hmap_remove_abs(&get_tracer_by_id, curr_tracer->tracer_id);
 			hmap_remove_abs(&get_tracer_by_pid, current->pid);
 
@@ -284,7 +276,6 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 
 			atomic_dec(&n_waiting_tracers);
 			wake_up_interruptible(&expstop_call_proc_wqueue);
-			////set_current_state(TASK_RUNNING);
 			return 0;
 
 		}
@@ -292,10 +283,7 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 		ret = curr_tracer->buf_tail_ptr;
 		put_tracer_struct_read(curr_tracer);
 		PDEBUG_V("TK-IO: Tracer: %d, Returning value: %d\n", current->pid, ret);
-		////set_current_state(TASK_RUNNING);
 		return 0;
-
-
 
 	default: return -ENOTTY;
 	}
@@ -325,8 +313,6 @@ ssize_t status_write(struct file *file, const char __user *buffer,
 		buffer_size = count;
 
 	}
-
-	////set_current_state(TASK_RUNNING);
 
 	PDEBUG_V("Got Generic write to proc file from : %d, count = %d\n",
 	         current->pid, count);
@@ -371,8 +357,6 @@ ssize_t status_write(struct file *file, const char __user *buffer,
 		         current->pid, write_buffer);
 		ret = handle_tracer_results(write_buffer + 2);
 		mutex_unlock(&file_lock);
-
-		//return 0;
 	} else if (write_buffer[0] == SET_NETDEVICE_OWNER) {
 		ret = handle_set_netdevice_owner_cmd(write_buffer + 2);
 		mutex_unlock(&file_lock);
@@ -392,18 +376,12 @@ ssize_t status_write(struct file *file, const char __user *buffer,
 		       "Command: %s. Buffer size: %zu.\n", write_buffer, count);
 	}
 
-
-	////set_current_state(TASK_RUNNING);
-
 	if (ret < 0)
 		return ret;
 	else
 		return count;
 
 	return FAIL;
-
-
-
 }
 
 /* needs to be defined, but we do not read from
@@ -414,8 +392,6 @@ ssize_t status_read(struct file *pfil, char __user *pBuf,
 	int i;
 	int ret;
 	tracer * curr_tracer;
-
-	////set_current_state(TASK_RUNNING);
 
 	PDEBUG_V("Status Read: Tracer : %d, Entered.\n", current->pid);
 	if (experiment_status != INITIALIZED) {
@@ -433,17 +409,11 @@ ssize_t status_read(struct file *pfil, char __user *pBuf,
 	PDEBUG_I("Status Read: Tracer : %d, Waiting for next command\n",
 	         current->pid);
 
-	////set_current_state(TASK_INTERRUPTIBLE);
 	atomic_inc(&n_waiting_tracers);
 	wake_up_interruptible(&progress_sync_proc_wqueue);
 	wait_event_interruptible(curr_tracer->w_queue,
 	                         atomic_read(&curr_tracer->w_queue_control) == 0);
-	////set_current_state(TASK_RUNNING);
-
 	PDEBUG_V("Status Read: Tracer : %d, Resuming from wait\n", current->pid);
-
-
-
 
 	if (copy_to_user(pBuf, curr_tracer->run_q_buffer,
 	                 curr_tracer->buf_tail_ptr + 1 )) {
@@ -457,7 +427,6 @@ ssize_t status_read(struct file *pfil, char __user *pBuf,
 		// free up memory
 		PDEBUG_I("Status Read: Tracer: %d, STOPPING\n", current->pid);
 		if (curr_tracer->spinner_task != NULL) {
-			//kill_p(curr_tracer->spinner_task, SIGKILL);
 			curr_tracer->spinner_task = NULL;
 		}
 		mutex_lock(&exp_lock);
@@ -562,23 +531,6 @@ int __init my_module_init(void) {
 		EXP_CPUS = 1;
 
 	PDEBUG_A(" Number of EXP_CPUS: %d\n", EXP_CPUS);
-
-
-
-
-
-	/* Wait to stop loop_task */
-	/*#ifdef __x86_64
-	    	if (loop_task != NULL) {
-	            	kill_p(loop_task, SIGSTOP);
-	            	bitmap_zero((&loop_task->cpus_allowed)->bits, 8);
-	   				cpumask_set_cpu(1,&loop_task->cpus_allowed);
-	        }
-	    	else {
-	            	PDEBUG_E(" Loop_task is null??\n");
-	        }
-	#endif*/
-
 	PDEBUG_A(" TIMEKEEPER MODULE LOADED SUCCESSFULLY \n");
 
 
@@ -600,8 +552,6 @@ void __exit my_module_exit(void) {
 	PDEBUG_A(" /proc/%s/%s deleted\n", DILATION_DIR, DILATION_FILE);
 	remove_proc_entry(DILATION_DIR, NULL);
 	PDEBUG_A(" /proc/%s deleted\n", DILATION_DIR);
-
-	//cleanup_experiment_components();
 
 	if (sys_call_table) {
 		orig_cr0 = read_cr0();

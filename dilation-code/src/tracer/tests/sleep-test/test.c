@@ -13,9 +13,9 @@ void print_curr_time() {
 
   gettimeofday(&tv, NULL);
 
-  millisec = (int) tv.tv_usec/1000.0; // Round to nearest millisec
-  if (millisec>=1000) { // Allow for rounding up to nearest second
-    millisec -=1000;
+  millisec = (int) tv.tv_usec / 1000.0; // Round to nearest millisec
+  if (millisec >= 1000) { // Allow for rounding up to nearest second
+    millisec -= 1000;
     tv.tv_sec++;
   }
 
@@ -29,17 +29,17 @@ void print_curr_time() {
 }
 
 void main() {
-	fprintf(stderr, "Hello World\n");
-	fflush(stdout);
-	int i = 0;
-	int delay = 1000;
-	fprintf(stderr, "Sleeping ...\n");
-	usleep(delay*1000);
-	print_curr_time();
-	while(i < 50000000) {
-		i++;
-	}
-	print_curr_time();
-	fprintf(stderr, "GoodBye World\n");
+  fprintf(stderr, "Hello World\n");
+  fflush(stdout);
+  int i = 0;
+  int delay = 1000;
+  fprintf(stderr, "Sleeping ...\n");
+  usleep(delay * 1000);
+  print_curr_time();
+  while (i < 50000000) {
+    i++;
+  }
+  print_curr_time();
+  fprintf(stderr, "GoodBye World\n");
 
 }

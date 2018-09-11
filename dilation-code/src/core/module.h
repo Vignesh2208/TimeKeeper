@@ -29,16 +29,9 @@ static const struct file_operations proc_file_fops = {
 };
 
 
-#define STATUS_MAXSIZE 1004
+#define STATUS_MAXSIZE 1000
 #define DILATION_DIR "dilation"
 #define DILATION_FILE "status"
-
-/*
-How many processors are dedicated to the experiment. My system has 8, so I set it to 6 so background tasks can run on the other 2.
-This needs to be >= 2 and your system needs to have at least 4 vCPUs
-*/
-
-
 #define NOTSET 0 	//not set yet
 
 
@@ -51,7 +44,7 @@ This needs to be >= 2 and your system needs to have at least 4 vCPUs
 #define STOPPING 2
 #define NOT_INITIALIZED 0
 #define INITIALIZED 1
-#define BUF_MAX_SIZE 200
+#define BUF_MAX_SIZE 1000
 
 
 typedef struct sched_queue_element {
@@ -72,7 +65,8 @@ typedef struct tracer_struct {
 	char run_q_buffer[BUF_MAX_SIZE];
 	int buf_tail_ptr;
 	u32 cpu_assignment;
-	u32 dilation_factor;			// Indicates relative CPU speed wrt to the reference CPU speeds
+	// Indicates relative CPU speed wrt to the reference CPU speeds
+	u32 dilation_factor;
 	s64 freeze_quantum;
 	s64 quantum_n_insns;
 	s64 round_start_virt_time;
@@ -120,21 +114,27 @@ extern int pop_schedule_list(tracer * tracer_entry);
 extern void requeue_schedule_list(tracer * tracer_entry);
 extern void clean_up_schedule_list(tracer * tracer_entry);
 extern int schedule_list_size(tracer * tracer_entry);
-extern void update_tracer_schedule_queue_elem(tracer * tracer_entry, struct task_struct * tracee);
-extern void add_to_tracer_schedule_queue(tracer * tracer_entry, struct task_struct * tracee);
-extern void add_process_to_schedule_queue_recurse(tracer * tracer_entry, struct task_struct * tsk);
+extern void update_tracer_schedule_queue_elem(tracer * tracer_entry,
+        struct task_struct * tracee);
+extern void add_to_tracer_schedule_queue(tracer * tracer_entry,
+        struct task_struct * tracee);
+extern void add_process_to_schedule_queue_recurse(tracer * tracer_entry,
+        struct task_struct * tsk);
 extern void refresh_tracer_schedule_queue(tracer * tracer_entry);
 extern int register_tracer_process(char * write_buffer);
 extern int update_tracer_params(char * write_buffer);
-extern void update_task_virtual_time(tracer * tracer_entry, struct task_struct * tsk, s64 n_insns_run);
+extern void update_task_virtual_time(tracer * tracer_entry,
+                                     struct task_struct * tsk, s64 n_insns_run);
 extern void update_all_children_virtual_time(tracer * tracer_entry);
 extern void update_all_tracers_virtual_time(int cpuID);
 extern int handle_tracer_results(char * buffer);
 extern int handle_stop_exp_cmd();
 extern int handle_set_netdevice_owner_cmd(char * write_buffer);
-extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list, struct poll_wqueues *wait, struct task_struct * tsk);
+extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list,
+                            struct poll_wqueues *wait, struct task_struct * tsk);
 extern int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk);
-int run_usermode_tracer_spin_process(char *path, char **argv, char **envp, int wait);
+int run_usermode_tracer_spin_process(char *path, char **argv,
+                                     char **envp, int wait);
 
 
 #endif

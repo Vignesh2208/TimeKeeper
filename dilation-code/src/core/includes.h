@@ -36,6 +36,7 @@
 #include <linux/fdtable.h>
 #include <linux/string.h>
 #include <linux/delay.h>
+#include <linux/ptrace.h>
 
 /* user defined headers */
 #include "../utils/linkedlist.h"
@@ -51,6 +52,7 @@
 /* Define this macro to enable debug kernel logging in INFO mode*/
 #define TIMEKEEPER_DEBUG_VERBOSE
 #define TIMEKEEPER_DEBUG_INFO
+#define IGNORE_BLOCKED_PROCESS_SCHED_MODE
 
 /* Define this macro to enable debug kernel logging in VERBOSE mode*/
 //#define TIMEKEEPER_DEBUG_VERBOSE
@@ -62,7 +64,8 @@
 #define SUCCESS 1
 #define FAIL -1
 
-#define REF_CPU_SPEED	1000	//Number of Instructions per uSec or 1 instruction per nano sec
+//Number of Instructions per uSec or 1 instruction per nano sec
+#define REF_CPU_SPEED	1000
 
 
 
@@ -83,10 +86,10 @@
 #define USEC_PER_SEC    1000000L
 #define NSEC_PER_SEC    1000000000L
 #define FSEC_PER_SEC    1000000000000000L
-#define EFAULT          14  
+#define EFAULT          14
 #define EINVAL          22
-#define EINTR            4 
-#define ENOMEM          12 
+#define EINTR            4
+#define ENOMEM          12
 #define POLL_STACK_ALLOC      256
 #define SELECT_STACK_ALLOC      256
 #define RLIMIT_NOFILE           5       /* max number of open files */
@@ -108,19 +111,19 @@
 
 
 #ifdef TIMEKEEPER_DEBUG_INFO
-	#define PDEBUG_I(fmt, args...) printk(KERN_INFO "TimeKeeper: <INFO> " fmt, ## args)
+#define PDEBUG_I(fmt, args...) printk(KERN_INFO "TimeKeeper: <INFO> " fmt, ## args)
 #else
-	#define PDEBUG_I(fmt,args...)
+#define PDEBUG_I(fmt,args...)
 #endif
 
 
 
 #ifdef TIMEKEEPER_DEBUG_VERBOSE
-	#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
+#define PDEBUG_V(fmt,args...) printk(KERN_INFO "TimeKeeper: <VERBOSE> " fmt, ## args)
 #else
-	#define PDEBUG_V(fmt,args...)
+#define PDEBUG_V(fmt,args...)
 #endif
-	
+
 #define PDEBUG_A(fmt, args...) printk(KERN_INFO "TimeKeeper: <NOTICE> " fmt, ## args)
 #define PDEBUG_E(fmt, args...) printk(KERN_ERR "TimeKeeper: <ERROR> " fmt, ## args)
 
@@ -128,45 +131,45 @@
 
 #ifdef ENABLE_IRQ_LOCKING
 
-	#define acquire_irq_lock(lock,flags) \
+#define acquire_irq_lock(lock,flags) \
 	do {															 \
 		spin_lock_irqsave(lock,flags);								 \
-	} while(0)														 
+	} while(0)
 
 
-	#define release_irq_lock(lock, flags) \
+#define release_irq_lock(lock, flags) \
 	do {															 \
 		spin_unlock_irqrestore(lock,flags);								 \
-	} while(0)									
+	} while(0)
 
-#else 
+#else
 
-	#ifdef ENABLE_LOCKING
+#ifdef ENABLE_LOCKING
 
-		#define acquire_irq_lock(lock,flags) \
+#define acquire_irq_lock(lock,flags) \
 		do {							\
 			spin_lock(lock);				\
-		} while(0)							
+		} while(0)
 
 
-		#define release_irq_lock(lock, flags) \
+#define release_irq_lock(lock, flags) \
 		do {															 \
 		spin_unlock(lock);				\
-		} while(0)														
+		} while(0)
 
-	#else 
+#else
 
-		#define acquire_irq_lock(lock,flags) \
+#define acquire_irq_lock(lock,flags) \
 		do {							\
-		} while(0)							
+		} while(0)
 
 
-		#define release_irq_lock(lock, flags) \
+#define release_irq_lock(lock, flags) \
 		do {															 \
-		} while(0)														
+		} while(0)
 
 
-	#endif
+#endif
 
 #endif
 

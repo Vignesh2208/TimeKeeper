@@ -16,8 +16,9 @@ make[3]: *** No rule to make target '/Kbuild'.  Stop
 
 
 3. There is also a forking problem which occurs during compilation. It causes fork() resource to be temporarily unavailable sometimes. 
-Need to check if this is because of any of the kernel modifications.
-
+Need to check if this is because of any of the kernel modifications. (FIXED)
 
 
 4. Disable module verification during kernel compilation in the menu config state.
+
+5. New bug which causes kernel panic after TimeKeeper module is unloaded

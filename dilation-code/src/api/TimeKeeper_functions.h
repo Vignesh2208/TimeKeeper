@@ -18,13 +18,10 @@
 #include <sys/select.h>
 #include "utility_functions.h"
 
-#define MAX_PAYLOAD 2000
+#define MAX_PAYLOAD 1000
 #define NETLINK_USER 31
-
-
-
 #define IFNAMESIZ 16
-#define MAX_BUF_SIZ 2000
+#define MAX_BUF_SIZ 1000
 
 
 
