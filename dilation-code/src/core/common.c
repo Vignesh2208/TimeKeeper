@@ -167,7 +167,8 @@ void update_tracer_schedule_queue_elem(tracer * tracer_entry,
 
 #else
 		if (tracee->static_prio <= 120) {
-			base_time_quanta = (140 - tracee->static_prio) * 10000;
+			//base_time_quanta = (140 - tracee->static_prio) * 10000;
+			base_time_quanta = (140 - tracee->static_prio) * 1250; //25us
 		} else {
 			/* 200 us for now for all lower priority process. TODO */
 			base_time_quanta = 200000;
@@ -278,7 +279,7 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry,
 
 #else
 	if (tracee->static_prio <= 120) {
-		base_time_quanta = (140 - tracee->static_prio) * 10000;
+		base_time_quanta = (140 - tracee->static_prio) * 1250; //25us
 	} else {
 		/* 200 us for now for all lower priority process. TODO */
 		base_time_quanta = 200000;
@@ -289,7 +290,8 @@ void add_to_tracer_schedule_queue(tracer * tracer_entry,
 	                REF_CPU_SPEED, &rem);
 	base_quanta_n_insns += rem;
 	new_elem->n_insns_share = base_quanta_n_insns;
-	new_elem->n_insns_left = base_quanta_n_insns;
+	//new_elem->n_insns_left = base_quanta_n_insns;
+	new_elem->n_insns_left = 0;
 	new_elem->n_insns_curr_round = 0;
 
 #endif
@@ -595,8 +597,15 @@ void update_all_children_virtual_time(tracer * tracer_entry) {
 
 	s64 dilated_run_time;
 	s64 curr_virtual_time;
+	s32 rem;
 	if (tracer_entry && tracer_entry->tracer_task) {
-		dilated_run_time = tracer_entry->quantum_n_insns;
+		#ifndef __TK_MULTI_CORE_MODE
+		dilated_run_time = div_s64_rem(REF_CPU_SPEED * tracer_entry->quantum_n_insns,
+		                               tracer_entry->dilation_factor, &rem);
+		dilated_run_time += rem;
+		#else
+		dilated_run_time = tracer_entry->freeze_quantum;
+		#endif
 
 		if (tracer_entry->spinner_task)
 			tracer_entry->spinner_task->freeze_time =
@@ -605,7 +614,7 @@ void update_all_children_virtual_time(tracer * tracer_entry) {
 		curr_virtual_time =
 		    tracer_entry->round_start_virt_time  + dilated_run_time;
 		set_children_time(tracer_entry, tracer_entry->tracer_task,
-		                  curr_virtual_time);
+		                  curr_virtual_time, 0);
 	}
 
 }
@@ -644,11 +653,13 @@ void update_all_tracers_virtual_time(int cpuID) {
 			}
 
 		}
+		#ifndef __TK_MULTI_CORE_MODE
 
 		if (experiment_type == EXP_CBE) {
 
 			if (cpuID == 0 && updated == 0) {
 				expected_time = expected_time + curr_tracer->freeze_quantum;
+				init_task.freeze_time = expected_time;
 				updated = 1;
 
 			}
@@ -662,7 +673,10 @@ void update_all_tracers_virtual_time(int cpuID) {
 
 			curr_tracer->round_start_virt_time =
 			    curr_tracer->round_start_virt_time + advanced_time;
+			curr_tracer->tracked_virtual_time = expected_time;
 
+			
+			/*
 			if (cpuID == 0) {
 				init_task.freeze_time = curr_tracer->round_start_virt_time;
 			} else if (
@@ -713,11 +727,12 @@ void update_all_tracers_virtual_time(int cpuID) {
 				        REF_CPU_SPEED, &rem);
 				quantum_n_insns = quantum_n_insns + rem;
 				curr_tracer->quantum_n_insns = quantum_n_insns;
-			}
+			}*/
 
 		} else {
 			curr_tracer->round_start_virt_time =
 			    curr_tracer->round_start_virt_time + curr_tracer->freeze_quantum;
+			curr_tracer->tracked_virtual_time = curr_tracer->round_start_virt_time;
 
 			if (cpuID == 0) {
 				init_task.freeze_time = curr_tracer->round_start_virt_time;
@@ -726,6 +741,17 @@ void update_all_tracers_virtual_time(int cpuID) {
 				init_task.freeze_time = curr_tracer->round_start_virt_time;
 			}
 		}
+		#else
+		if (cpuID == 0 && updated == 0) {
+			expected_time = expected_time + curr_tracer->freeze_quantum;
+			updated = 1;
+
+		}
+		curr_tracer->round_start_virt_time = expected_time;
+		curr_tracer->round_start_virt_time = expected_time;
+		if (cpuID == 0)
+			init_task.freeze_time = expected_time;
+		#endif
 		put_tracer_struct_write(curr_tracer);
 		head = head->next;
 	}
@@ -1046,25 +1072,38 @@ void wait_k_set(poll_table *wait, unsigned long in, unsigned long out,
 }
 
 
-int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk) {
+int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk,
+			struct poll_wqueues * table) {
 	ktime_t expire, *to = NULL;
-	struct poll_wqueues table;
 	poll_table *wait;
 	int retval, i, timed_out = 0;
 	unsigned long slack = 0;
 	unsigned int busy_flag = 0;
 	unsigned long busy_end = 0;
 
+	/*
 	rcu_read_lock();
 	retval = max_sel_fd(n, fds, tsk);
 	rcu_read_unlock();
 
-	if (retval < 0)
+	
+	*/
+
+	retval = n;
+	
+	if (retval < 0) {
+		PDEBUG_E("Max Sel FD error. Pid: %d\n", current->pid);
 		return retval;
+
+	}
+	if (retval != n ) {
+		PDEBUG_E("retval: %d, n: %d\n",retval, n);
+	}
+
 	n = retval;
 
-	poll_initwait(&table);
-	wait = &table.pt;
+	
+	wait = &table->pt;
 	retval = 0;
 
 	unsigned long *rinp, *routp, *rexp, *inp, *outp, *exp;
@@ -1098,7 +1137,7 @@ int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk) {
 					           bit, busy_flag);
 					mask = (*f_op->poll)(f.file, wait);
 				}
-				//fdput(f);
+				fdput(f);
 				if ((mask & POLLIN_SET) && (in & bit)) {
 					res_in |= bit;
 					retval++;
@@ -1135,9 +1174,8 @@ int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk) {
 	}
 	wait->_qproc = NULL;
 
-	if (table.error) {
-		retval = table.error;
+	if (table->error) {
+		retval = table->error;
 	}
-	poll_freewait(&table);
 	return retval;
 }

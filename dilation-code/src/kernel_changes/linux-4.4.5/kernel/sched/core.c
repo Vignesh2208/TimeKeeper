@@ -1843,7 +1843,9 @@ static int
 try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags) {
 	unsigned long flags;
 	int cpu, success = 0;
-
+	
+	if (p)
+	clear_bit(PTRACE_BREAK_WAITPID_FLAG, &p->ptrace_mflags);
 	/*
 	 * If we are going to wake up a thread waiting for CONDITION we
 	 * need to ensure that CONDITION=1 done by the caller can not be
@@ -1936,6 +1938,10 @@ static void try_to_wake_up_local(struct task_struct *p) {
 	if (WARN_ON_ONCE(rq != this_rq()) ||
 	        WARN_ON_ONCE(p == current))
 		return;
+
+	
+	if (p)
+        clear_bit(PTRACE_BREAK_WAITPID_FLAG, &p->ptrace_mflags);
 
 	lockdep_assert_held(&rq->lock);
 
@@ -3017,7 +3023,8 @@ static void __sched notrace __schedule(bool preempt) {
 	} else {
 		if (prev->ptrace) { // if prev is being ptraced ...
 			if (!preempt && !test_thread_flag(TIF_NEED_RESCHED)
-			        && test_bit(PTRACE_ENTER_SYSCALL_FLAG, &prev->ptrace_mflags)) {
+			        && test_bit(PTRACE_ENTER_SYSCALL_FLAG, &prev->ptrace_mflags)
+				&& !test_bit(PTRACE_BREAK_WAITPID_FLAG, &prev->ptrace_mflags)) {
 				//Entered a blocking schedule() call explicity made inside a syscall
 				prev->ptrace_msteps = 1;
 				prev->n_ints = 0;

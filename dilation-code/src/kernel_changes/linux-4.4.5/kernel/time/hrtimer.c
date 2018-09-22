@@ -81,6 +81,7 @@ int dilated_hrtimer_forward(struct hrtimer_dilated *timer, ktime_t interval) {
 		return -1;
 
 	timer->_softexpires.tv64 = timer->_softexpires.tv64 + interval.tv64;
+	timer->node.expires.tv64 = timer->_softexpires.tv64;
 	return 1;
 }
 EXPORT_SYMBOL_GPL(dilated_hrtimer_forward);
@@ -231,6 +232,7 @@ void dilated_hrtimer_start_range_ns(struct hrtimer_dilated *timer,
 	}
 
 	timer->_softexpires.tv64 = expiry_time.tv64;
+	timer->node.expires.tv64 = timer->_softexpires.tv64;
 	leftmost = enqueue_dilated_hrtimer(timer, base);
 	if (!leftmost) {
 		trace_printk("HRTIMER DILATED enqueue error\n");

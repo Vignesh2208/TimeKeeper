@@ -395,14 +395,15 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch) {
 
 
 		struct task_struct *ts = get_task_struct_from_qdisc(sch);
+		
 
-		if (ts != NULL) {
+		if (ts != NULL && q->jitter != 0) {
 			now = PSCHED_NS2TICKS(get_current_dilated_time(ts));
 		} else {
 			now = psched_get_time();
 		}
 
-		if (q->rate) {
+		if (q->rate && ts == NULL) { //(TODO) rate limiting is not supported under TimeKeeper
 
 			struct sk_buff *last;
 
@@ -418,20 +419,19 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch) {
 				 */
 				delay -= netem_skb_cb(last)->time_to_send - now;
 				delay = max_t(psched_tdiff_t, 0, delay);
-				if (delay) {
-					// this check is useful if the last packet does not
-					//have time_to_send set in VT. In that case delay will be 0
-					now = netem_skb_cb(last)->time_to_send;
-				}
+				now = netem_skb_cb(last)->time_to_send;
 			}
 
 			delay += packet_len_2_sched_time(qdisc_pkt_len(skb), q);
-			printk(KERN_INFO "Netem: Possibly updating delay. New delay = %lu\n", delay);
 		}
 
 
-		if (ts != NULL) {
+		if (ts != NULL && q->jitter != 0) {
 			cb->tstamp_save = ns_to_ktime(get_current_dilated_time(ts));
+		} else if (ts != NULL && q->jitter == 0) {
+			// store virtual time_to_send here
+			cb->tstamp_save = ns_to_ktime(get_current_dilated_time(ts)
+							 + PSCHED_TICKS2NS(delay));
 		} else {
 			cb->tstamp_save = skb->tstamp;
 		}
@@ -517,16 +517,27 @@ deliver:
 		skb = netem_rb_to_skb(p);
 
 		struct task_struct *ts = get_task_struct_from_qdisc(sch);
+		
 		if (ts == NULL) {
 
 			time_to_send = netem_skb_cb(skb)->time_to_send;
 			curr_time = psched_get_time();
 		} else {
-			time_to_send = netem_skb_cb(skb)->time_to_send;
 			curr_time = PSCHED_NS2TICKS(get_current_dilated_time(ts));
+	
+			if (q->jitter == 0 &&
+				netem_skb_cb(skb)->tstamp_save.tv64 != 0) {
+				time_to_send = PSCHED_NS2TICKS(
+							netem_skb_cb(skb)->tstamp_save.tv64);
+				netem_skb_cb(skb)->tstamp_save.tv64 = 0;
+				netem_skb_cb(skb)->time_to_send = time_to_send;
+			} else {
+				time_to_send = netem_skb_cb(skb)->time_to_send;
+			}
+			
 		}
 
-		if (time_to_send <= curr_time) {
+		if (time_to_send <= curr_time + 1) {
 
 			rb_erase(p, &q->t_root);
 
@@ -534,15 +545,23 @@ deliver:
 			qdisc_qstats_backlog_dec(sch, skb);
 			skb->next = NULL;
 			skb->prev = NULL;
+
+			if (netem_skb_cb(skb)->tstamp_save.tv64 == 0 
+				&& q->jitter == 0 && ts != NULL) {
+				netem_skb_cb(skb)->tstamp_save.tv64 = PSCHED_TICKS2NS(
+							time_to_send - q->latency);
+			}
 			skb->tstamp = netem_skb_cb(skb)->tstamp_save;
+			if (ts != NULL)
+			printk(KERN_INFO "Netem dequeueing: %llu\n", get_current_dilated_time(ts));
 
 #ifdef CONFIG_NET_CLS_ACT
 			/*
 			 * If it's at ingress let's pretend the delay is
 			 * from the network (tstamp will be updated).
 			 */
-			if (G_TC_FROM(skb->tc_verd) & AT_INGRESS)
-				skb->tstamp.tv64 = 0;
+			//if (G_TC_FROM(skb->tc_verd) & AT_INGRESS)
+			//	skb->tstamp.tv64 = 0;
 #endif
 
 			if (q->qdisc) {

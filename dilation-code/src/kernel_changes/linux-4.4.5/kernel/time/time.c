@@ -65,14 +65,7 @@ SYSCALL_DEFINE1(time, time_t __user *, tloc) {
 	struct timeval ktv;
 	do_gettimeofday(&ktv);
 	if (current->virt_start_time != 0) {
-		struct task_struct* task;
-		task = current;
-		if (current->group_leader != current) { //use virtual time of the leader thread
-			task = current->group_leader;
-		}
-		s64 now = timeval_to_ns(&ktv);
-		now = task->freeze_time;
-
+		s64 now = current->freeze_time;
 		struct timespec tmp = ns_to_timespec(now);
 		if (tloc) {
 			if (put_user(tmp.tv_sec, tloc))
@@ -136,11 +129,7 @@ SYSCALL_DEFINE3(gettimepid, pid_t, pid, struct timeval __user *, tv,
 			return -EFAULT;
 		}
 		if (task->virt_start_time != 0) {
-			if (task->group_leader != task) { //use virtual time of the leader thread
-				task = task->group_leader;
-			}
-			s64 now = timeval_to_ns(&ktv);
-			now = task->freeze_time;
+			s64 now = task->freeze_time;
 			ktv = ns_to_timeval(now);
 		}
 		if (copy_to_user(tv, &ktv, sizeof(ktv)))
@@ -160,14 +149,7 @@ SYSCALL_DEFINE2(gettimeofday, struct timeval __user *, tv,
 		struct timeval ktv;
 		do_gettimeofday(&ktv);
 		if (current->virt_start_time != 0) {
-			struct task_struct* task;
-			task = current;
-			if (current->group_leader != current) { 
-				//use virtual time of the leader thread
-				task = current->group_leader;
-			}
-			s64 now = timeval_to_ns(&ktv);
-			now = task->freeze_time;
+			s64 now = current->freeze_time;
 			ktv = ns_to_timeval(now);
 		}
 		if (copy_to_user(tv, &ktv, sizeof(ktv)))

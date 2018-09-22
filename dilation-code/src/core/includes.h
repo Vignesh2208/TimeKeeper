@@ -29,6 +29,7 @@
 #include <linux/errno.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
+#include <linux/sched.h>
 #include <linux/spinlock_types.h>
 #include <linux/hashtable.h>
 #include <linux/poll.h>
@@ -48,11 +49,14 @@
 
 #define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
 #define TK_IO_WRITE_RESULTS _IOW(TK_IOC_MAGIC,  2, int)
+#define TK_IO_RESUME_BLOCKED_SYSCALLS _IOW(TK_IOC_MAGIC,  3, int)
+
+//#define __TK_MULTI_CORE_MODE
 
 /* Define this macro to enable debug kernel logging in INFO mode*/
 //#define TIMEKEEPER_DEBUG_VERBOSE
 //#define TIMEKEEPER_DEBUG_INFO
-//#define IGNORE_BLOCKED_PROCESS_SCHED_MODE
+#define IGNORE_BLOCKED_PROCESS_SCHED_MODE
 
 /* Define this macro to enable debug kernel logging in VERBOSE mode*/
 //#define TIMEKEEPER_DEBUG_VERBOSE

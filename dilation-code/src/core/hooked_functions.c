@@ -51,7 +51,8 @@ extern struct mutex exp_lock;
 
 extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list,
                             struct poll_wqueues *wait, struct task_struct * tsk);
-extern int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk);
+extern int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk, struct poll_wqueues*  table);
+extern int max_sel_fd(unsigned long n, fd_set_bits *fds, struct task_struct * tsk);
 
 extern spinlock_t syscall_lookup_lock;
 extern tracer * get_tracer_for_task(struct task_struct * aTask);
@@ -64,14 +65,7 @@ s64 get_dilated_time(struct task_struct * task) {
 	s64 now = timeval_to_ns(&tv);
 
 	if (task->virt_start_time != 0) {
-
-		/* use virtual time of the leader thread */
-		if (task->group_leader != task) {
-			task = task->group_leader;
-		}
-
 		return task->freeze_time;
-
 	}
 
 	return now;
@@ -123,6 +117,7 @@ sys_clock_nanosleep_new(const clockid_t which_clock,
 
 
 		init_waitqueue_head(&sleep_helper->w_queue);
+		sleep_helper->wakeup_time = wakeup_time;
 		atomic_set(&sleep_helper->done, 0);
 		hmap_put_abs(&sleep_process_lookup, current->pid, sleep_helper);
 		curr_tracer = get_tracer_for_task(current);
@@ -148,12 +143,13 @@ sys_clock_nanosleep_new(const clockid_t which_clock,
 		get_tracer_struct_read(curr_tracer);
 		if (curr_tracer && difference < curr_tracer->freeze_quantum) {
 			put_tracer_struct_read(curr_tracer);
-			goto skip;
+			cpu = curr_tracer->cpu_assignment - 2;
+			//goto skip;
 		} else {
 			cpu = curr_tracer->cpu_assignment - 2;
 			put_tracer_struct_read(curr_tracer);
 		}
-		PDEBUG_I("Sys Nanosleep: PID : %d, Sleep Secs: %d, "
+		PDEBUG_E("Sys Nanosleep: PID : %d, Sleep Secs: %d, "
 		         "New wake up time : %lld\n", current->pid, tu.tv_sec,
 		         wakeup_time);
 
@@ -236,6 +232,7 @@ asmlinkage int sys_clock_gettime_new(const clockid_t which_clock,
 
 	if (experiment_stopped == RUNNING && current->virt_start_time != NOTSET) {
 		now = get_dilated_time(current);
+		
 		struct timespec tempStruct = ns_to_timespec(now);
 		if (copy_to_user(tp, &tempStruct, sizeof(tempStruct)))
 			return -EFAULT;
@@ -297,12 +294,21 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp,
 			return -EFAULT;
 		}
 
-
 		atomic_inc(&n_active_syscalls);
 		do_gettimeofday(&ktv);
 		now = get_dilated_time(current);
 		init_waitqueue_head(&sleep_helper->w_queue);
+
+
+		s64 wakeup_time = now + ((tu.tv_sec * 1000000000) + tu.tv_nsec);
+
+		if (wakeup_time > now)
+			difference = wakeup_time - now;
+		else
+			difference = 0;
+		
 		atomic_set(&sleep_helper->done, 0);
+		sleep_helper->wakeup_time = wakeup_time;
 		hmap_put_abs(&sleep_process_lookup, current->pid, sleep_helper);
 
 		curr_tracer = get_tracer_for_task(current);
@@ -318,18 +324,12 @@ asmlinkage long sys_sleep_new(struct timespec __user *rqtp,
 		}
 
 
-		s64 wakeup_time = now + ((tu.tv_sec * 1000000000) + tu.tv_nsec);
-
-		if (wakeup_time > now)
-			difference = wakeup_time - now;
-		else
-			difference = 0;
-
-
+		
 		get_tracer_struct_read(curr_tracer);
 		if (curr_tracer && difference < curr_tracer->freeze_quantum) {
 			put_tracer_struct_read(curr_tracer);
-			goto skip_sleep;
+			cpu = curr_tracer->cpu_assignment - 2;
+			//goto skip_sleep;
 		} else {
 			cpu = curr_tracer->cpu_assignment - 2;
 			put_tracer_struct_read(curr_tracer);
@@ -364,7 +364,10 @@ skip_sleep:
 
 
 		hmap_remove_abs(&sleep_process_lookup, current->pid);
-		err = now - wakeup_time;
+		if(now > wakeup_time)
+			err = now - wakeup_time;
+		else
+			err = wakeup_time - now;
 		PDEBUG_V("Sys Sleep: Resumed Sleep Process Expiry %d. "
 		         "Resume time = %llu. Overshoot error = %llu\n",
 		         current->pid, now, err );
@@ -373,6 +376,8 @@ skip_sleep:
 		wake_up_interruptible(&expstop_call_proc_wqueue);
 
 		rmt = ktime_to_timespec(rem);
+		if (copy_to_user(rmtp, &rmt, sizeof(*rmtp)))
+			return -EFAULT;
 		return 0;
 
 
@@ -412,6 +417,8 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 	struct select_helper_struct * select_helper = &helper;
 	tracer * curr_tracer;
 	int cpu;
+	int n_wakeups = 0;
+	struct poll_wqueues table;
 
 	current_task = current;
 
@@ -488,9 +495,9 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		curr_tracer = get_tracer_for_task(current);
 		get_tracer_struct_read(curr_tracer);
 		if (curr_tracer && time_to_sleep < curr_tracer->freeze_quantum) {
-			put_tracer_struct_read(curr_tracer);
-			hmap_remove_abs(&select_process_lookup, current->pid);
-			goto revert_select;
+			//put_tracer_struct_read(curr_tracer);
+			//hmap_remove_abs(&select_process_lookup, current->pid);
+			//goto revert_select;
 		} else if (!curr_tracer) {
 			current->virt_start_time = 0;
 			current->freeze_time = 0;
@@ -512,22 +519,45 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		now = get_dilated_time(current);
 		s64 wakeup_time;
 
+		rcu_read_lock();
+		select_helper->n = max_sel_fd(select_helper->n, &select_helper->fds, current);
+		rcu_read_unlock();
+
+		poll_initwait(&table);
 
 		wakeup_time = now + ((secs_to_sleep * 1000000000) + nsecs_to_sleep);
+		s64 sleep_time = wakeup_time - now;
 		PDEBUG_V("Sys Select: Select Process Waiting %d. "
 		         "Timeout sec %llu, nsec %llu, wakeup_time = %llu\n",
 		         current->pid, secs_to_sleep, nsecs_to_sleep, wakeup_time);
 
+		ret = do_dialated_select(select_helper->n,
+			                         &select_helper->fds, current, &table);
+		if (ret || select_helper->ret == FINISHED
+		        || atomic_read(&experiment_stopping) == 1
+		        || experiment_stopped != RUNNING) {
+			select_helper->ret = ret;
+			PDEBUG_V("Sys Select: "
+			         "Select Wokeup Exiting: %d, time: %llu\n",
+			         current->pid, now);
+			goto next_select_step;
+		} else if (time_to_sleep <= curr_tracer->freeze_quantum) {
+			select_helper->ret = 0;
+			goto next_select_step;
+		}
 
+	
 		while (now < wakeup_time) {
 			wait_event(select_helper->w_queue,
 			           atomic_read(&select_helper->done) != 0);
 			atomic_set(&select_helper->done, 0);
 			ret = do_dialated_select(select_helper->n,
-			                         &select_helper->fds, current);
+			                         &select_helper->fds, current, &table);
 			now = get_dilated_time(current);
 			if (cpu >= 0)
 				syscall_running[cpu] = 0;
+
+			n_wakeups ++;
 
 			PDEBUG_V("Sys Select: Wokeup. PID: %d, time: %llu\n",
 			         current->pid, now);
@@ -544,17 +574,20 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 
 			wake_up_interruptible(&syscall_control_queue[cpu]);
 		}
-
-		if (now >= wakeup_time)
+		next_select_step:
+		if (now > wakeup_time || ret <= 0)
 			select_helper->ret = 0;
 
 		hmap_remove_abs(&select_process_lookup, current->pid);
+
+		poll_freewait(&table);
 		s64 diff = 0;
 		if (wakeup_time >  now) {
 			diff = wakeup_time - now;
+			if (diff != sleep_time)
 			PDEBUG_V("Sys Select: Resumed Select Process Early %d. "
-			         "Resume time = %llu. Overshoot error = %llu\n",
-			         current->pid, now, diff );
+			         "Resume time = %llu. Overshoot error = %llu, N_wakeups = %d\n",
+			         current->pid, now, diff, n_wakeups);
 
 		} else {
 			diff = now - wakeup_time;
@@ -702,7 +735,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds,
 		now = get_dilated_time(current);
 		s64 wakeup_time;
 		wakeup_time = now + ((secs_to_sleep * 1000000000) + nsecs_to_sleep);
-		PDEBUG_V("Sys Poll: Poll Process Waiting %d. "
+		PDEBUG_E("Sys Poll: Poll Process Waiting %d. "
 		         "Timeout sec %llu, nsec %llu\n", current->pid,
 		         secs_to_sleep, nsecs_to_sleep);
 
@@ -710,9 +743,9 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds,
 		curr_tracer = get_tracer_for_task(current);
 		get_tracer_struct_read(curr_tracer);
 		if (curr_tracer && time_to_sleep < curr_tracer->freeze_quantum) {
-			put_tracer_struct_read(curr_tracer);
-			hmap_remove_abs(&poll_process_lookup, current->pid);
-			goto revert_poll;
+			//put_tracer_struct_read(curr_tracer);
+			//hmap_remove_abs(&poll_process_lookup, current->pid);
+			//goto revert_poll;
 		} else if (!curr_tracer) {
 			current->virt_start_time = 0;
 			current->freeze_time = 0;
@@ -727,6 +760,21 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds,
 		if (curr_tracer)
 			cpu = curr_tracer->cpu_assignment - 2;
 		put_tracer_struct_read(curr_tracer);
+
+		
+		poll_helper->nfds = nfds;
+		err = do_dialated_poll(poll_helper->nfds, poll_helper->head,
+		                       poll_helper->table, current);
+
+		if (err || poll_helper->err == FINISHED
+		        || atomic_read(&experiment_stopping) == 1
+		        || experiment_stopped != RUNNING) {
+			poll_helper->err = err;
+			goto next_poll_step;
+		
+		} else if (time_to_sleep <= curr_tracer->freeze_quantum) {
+			goto next_poll_step;
+		}
 
 		while (now < wakeup_time) {
 			wait_event(poll_helper->w_queue,
@@ -754,7 +802,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds,
 			}
 			wake_up_interruptible(&syscall_control_queue[cpu]);
 		}
-
+		next_poll_step:
 		if (now >= wakeup_time)
 			poll_helper->err = 0;
 

@@ -2135,9 +2135,12 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 	if(skb->dev != NULL && skb->dev->owner_pid != NULL) {
 		result = pid_task(skb->dev->owner_pid, PIDTYPE_PID);
 
-		if(result != NULL) {
+		if(result != NULL && result->virt_start_time != 0 &&
+			(skb->tstamp.tv64 > result->freeze_time || skb->tstamp.tv64 == 0)) {
 			dilated_time = get_current_dilated_time(result);
 			skb->tstamp.tv64 = dilated_time;
+			new_time = ns_to_timespec(skb->tstamp.tv64);
+		} else {
 			new_time = ns_to_timespec(skb->tstamp.tv64);
 		}
 

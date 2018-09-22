@@ -1526,9 +1526,6 @@ s64 curr_dilated_time(void) {
 	task = current;
 	now = timeval_to_ns(&ktv);
 	if (task->virt_start_time != 0) {
-		if (task->group_leader != task) { //use virtual time of the leader thread
-			task = task->group_leader;
-		}
 		return task->freeze_time;
 	}
 	return now;
@@ -1569,6 +1566,8 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 	s64 virt_wakeup_time = curr_virtual_time + timeout * 1000000;
 	if (current->virt_start_time != 0 && timeout > 0) {
 		is_dialated = 1;
+		printk(KERN_INFO "Epoll Dialated: Pid: %d, Timeout: %lu\n",
+				current->pid, timeout);
 	}
 
 	if (timeout > 0) {
@@ -1621,7 +1620,7 @@ fetch_events:
 			if (current->virt_start_time != 0 && timeout > 0) {
 				is_dialated = 1;
 				sleep_time.tv_sec = 0;
-				sleep_time.tv_nsec = 10000000;
+				sleep_time.tv_nsec = 1000000;
 				virt_time_expire = timespec_to_ktime(sleep_time);
 				to = &virt_time_expire;
 				set_current_state(TASK_INTERRUPTIBLE);

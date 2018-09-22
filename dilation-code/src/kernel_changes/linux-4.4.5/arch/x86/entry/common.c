@@ -55,6 +55,9 @@ void syscall_enter_mwork(struct pt_regs *regs) {
 		trace_printk("Setting ENTER FORK FLAG bit for Pid: %d\n", current->pid);
 	}
 	spin_unlock_irqrestore(&current->dialation_lock, flags);
+	if (current->virt_start_time != 0) {
+		current->freeze_time ++;
+	}
 }
 
 

@@ -1462,6 +1462,10 @@ repeat:
 	 * might later match our criteria, even if we are not able to reap
 	 * it yet.
 	 */
+
+	set_current_state(TASK_INTERRUPTIBLE);
+
+
 	wo->notask_error = -ECHILD;
 	if ((wo->wo_type < PIDTYPE_MAX) &&
 	        (!wo->wo_pid || hlist_empty(&wo->wo_pid->tasks[wo->wo_type]))) {
@@ -1495,7 +1499,7 @@ repeat:
 		spin_unlock_irqrestore(&child->dialation_lock, flags);
 	}
 
-	set_current_state(TASK_INTERRUPTIBLE);
+	
 	read_lock(&tasklist_lock);
 	tsk = current;
 	do {

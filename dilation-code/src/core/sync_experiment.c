@@ -440,8 +440,9 @@ int sync_and_freeze(char * write_buffer) {
 		if (curr_tracer) {
 			PDEBUG_A("Sync And Freeze: "
 			         "Setting Virt time for Tracer %d and its children\n", i);
-			set_children_time(curr_tracer, curr_tracer->tracer_task, now);
+			set_children_time(curr_tracer, curr_tracer->tracer_task, now, 0);
 			curr_tracer->round_start_virt_time = now;
+			curr_tracer->tracked_virtual_time = now;
 			if (curr_tracer->spinner_task) {
 				curr_tracer->spinner_task->virt_start_time = now;
 				curr_tracer->spinner_task->freeze_time = now;
@@ -647,7 +648,7 @@ redo:
 				if (curr_tracer) {
 
 					get_tracer_struct_read(curr_tracer);
-					resume_all_syscall_blocked_processes(curr_tracer);
+					resume_all_syscall_blocked_processes(curr_tracer,0);
 					put_tracer_struct_read(curr_tracer);
 				}
 			}
@@ -729,8 +730,8 @@ redo:
 				         "Finished dilated hrtimer run queues\n");
 			}
 
-			set_current_state(TASK_RUNNING);
-			schedule();
+			//set_current_state(TASK_RUNNING);
+			//schedule();
 		}
 
 		if (atomic_read(&progress_n_enabled) == 1
@@ -761,7 +762,7 @@ end:
 Assumes curr tracer read lock is acquired before function call. Must return
 read lock still acquired.
 */
-void resume_all(tracer * curr_tracer, struct task_struct * aTask) {
+void resume_all(tracer * curr_tracer, struct task_struct * aTask, int ignore_sleep) {
 
 	struct list_head *list;
 	struct task_struct *taskRecurse;
@@ -806,7 +807,9 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask) {
 				wait_event_interruptible(syscall_control_queue[cpu],
 				                         syscall_running[cpu] == 0);
 				PDEBUG_V("Select Wakeup Resume. Pid = %d\n", t->pid);
-			} else if ( task_sleep_helper != NULL) {
+			} else if ( task_sleep_helper != NULL && ignore_sleep == 0
+					&& (task_sleep_helper->wakeup_time <= t->freeze_time
+					    || atomic_read(&experiment_stopping) == 1)) {
 
 				/* Sending a Continue signal here will wake all threads up. We dont want that */
 				syscall_running[cpu] = 1;
@@ -831,7 +834,7 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask) {
 			if (taskRecurse->pid == 0) {
 				continue;
 			}
-			resume_all(curr_tracer, taskRecurse);
+			resume_all(curr_tracer, taskRecurse, ignore_sleep);
 		}
 	}
 }
@@ -840,11 +843,35 @@ void resume_all(tracer * curr_tracer, struct task_struct * aTask) {
 Assumes curr tracer read lock is acquired before function call. Must return
 read lock still acquired.
 */
-void resume_all_syscall_blocked_processes(tracer * curr_tracer) {
+void resume_all_syscall_blocked_processes(tracer * curr_tracer, int ignore_sleep) {
 
 	if (curr_tracer)
-		resume_all(curr_tracer, curr_tracer->tracer_task);
+		resume_all(curr_tracer, curr_tracer->tracer_task, ignore_sleep);
 
+}
+
+void resume_all_syscall_blocked_processes_from_tracer(unsigned long arg) {
+	tracer * curr_tracer;
+	curr_tracer = hmap_get_abs(&get_tracer_by_pid, current->pid);
+	if (!curr_tracer) {
+		PDEBUG_I("TK-IO: Tracer : %d, not registered\n", current->pid);
+		return;
+	}
+
+	curr_tracer->tracked_virtual_time += arg;
+	if (curr_tracer->spinner_task) {
+		curr_tracer->spinner_task->freeze_time += arg;
+	}
+	set_children_time(curr_tracer, curr_tracer->tracer_task,
+				curr_tracer->tracked_virtual_time, 0);
+	
+
+	get_tracer_struct_read(curr_tracer);
+	resume_all_syscall_blocked_processes(curr_tracer, 0);
+	put_tracer_struct_read(curr_tracer);
+
+	
+	return;
 }
 
 
@@ -1000,9 +1027,14 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer) {
 		         curr_elem->pid, curr_elem->n_insns_left);
 
 #ifdef IGNORE_BLOCKED_PROCESS_SCHED_MODE
-		struct task_struct * tsk = find_task_by_pid(curr_elem->pid);
-		if (tsk && !test_bit(PTRACE_BREAK_WAITPID_FLAG, &tsk->ptrace_mflags))
+		//struct task_struct * tsk = find_task_by_pid(curr_elem->pid);
+		curr_elem->blocked = 1;
+		if (curr_elem->curr_task && (!test_bit(PTRACE_BREAK_WAITPID_FLAG,
+							&curr_elem->curr_task->ptrace_mflags)
+					     || curr_elem->curr_task->on_rq == 1)) {
+			curr_elem->blocked = 0;
 			no_task_runnable = 0;
+		}
 #else
 		no_task_runnable = 0;
 #endif
@@ -1015,7 +1047,7 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer) {
 		if (curr_elem->n_insns_left > 0) { // there should exist only one element like this
 
 #ifdef IGNORE_BLOCKED_PROCESS_SCHED_MODE
-			if (tsk && !test_bit(PTRACE_BREAK_WAITPID_FLAG, &tsk->ptrace_mflags)) {
+			if (!curr_elem->blocked) {
 #endif
 				if (n_alotted_insns + curr_elem->n_insns_left > total_insns) {
 					curr_elem->n_insns_curr_round =
@@ -1080,9 +1112,8 @@ void update_all_runnable_task_timeslices(tracer * curr_tracer) {
 			if (!curr_elem)
 				return;
 #ifdef IGNORE_BLOCKED_PROCESS_SCHED_MODE
-			struct task_struct * tsk = find_task_by_pid(curr_elem->pid);
-			if (tsk && !test_bit(PTRACE_BREAK_WAITPID_FLAG,
-			                     &tsk->ptrace_mflags)) {
+			//struct task_struct * tsk = find_task_by_pid(curr_elem->pid);
+			if (!curr_elem->blocked) {
 #endif
 				PDEBUG_V("Update all runnable task timeslices: "
 				         "Processing Curr elem Share\n");
@@ -1245,7 +1276,7 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 	put_tracer_struct_write(curr_tracer);
 	get_tracer_struct_read(curr_tracer);
 	clean_up_all_irrelevant_processes(curr_tracer);
-	resume_all_syscall_blocked_processes(curr_tracer);
+	resume_all_syscall_blocked_processes(curr_tracer, 0);
 	update_all_runnable_task_timeslices(curr_tracer);
 	flush_buffer(curr_tracer->run_q_buffer, BUF_MAX_SIZE);
 	print_schedule_list(curr_tracer);
@@ -1261,9 +1292,9 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 		put_tracer_struct_read(curr_tracer);
 		get_tracer_struct_write(curr_tracer);
 		add_task_to_tracer_run_queue(curr_tracer, curr_elem);
-		if (rem_n_insns > 0)
-			update_task_virtual_time(curr_tracer, curr_elem->curr_task,
-			                         rem_n_insns);
+		//if (rem_n_insns > 0)
+		//	update_task_virtual_time(curr_tracer, curr_elem->curr_task,
+		//	                         rem_n_insns);
 		rem_n_insns += curr_elem->n_insns_curr_round;
 		curr_elem->n_insns_curr_round = 0; // reset to zero
 		put_tracer_struct_write(curr_tracer);
@@ -1277,11 +1308,12 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 		signal_tracer_resume(curr_tracer);
 		wait_for_tracer_completion(curr_tracer);
 		get_tracer_struct_read(curr_tracer);
-	}
+	} 
 
 
 	curr_tracer->tracer_task->freeze_time =
 	    curr_tracer->tracer_task->freeze_time + curr_tracer->freeze_quantum;
+	
 
 
 	return SUCCESS;
@@ -1322,7 +1354,7 @@ int unfreeze_proc_exp_multi_core_mode(tracer * curr_tracer) {
 
 
 	clean_up_all_irrelevant_processes(curr_tracer);
-	resume_all_syscall_blocked_processes(curr_tracer);
+	resume_all_syscall_blocked_processes(curr_tracer, 0);
 	update_all_runnable_task_timeslices(curr_tracer);
 	flush_buffer(curr_tracer->run_q_buffer, BUF_MAX_SIZE);
 	print_schedule_list(curr_tracer);

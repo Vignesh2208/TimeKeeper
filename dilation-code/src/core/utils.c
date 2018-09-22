@@ -146,7 +146,8 @@ Set the time variables to be consistent with all children.
 Assumes tracer write lock is acquired prior to call
 ***/
 void set_children_time(tracer * tracer_entry,
-                       struct task_struct *aTask, s64 time) {
+                       struct task_struct *aTask, s64 time,
+		       int increment) {
 	struct list_head *list;
 	struct task_struct *taskRecurse;
 	struct task_struct *me;
@@ -169,9 +170,14 @@ void set_children_time(tracer * tracer_entry,
 	do {
 		if (t->pid != tracer_entry->tracer_task->pid) {
 			if (t->pid != aTask->pid) {
-				t->virt_start_time = time;
-				t->freeze_time = time;
-				t->past_physical_time = 0;
+				if (increment) {
+					t->virt_start_time += time;
+					t->freeze_time += time;
+					//init_task.freeze_time = t->freeze_time;
+				} else {
+					t->virt_start_time = time;
+					t->freeze_time = time;
+				}
 				t->past_virtual_time = 0;
 				if (experiment_stopped != RUNNING)
 					t->wakeup_time = 0;
@@ -185,13 +191,18 @@ void set_children_time(tracer * tracer_entry,
 		if (taskRecurse->pid == 0) {
 			return;
 		}
-		taskRecurse->virt_start_time = time;
-		taskRecurse->freeze_time = time;
-		taskRecurse->past_physical_time = 0;
+		if (increment) {
+			taskRecurse->virt_start_time += time;
+			taskRecurse->freeze_time += time;
+			//init_task.freeze_time = taskRecurse->freeze_time;
+		} else {
+			taskRecurse->virt_start_time = time;
+			taskRecurse->freeze_time = time;
+		}
 		taskRecurse->past_virtual_time = 0;
 		if (experiment_stopped != RUNNING)
 			taskRecurse->wakeup_time = 0;
-		set_children_time(tracer_entry, taskRecurse, time);
+		set_children_time(tracer_entry, taskRecurse, time, increment);
 	}
 }
 
@@ -292,24 +303,24 @@ int is_tracer_task(struct task_struct * aTask) {
 
 void get_tracer_struct_read(tracer* tracer_entry) {
 	if (tracer_entry != NULL) {
-		read_lock(&tracer_entry->tracer_lock);
+		//read_lock(&tracer_entry->tracer_lock);
 	}
 }
 
 void put_tracer_struct_read(tracer* tracer_entry) {
 	if (tracer_entry != NULL) {
-		read_unlock(&tracer_entry->tracer_lock);
+		//read_unlock(&tracer_entry->tracer_lock);
 	}
 }
 
 void get_tracer_struct_write(tracer* tracer_entry) {
 	if (tracer_entry != NULL) {
-		write_lock(&tracer_entry->tracer_lock);
+		//write_lock(&tracer_entry->tracer_lock);
 	}
 }
 
 void put_tracer_struct_write(tracer* tracer_entry) {
 	if (tracer_entry != NULL) {
-		write_unlock(&tracer_entry->tracer_lock);
+		//write_unlock(&tracer_entry->tracer_lock);
 	}
 }

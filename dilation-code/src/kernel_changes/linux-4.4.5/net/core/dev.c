@@ -1736,13 +1736,16 @@ static inline void net_timestamp_set(struct sk_buff *skb)
 	//if(skb->tstamp.tv64 > 0)
 	//	return;
 	//skb->tstamp.tv64 = 0;
-	if (static_key_false(&netstamp_needed)) {
+	/*if (static_key_false(&netstamp_needed)) {
 		if(skb->dev != NULL && skb->dev->owner_pid != NULL) {
 			__set_dilated_timestamp(skb, skb->dev->owner_pid);
 			return;
 		}
 		__net_timestamp(skb);
-	}
+	}*/
+	//skb->tstamp.tv64 = 0;
+	//if (static_key_false(&netstamp_needed))
+	//	__net_timestamp(skb);
 }
 
 #define net_timestamp_check(COND, SKB)			\

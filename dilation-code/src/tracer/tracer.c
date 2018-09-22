@@ -9,10 +9,13 @@
 #include <sched.h>
 #include <getopt.h>
 #include <string.h>
+ #include <sched.h>
 
 #define TK_IOC_MAGIC  'k'
 #define TK_IO_GET_STATS _IOW(TK_IOC_MAGIC,  1, int)
 #define TK_IO_WRITE_RESULTS _IOW(TK_IOC_MAGIC,  2, int)
+#define TK_IO_RESUME_BLOCKED_SYSCALLS _IOW(TK_IOC_MAGIC,  3, int)
+#define PTRACE_SET_DELTA_BUFFER_WINDOW 0x42f4
 #define TRACER_RESULTS 'J'
 
 
@@ -316,7 +319,7 @@ retry:
 			libperf_enablecounter(pd_tmp, LIBPERF_COUNT_HW_INSTRUCTIONS);
 			ret = ptrace(PTRACE_SET_REM_MULTISTEP, pid, 0, (u32*)&n_insns);
 
-			printf("PTRACE RESUMING process After signal. "
+			LOG("PTRACE RESUMING process After signal. "
 			       "ret = %d, error_code = %d. pid = %d\n", ret, errno, pid);
 			fflush(stdout);
 
@@ -331,7 +334,7 @@ retry:
 
 
 		} else if (WIFSTOPPED(status) && WSTOPSIG(status) != SIGCHLD) {
-			printf("Received Exit Signal: %d\n", WSTOPSIG(status));
+			LOG("Received Exit Signal: %d\n", WSTOPSIG(status));
 			if (curr_tracee->vfork_parent != NULL) {
 				curr_tracee->vfork_parent->vfork_stop = 0;
 				curr_tracee->vfork_parent = NULL;
@@ -381,10 +384,14 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 	int singlestepmode = 1;
 	tracee_entry * curr_tracee;
 	struct libperf_data * pd;
+	unsigned long buffer_window_size = 1;
+	u32 status = 0;
 
 	u32 flags = 0;
 
-	if (n_insns <= 500)
+	n_insns = n_insns * (int) rel_cpu_speed;
+
+	if (n_insns <= buffer_window_size)
 		singlestepmode = 1;
 	else
 		singlestepmode = 0;
@@ -401,7 +408,30 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 			//check whether process is still syscall_blocked before
 			//attempting ptrace stepping
 			ret = ptrace(PTRACE_GET_MSTEP_FLAGS, pid, 0, (u32*)&flags);
-			if (test_bit(flags, PTRACE_ENTER_SYSCALL_FLAG) == 0) {
+
+			if (test_bit(flags, PTRACE_ENTER_SYSCALL_FLAG) &&
+				!test_bit(flags, PTRACE_BREAK_WAITPID_FLAG)) {
+				errno = 0;
+				LOG_ESP("Process: %d, Early unblock\n", pid);
+				do {
+					ret = waitpid(pid, &status, WTRACE_DESCENDENTS | __WALL);
+				} while (ret == (pid_t) - 1 && errno == EINTR);
+
+				if ((pid_t)ret != pid) {
+					if (errno == EBREAK_SYSCALL) {
+						#ifdef RETRY_BLOCKED_PROCESSES_MODE
+						return TID_PROCESS_BLOCKED;
+						#else
+						return SUCCESS;
+						#endif
+					} 
+					LOG_ESP("Process: %d, Something wrong happend. Returning\n", pid);
+					return SUCCESS;
+				}
+				
+				curr_tracee->syscall_blocked = 0;
+
+			} else if (test_bit(flags, PTRACE_ENTER_SYSCALL_FLAG) == 0) {
 				curr_tracee->syscall_blocked = 0;
 
 #ifdef DEBUG_VERBOSE
@@ -409,6 +439,11 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 				    pid, ret, errno, flags);
 #endif
 			} else {
+
+				#ifdef RETRY_BLOCKED_PROCESSES_MODE
+				return TID_PROCESS_BLOCKED;
+				#else
+
 				int sleep_duration = (int)n_insns *
 				                     ((float)rel_cpu_speed / 1000.0);
 				LOG("Process: %d is still blocked inside syscall. "
@@ -417,6 +452,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 					usleep(sleep_duration);
 				}
 				return SUCCESS;
+				#endif
 			}
 
 		} else if (curr_tracee->vfork_stop) {
@@ -446,7 +482,10 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 
 		} else {
 			errno = 0;
-			n_insns = n_insns - 500;
+			
+			n_insns = n_insns - buffer_window_size;
+			ptrace(PTRACE_SET_DELTA_BUFFER_WINDOW, pid, 0,
+				       (unsigned long *)&buffer_window_size);
 			// init lib
 			pd = libperf_initialize((int)pid, cpu_assigned);
 			libperf_ioctlrefresh(pd, LIBPERF_COUNT_HW_INSTRUCTIONS,
@@ -504,6 +543,7 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 			// For now, we handle this case like this.
 			ptrace(PTRACE_CONT, pid, 0, 0);
 			usleep(10);
+			LOG_ESP("Process: %d, IGNORED\n", pid);
 			return FAIL;
 
 
@@ -524,6 +564,156 @@ int run_commanded_process(hashmap * tracees, llist * tracee_list, pid_t pid,
 	return FAIL;
 
 
+}
+
+
+int run_processes_in_round(hashmap * tracees, llist * tracee_list,
+			  int * processes_n_insns,
+		  	  int * processes_pids,
+                          int cpu_assigned, float rel_cpu_speed, int fp,
+			  int multi_core_exec_mode) {
+	
+	int per_process_advance = 100000, process_advance_in_round = 0;
+	int atleast_one_runnable = 0;
+	int atleast_one_ran = 0;
+	int status;
+	#ifdef RETRY_BLOCKED_PROCESSES_MODE
+	int blocked_processes_n_insns[MAX_IGNORE_PIDS];
+	int blocked_processes_pids[MAX_IGNORE_PIDS];
+	int n_blocked, n_blocked_insns;
+	#endif
+	int n_ran, is_last;
+	unsigned long arg;
+
+
+	do {
+		int i,j;
+		
+		atleast_one_runnable = 0;
+		atleast_one_ran = 0;
+		n_ran = 0;
+		is_last = 0;
+
+		#ifdef RETRY_BLOCKED_PROCESSES_MODE
+		for (i = 0; i < MAX_IGNORE_PIDS; i++) {
+			
+			blocked_processes_n_insns[i] = 0;
+			blocked_processes_pids[i] = 0;
+			n_blocked = 0;
+			n_blocked_insns = 0;
+		}
+		#endif
+			
+		
+		
+		for(i = 0; i < MAX_IGNORE_PIDS; i++) {
+			if (processes_n_insns[i] > 0 
+			    && processes_n_insns[i] < per_process_advance) {
+				process_advance_in_round = processes_n_insns[i];
+				processes_n_insns[i] = 0;
+			} else if (processes_n_insns[i] > 0) {
+				process_advance_in_round = per_process_advance;
+				processes_n_insns[i] -= per_process_advance;
+				if(processes_n_insns[i] > 0)
+					atleast_one_runnable = 1;
+			} else {
+				process_advance_in_round = 0;
+			}
+
+			if (process_advance_in_round) {
+
+				is_last = 1;
+				if (processes_n_insns[i] > 0 ) 
+					is_last = 0;
+				else {
+					for (j = i+1; j < MAX_IGNORE_PIDS; j++) {
+						if (processes_n_insns[j]) {
+							is_last = 0;
+							break;
+						}
+					}
+				}
+				status =
+					run_commanded_process(tracees, tracee_list, 
+							      processes_pids[i], process_advance_in_round,
+				                              cpu_assigned, rel_cpu_speed);
+				if(status == TID_PROCESS_BLOCKED) {
+					#ifdef RETRY_BLOCKED_PROCESSES_MODE
+					blocked_processes_pids[n_blocked] = processes_pids[i];
+					blocked_processes_n_insns[n_blocked] = process_advance_in_round;
+					n_blocked ++;
+					n_blocked_insns += process_advance_in_round;
+					#else
+
+					usleep(process_advance_in_round/1000);
+					if (!multi_core_exec_mode && !is_last) {
+						ioctl(fp, TK_IO_RESUME_BLOCKED_SYSCALLS,
+							(unsigned long)process_advance_in_round);
+					}
+					#endif
+					
+				} else {
+					n_ran ++;
+					if (!multi_core_exec_mode && !is_last) {
+						ioctl(fp, TK_IO_RESUME_BLOCKED_SYSCALLS,
+							(unsigned long)process_advance_in_round);
+					}
+					
+				}
+				
+				
+			}
+		}
+		
+		#ifdef RETRY_BLOCKED_PROCESSES_MODE
+		if (n_blocked > 0) {
+			
+			usleep(per_process_advance/1000);
+			do {	
+				atleast_one_ran = 0;
+				for(j = 0; blocked_processes_pids[j] != 0; j++) {
+
+					if(blocked_processes_pids[j] != -1) {
+						status = run_commanded_process(
+								tracees, tracee_list,
+								blocked_processes_pids[j],
+								blocked_processes_n_insns[j],
+					              		cpu_assigned, rel_cpu_speed);
+						if(status != TID_PROCESS_BLOCKED) {
+							if (!multi_core_exec_mode && (atleast_one_runnable 
+										|| n_blocked > 1)) {
+								ioctl(fp, TK_IO_RESUME_BLOCKED_SYSCALLS,
+									(unsigned long)blocked_processes_n_insns[j]);
+							}
+							n_blocked_insns -= blocked_processes_n_insns[j];
+							blocked_processes_pids[j] = -1;
+							blocked_processes_n_insns[j] = -1;
+							n_blocked --;
+							atleast_one_ran = 1;
+							
+						}
+						
+					}
+				}
+			} while(atleast_one_ran == 1 && n_blocked > 0);
+			sched_yield();
+			
+
+			if (n_blocked_insns && !multi_core_exec_mode && atleast_one_runnable) {
+				ioctl(fp, TK_IO_RESUME_BLOCKED_SYSCALLS,
+				(unsigned long)n_blocked_insns);
+			}
+			
+		}
+		#endif
+		
+		if (atleast_one_runnable && multi_core_exec_mode)
+			ioctl(fp, TK_IO_RESUME_BLOCKED_SYSCALLS, (unsigned long)per_process_advance);
+		
+
+
+	} while(atleast_one_runnable == 1);
+	
 }
 
 #ifdef TEST
@@ -622,6 +812,20 @@ int main(int argc, char * argv[]) {
 	int option = 0;
 	int read_from_file = 1;
 	int i;
+	int status;
+	int n_total_insns_in_round;
+
+#ifdef PROCESS_ROUND_MODE
+	int processes_n_insns[MAX_IGNORE_PIDS];
+  	int processes_pids[MAX_IGNORE_PIDS];
+#endif
+
+
+#ifdef RETRY_BLOCKED_PROCESSES_MODE
+	int blocked_processes_n_insns[MAX_IGNORE_PIDS];
+	int blocked_processes_pids[MAX_IGNORE_PIDS];
+	int n_blocked;
+#endif
 
 	hmap_init(&tracees, 1000);
 	llist_init(&tracee_list);
@@ -775,9 +979,9 @@ int main(int argc, char * argv[]) {
 #else
 	if (create_spinner) {
 		create_spinner_task(&spinned_pid);
-		cpu_assigned = addToExp_sp(rel_cpu_speed, n_round_insns, spinned_pid);
+		cpu_assigned = addToExp_sp(1.0, n_round_insns, spinned_pid);
 	} else
-		cpu_assigned = addToExp(rel_cpu_speed, n_round_insns);
+		cpu_assigned = addToExp(1.0, n_round_insns);
 
 	if (cpu_assigned <= 0) {
 
@@ -809,11 +1013,26 @@ int main(int argc, char * argv[]) {
 		n_insns = 0;
 		read_ret = -1;
 		cmd_no ++;
+		n_total_insns_in_round = 0;
 
-		for (i = 0; i < MAX_IGNORE_PIDS; i++)
+		for (i = 0; i < MAX_IGNORE_PIDS; i++) {
 			ignored_pids[i] = 0;
+			#ifdef RETRY_BLOCKED_PROCESSES_MODE
+			blocked_processes_n_insns[i] = 0;
+			blocked_processes_pids[i] = 0;
+			n_blocked = 0;
+			#endif
+
+			#ifdef PROCESS_ROUND_MODE
+			processes_pids[i] = 0;
+			processes_n_insns[i] = 0;
+			#endif
+	
+		}
 		i = 0;
 		write_results(fp, nxt_cmd);
+		LOG("TracerID: %d, ##########################################\n",
+			    tracer_id);
 		while (tail_ptr != -1) {
 			tail_ptr = get_next_command_tuple(nxt_cmd, tail_ptr, &new_cmd_pid,
 			                                  &n_insns);
@@ -828,12 +1047,13 @@ int main(int argc, char * argv[]) {
 			if (new_cmd_pid == 0)
 				break;
 
+			
 			LOG("TracerID: %d, Running Child: %d for %d instructions\n",
 			    tracer_id, new_cmd_pid, n_insns);
-			run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns,
+			#ifndef PROCESS_ROUND_MODE
+			status = run_commanded_process(&tracees, &tracee_list, new_cmd_pid, n_insns,
 			                      cpu_assigned, rel_cpu_speed);
-			LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id,
-			    new_cmd_pid, n_insns);
+			
 
 			if (!hmap_get_abs(&tracees, new_cmd_pid)) {
 				if ( i < MAX_IGNORE_PIDS - 1) {
@@ -841,7 +1061,85 @@ int main(int argc, char * argv[]) {
 					i++;
 				}
 			}
+			#ifndef RETRY_BLOCKED_PROCESSES_MODE
+			LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id,
+			    new_cmd_pid, n_insns);
+			#else
+			if(status == TID_PROCESS_BLOCKED && n_blocked < MAX_IGNORE_PIDS - 1) {
+				blocked_processes_pids[n_blocked] = new_cmd_pid;
+				blocked_processes_n_insns[n_blocked] = n_insns;
+				n_blocked ++;
+			} else {
+				LOG("TracerID: %d, Ran Child: %d for %d instructions\n", tracer_id,
+			    new_cmd_pid, n_insns);
+			}
+			#endif
+			#else
+
+			processes_pids[i] = new_cmd_pid;
+			processes_n_insns[i] = (int)n_insns;
+			i++;
+			
+			#endif
+
+			n_total_insns_in_round += (int)n_insns;
 		}
+
+		#ifndef PROCESS_ROUND_MODE
+		#ifdef RETRY_BLOCKED_PROCESSES_MODE
+		if (n_blocked) {
+			
+			int atleast_one_ran = 0;
+			int j;
+			do {	
+				usleep(1000);
+				atleast_one_ran = 0;
+				for(j = 0; blocked_processes_pids[j] != 0; j++) {
+
+					if(blocked_processes_pids[j] != -1) {
+						status = run_commanded_process(
+								&tracees, &tracee_list,
+								blocked_processes_pids[j],
+								blocked_processes_n_insns[j],
+					              		cpu_assigned, rel_cpu_speed);
+						if(status != TID_PROCESS_BLOCKED) {
+							if (!hmap_get_abs(&tracees,
+									 blocked_processes_pids[j])) {
+								if ( i < MAX_IGNORE_PIDS - 1) {
+									ignored_pids[i] = 
+										blocked_processes_pids[j];
+									i++;
+								}
+							}
+							blocked_processes_pids[j] = -1;
+							blocked_processes_n_insns[j] = -1;
+							n_blocked --;
+							atleast_one_ran = 1;		
+						}
+					}
+				}
+			} while(atleast_one_ran == 1 && n_blocked > 0);
+			
+		}
+		#endif
+		#else
+
+		if (n_total_insns_in_round > n_round_insns)
+			run_processes_in_round(&tracees, &tracee_list, processes_n_insns, processes_pids,
+		                  cpu_assigned, rel_cpu_speed, fp, 1);
+		else
+			run_processes_in_round(&tracees, &tracee_list, processes_n_insns, processes_pids,
+		                  cpu_assigned, rel_cpu_speed, fp, 0);
+		int j = 0;
+		for (i=0; processes_pids[i] != 0; i++) {
+			if (!hmap_get_abs(&tracees,
+				 processes_pids[i])) {
+				ignored_pids[j] = processes_pids[i];
+				j++;
+			}
+		}
+
+		#endif
 		flush_buffer(nxt_cmd, MAX_PAYLOAD);
 		sprintf(nxt_cmd, "%c,", TRACER_RESULTS);
 		for (i = 0; ignored_pids[i] != 0; i++) {

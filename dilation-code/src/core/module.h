@@ -52,6 +52,7 @@ typedef struct sched_queue_element {
 	s64 n_insns_left;
 	s64 n_insns_curr_round;
 	int pid;
+	int blocked;
 	struct task_struct * curr_task;
 } lxc_schedule_elem;
 
@@ -65,6 +66,7 @@ typedef struct tracer_struct {
 	char run_q_buffer[BUF_MAX_SIZE];
 	int buf_tail_ptr;
 	u32 cpu_assignment;
+	s64 tracked_virtual_time;
 	// Indicates relative CPU speed wrt to the reference CPU speeds
 	u32 dilation_factor;
 	s64 freeze_quantum;
@@ -104,6 +106,7 @@ struct select_helper_struct {
 struct sleep_helper_struct {
 	pid_t process_pid;
 	wait_queue_head_t w_queue;
+	s64 wakeup_time;
 	atomic_t done;
 	struct hrtimer_dilated timer;
 };
@@ -127,12 +130,13 @@ extern void update_task_virtual_time(tracer * tracer_entry,
                                      struct task_struct * tsk, s64 n_insns_run);
 extern void update_all_children_virtual_time(tracer * tracer_entry);
 extern void update_all_tracers_virtual_time(int cpuID);
+extern void resume_all_syscall_blocked_processes_from_tracer(unsigned long arg);
 extern int handle_tracer_results(char * buffer);
 extern int handle_stop_exp_cmd();
 extern int handle_set_netdevice_owner_cmd(char * write_buffer);
 extern int do_dialated_poll(unsigned int nfds,  struct poll_list *list,
                             struct poll_wqueues *wait, struct task_struct * tsk);
-extern int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk);
+extern int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk, struct poll_wqueues* table);
 int run_usermode_tracer_spin_process(char *path, char **argv,
                                      char **envp, int wait);
 

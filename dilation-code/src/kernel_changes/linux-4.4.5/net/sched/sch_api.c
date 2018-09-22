@@ -586,7 +586,7 @@ s64 get_current_dilated_time(struct task_struct *task) {
 
 	virt_start_time = task->virt_start_time;
 	if (virt_start_time > 0) {
-		return init_task.freeze_time;
+		return task->freeze_time;
 	}
 	return now;
 }
@@ -663,13 +663,22 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer_dilated *timer
 	current_dilated_time = get_current_dilated_time(pkt_owner);
 
 	if (PSCHED_NS2TICKS(current_dilated_time) >= cb->time_to_send) {
+		
 		qdisc_unthrottled(wd->qdisc);
+		if (PSCHED_NS2TICKS(current_dilated_time) > cb->time_to_send) {
+			printk(KERN_INFO "Netem: Sending Late. Diff = %llu\n",
+				PSCHED_NS2TICKS(current_dilated_time) -  cb->time_to_send);
+		}
 		__netif_schedule(qdisc_root(wd->qdisc));
 
 		return HRTIMER_NORESTART;
 	} else {
 		//hrtimer_forward_now(timer,ns_to_ktime(100000));
 		//return HRTIMER_RESTART;
+		
+		qdisc_unthrottled(wd->qdisc);
+		__netif_schedule(qdisc_root(wd->qdisc));
+
 
 		printk(KERN_INFO "Netem: Dilated time less. Sending early. Pid = %d\n", wd->owner_pid);
 		return HRTIMER_NORESTART;

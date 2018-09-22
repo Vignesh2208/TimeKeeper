@@ -51,6 +51,7 @@
 #define TID_OTHER 8
 #define TID_NOT_MONITORED 10
 #define TID_IGNORE_PROCESS 11
+#define TID_PROCESS_BLOCKED 12
 
 #define SUCCESS 1
 #define FAIL -1
@@ -59,6 +60,9 @@
 #define PTRACE_SET_REM_MULTISTEP 0x42f2
 #define PTRACE_GET_MSTEP_FLAGS	0x42f3
 #define WTRACE_DESCENDENTS	0x00100000
+
+//#define RETRY_BLOCKED_PROCESSES_MODE
+#define PROCESS_ROUND_MODE
 
 
 #define PTRACE_ENTER_SYSCALL_FLAG	1
@@ -92,6 +96,7 @@ void printLog(const char *fmt, ...);
 #define LOG(...)    //printLog(__VA_ARGS__)
 #else
 #define LOG(...)	//printLog(__VA_ARGS__)
+#define LOG_ESP(...)	printLog(__VA_ARGS__)
 #endif
 
 

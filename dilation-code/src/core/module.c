@@ -221,6 +221,11 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 
 		return 0;
 
+	case TK_IO_RESUME_BLOCKED_SYSCALLS	:
+		resume_all_syscall_blocked_processes_from_tracer(arg);
+		return 0;
+		
+
 	case TK_IO_WRITE_RESULTS	:	ptr = (char *) arg;
 		if (copy_from_user(write_buffer, ptr, STATUS_MAXSIZE)) {
 			return -EFAULT;
@@ -252,6 +257,8 @@ long tk_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 		if (copy_to_user(ptr, curr_tracer->run_q_buffer,
 		                 curr_tracer->buf_tail_ptr + 1 )) {
 			put_tracer_struct_read(curr_tracer);
+			atomic_dec(&n_waiting_tracers);
+			wake_up_interruptible(&expstop_call_proc_wqueue);
 			PDEBUG_I("Status Read: Tracer : %d, Resuming from wait. "
 			         "Error copying to user buf\n", current->pid);
 			return -EFAULT;
