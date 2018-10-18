@@ -1610,20 +1610,20 @@ fetch_events:
 			set_current_state(TASK_INTERRUPTIBLE);
 			if (ep_events_available(ep) || timed_out)
 				break;
-			if (signal_pending(current) && !is_dialated) {
+			if (signal_pending(current)) {
 				res = -EINTR;
 				break;
 			}
 
 			spin_unlock_irqrestore(&ep->lock, flags);
-
+			/*
 			if (current->virt_start_time != 0 && timeout > 0) {
 				is_dialated = 1;
 				sleep_time.tv_sec = 0;
 				sleep_time.tv_nsec = 1000000;
 				virt_time_expire = timespec_to_ktime(sleep_time);
 				to = &virt_time_expire;
-				set_current_state(TASK_INTERRUPTIBLE);
+				//set_current_state(TASK_INTERRUPTIBLE);
 				if (!schedule_hrtimeout_range(to, 0, HRTIMER_MODE_REL)) {
 					if (curr_dilated_time() > virt_wakeup_time) {
 						timed_out = 1;
@@ -1634,10 +1634,10 @@ fetch_events:
 					}
 				}
 
-			} else {
+			} else {*/
 				if (!schedule_hrtimeout_range(to, slack, HRTIMER_MODE_ABS))
 					timed_out = 1;
-			}
+			//}
 
 			spin_lock_irqsave(&ep->lock, flags);
 		}

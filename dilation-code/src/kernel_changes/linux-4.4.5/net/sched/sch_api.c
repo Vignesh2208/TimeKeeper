@@ -666,8 +666,8 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer_dilated *timer
 		
 		qdisc_unthrottled(wd->qdisc);
 		if (PSCHED_NS2TICKS(current_dilated_time) > cb->time_to_send) {
-			printk(KERN_INFO "Netem: Sending Late. Diff = %llu\n",
-				PSCHED_NS2TICKS(current_dilated_time) -  cb->time_to_send);
+			//printk(KERN_INFO "Netem: Sending Late. Diff = %llu\n",
+			//PSCHED_NS2TICKS(current_dilated_time) -  cb->time_to_send);
 		}
 		__netif_schedule(qdisc_root(wd->qdisc));
 
@@ -680,7 +680,7 @@ static enum hrtimer_restart qdisc_watchdog_dilated(struct hrtimer_dilated *timer
 		__netif_schedule(qdisc_root(wd->qdisc));
 
 
-		printk(KERN_INFO "Netem: Dilated time less. Sending early. Pid = %d\n", wd->owner_pid);
+		//printk(KERN_INFO "Netem: Dilated time less. Sending early. Pid = %d\n", wd->owner_pid);
 		return HRTIMER_NORESTART;
 	}
 }

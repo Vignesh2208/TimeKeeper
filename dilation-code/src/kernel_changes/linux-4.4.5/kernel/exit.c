@@ -1463,7 +1463,7 @@ repeat:
 	 * it yet.
 	 */
 
-	set_current_state(TASK_INTERRUPTIBLE);
+	
 
 
 	wo->notask_error = -ECHILD;
@@ -1479,24 +1479,27 @@ repeat:
 		goto notask;
 	}
 
+	set_current_state(TASK_INTERRUPTIBLE);
+
 	child = get_pid_task(wo->wo_pid, wo->wo_type);
+	/*
 	if (wo->wo_flags & WTRACE_DESCENDENTS ) {
 		if (child == NULL) {
 			trace_printk("Current: %d. Child is NULL Here ..\n", current->pid);
 		}
 	}
-
+	*/
 	
 
 	if (child != NULL) {
-		spin_lock_irqsave(&child->dialation_lock, flags);
-		if (current->pid != init_task.pid && current->virt_start_time == 0 && child != NULL && test_bit(PTRACE_BREAK_WAITPID_FLAG, &child->ptrace_mflags)) {
-			spin_unlock_irqrestore(&child->dialation_lock, flags);
-			trace_printk("Waitpid tracer: %d, breaking on tracee: %d inside syscall\n", current->pid, child->pid);
+		if (current->pid != init_task.pid
+			&& current->virt_start_time == 0
+			&& child != NULL 
+			&& test_bit(PTRACE_BREAK_WAITPID_FLAG, &child->ptrace_mflags)) {
+			//trace_printk("Waitpid tracer: %d, breaking on tracee: %d inside syscall\n", current->pid, child->pid);
 			retval = -EBREAK;
 			goto end;
 		}
-		spin_unlock_irqrestore(&child->dialation_lock, flags);
 	}
 
 	

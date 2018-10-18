@@ -552,8 +552,8 @@ deliver:
 							time_to_send - q->latency);
 			}
 			skb->tstamp = netem_skb_cb(skb)->tstamp_save;
-			if (ts != NULL)
-			printk(KERN_INFO "Netem dequeueing: %llu\n", get_current_dilated_time(ts));
+			//if (ts != NULL)
+			//printk(KERN_INFO "Netem dequeueing: %llu\n", get_current_dilated_time(ts));
 
 #ifdef CONFIG_NET_CLS_ACT
 			/*
