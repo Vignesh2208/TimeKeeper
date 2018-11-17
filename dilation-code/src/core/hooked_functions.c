@@ -418,11 +418,12 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 	tracer * curr_tracer;
 	int cpu;
 	int n_wakeups = 0;
+	int nfds = k;
 	struct poll_wqueues table;
 
 	current_task = current;
 
-	if (is_tracer_task(current) >= 0) {
+	if (is_tracer_task(current) >= 0 || k < 0) {
 		return ref_sys_select(k, inp, outp, exp, tvp);
 	}
 
@@ -433,8 +434,10 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		fdt = files_fdtable(current->files);
 		max_fds = fdt->max_fds;
 		rcu_read_unlock();
-		if (k > max_fds)
-			k = max_fds;
+		if (nfds > max_fds) {
+			PDEBUG_E("Sys Select: Resetting nfds to %d fpr PID %d\n", max_fds, current->pid);
+			nfds = max_fds;
+		}
 
 		PDEBUG_V("Sys Select: Select Process Entered: %d\n", current->pid);
 		atomic_inc(&n_active_syscalls);
@@ -449,8 +452,6 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 
 
 		ret = -EINVAL;
-		if (k < 0)
-			goto revert_select;
 
 		select_helper->bits = stack_fds;
 		init_waitqueue_head(&select_helper->w_queue);
@@ -458,8 +459,8 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		select_helper->ret = -EFAULT;
 
 
-		select_helper->n = k;
-		size = FDS_BYTES(k);
+		select_helper->n = nfds;
+		size = FDS_BYTES(nfds);
 		if (size > sizeof(stack_fds) / 6) {
 
 			ret = -ENOMEM;
@@ -476,18 +477,18 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		select_helper->fds.res_out = bits + 4 * size;
 		select_helper->fds.res_ex  = bits + 5 * size;
 
-		if ((ret = get_fd_set(k, inp, select_helper->fds.in)) ||
-		        (ret = get_fd_set(k, outp, select_helper->fds.out)) ||
-		        (ret = get_fd_set(k, exp, select_helper->fds.ex))) {
+		if ((ret = get_fd_set(nfds, inp, select_helper->fds.in)) ||
+		        (ret = get_fd_set(nfds, outp, select_helper->fds.out)) ||
+		        (ret = get_fd_set(nfds, exp, select_helper->fds.ex))) {
 
 			if (select_helper->bits != stack_fds)
 				kfree(select_helper->bits);
 			goto revert_select;
 		}
 
-		zero_fd_set(k, select_helper->fds.res_in);
-		zero_fd_set(k, select_helper->fds.res_out);
-		zero_fd_set(k, select_helper->fds.res_ex);
+		zero_fd_set(nfds, select_helper->fds.res_in);
+		zero_fd_set(nfds, select_helper->fds.res_out);
+		zero_fd_set(nfds, select_helper->fds.res_ex);
 
 		memset(&rtv, 0, sizeof(rtv));
 		copy_to_user(tvp, &rtv, sizeof(rtv));
@@ -532,7 +533,7 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		         current->pid, secs_to_sleep, nsecs_to_sleep, wakeup_time);
 
 		ret = do_dialated_select(select_helper->n,
-			                         &select_helper->fds, current, &table);
+			                 &select_helper->fds, current, &table);
 		if (ret || select_helper->ret == FINISHED
 		        || atomic_read(&experiment_stopping) == 1
 		        || experiment_stopped != RUNNING) {
@@ -600,9 +601,9 @@ asmlinkage int sys_select_new(int k, fd_set __user *inp,
 		if (ret < 0)
 			goto out;
 
-		if (set_fd_set(k, inp, select_helper->fds.res_in) ||
-		        set_fd_set(k, outp, select_helper->fds.res_out) ||
-		        set_fd_set(k, exp, select_helper->fds.res_ex))
+		if (set_fd_set(nfds, inp, select_helper->fds.res_in) ||
+		        set_fd_set(nfds, outp, select_helper->fds.res_out) ||
+		        set_fd_set(nfds, exp, select_helper->fds.res_ex))
 			ret = -EFAULT;
 out:
 
@@ -668,7 +669,7 @@ asmlinkage int sys_poll_new(struct pollfd __user * ufds,
 		time_to_sleep = (secs_to_sleep * 1000000000) + nsecs_to_sleep;
 
 
-		if (nfds > RLIMIT_NOFILE) {
+		if (nfds > rlimit(RLIMIT_NOFILE)) {
 			PDEBUG_E("Sys Poll: Poll Process Invalid");
 			goto revert_poll;
 		}

@@ -56,6 +56,7 @@
 /* Define this macro to enable debug kernel logging in INFO mode*/
 //#define TIMEKEEPER_DEBUG_VERBOSE
 //#define TIMEKEEPER_DEBUG_INFO
+
 #define IGNORE_BLOCKED_PROCESS_SCHED_MODE
 
 /* Define this macro to enable debug kernel logging in VERBOSE mode*/
@@ -74,7 +75,7 @@
 
 
 
-#define BITS_PER_LONG 32
+//#define BITS_PER_LONG 32
 #define POLLIN_SET (POLLRDNORM | POLLRDBAND | POLLIN | POLLHUP | POLLERR)
 #define POLLOUT_SET (POLLWRBAND | POLLWRNORM | POLLOUT | POLLERR)
 #define POLLEX_SET (POLLPRI)
@@ -96,7 +97,7 @@
 #define ENOMEM          12
 #define POLL_STACK_ALLOC      256
 #define SELECT_STACK_ALLOC      256
-#define RLIMIT_NOFILE           5       /* max number of open files */
+#define RLIMIT_NOFILE           7       /* max number of open files */
 
 #define N_STACK_PPS ((POLL_STACK_ALLOC - sizeof(struct poll_list))  / \
                          sizeof(struct pollfd))

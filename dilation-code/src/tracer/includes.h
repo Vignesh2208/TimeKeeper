@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <stdio.h>
+#include <assert.h>
 #include "linkedlist.h"
 #include "hashmap.h"
 #include <sys/socket.h>
@@ -62,7 +63,10 @@
 #define WTRACE_DESCENDENTS	0x00100000
 
 //#define RETRY_BLOCKED_PROCESSES_MODE
-#define PROCESS_ROUND_MODE
+//#define PROCESS_MULTI_CORE_SCHED_MODE
+//#define PROCESS_CFS_SCHED_MODE
+#define PROCESS_RR_SCHED_MODE
+
 
 
 #define PTRACE_ENTER_SYSCALL_FLAG	1
@@ -84,6 +88,11 @@ typedef struct tracee_entry_struct {
 	pid_t pid;
 	int vfork_stop;
 	int syscall_blocked;
+	u32 n_insns_share;
+	int n_insns_left;
+	int n_preempts;
+	int n_sleeps;
+	u32 vrun_time;
 	struct tracee_entry_struct * vfork_parent;
 
 } tracee_entry;
@@ -96,7 +105,7 @@ void printLog(const char *fmt, ...);
 #define LOG(...)    //printLog(__VA_ARGS__)
 #else
 #define LOG(...)	//printLog(__VA_ARGS__)
-#define LOG_ESP(...)	printLog(__VA_ARGS__)
+#define LOG_ESP(...)	//printLog(__VA_ARGS__)
 #endif
 
 

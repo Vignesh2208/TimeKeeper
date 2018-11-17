@@ -37,7 +37,10 @@ ax.set_title("Instruction overshoot error", fontsize=fsize)
 ax.set_xscale('log')
 ax.set_ylim([0,50])
 ax.set_xlim([100,100000000])
+plt.xticks(fontsize=fsize)
+plt.yticks(fontsize=fsize)
 plt.show()
+
 
 fig = plt.figure(dpi=100)
 ax = fig.add_subplot(111)
@@ -45,14 +48,18 @@ ax = fig.add_subplot(111)
 fsize=20
 markersize = 15.0
 
-ax.errorbar(x =n_insns, y = np.array(avg_time_multistepping)/1000.0, yerr=np.array(std_time_multistepping)/1000.0, marker = '^', label = "multi stepping",fmt='o',markersize=markersize)
-ax.errorbar(x =n_insns, y = np.array(avg_time_window)/1000.0, yerr=np.array(std_time_window)/1000.0, marker = 'o', label = "windowed multi stepping",fmt='o',markersize=markersize)
+print np.mean(np.array(avg_time_window) - np.array(avg_time_nowindow)), np.std(np.array(avg_time_window) - np.array(avg_time_nowindow))
+
+#ax.errorbar(x =n_insns, y = np.array(avg_time_multistepping)/1000.0, yerr=np.array(std_time_multistepping)/1000.0, marker = '^', label = "multi stepping",fmt='o',markersize=markersize)
+ax.errorbar(x =n_insns, y = np.array(avg_time_window)/1000.0, yerr=np.array(std_time_window)/1000.0, marker = 'o', label = "INS-SCHED",fmt='o',markersize=markersize)
 ax.errorbar(x =n_insns, y = np.array(avg_time_nowindow)/1000.0, yerr=np.array(std_time_nowindow)/1000.0, marker = '*', label = "baseline", fmt='o', markersize=markersize)
-ax.set_xlabel("Number of progress instructions", fontsize=fsize)
+ax.set_xlabel("Length of Execution Burst (in instructions)", fontsize=fsize)
 ax.set_ylabel("Elapsed Time (ms)", fontsize=fsize)
-ax.set_title("Measure of Overhead", fontsize=fsize)
+#ax.set_title("Measure of Overhead", fontsize=fsize)
 ax.set_xscale('log')
 ax.set_yscale('log')
 ax.legend(ncol=4, loc=9, fontsize=fsize, bbox_to_anchor=(0, 1.02, 1, .102))
 ax.set_xlim([100,100000000])
+plt.xticks(fontsize=fsize)
+plt.yticks(fontsize=fsize)
 plt.show()

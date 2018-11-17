@@ -1174,6 +1174,12 @@ int do_dialated_select(int n, fd_set_bits *fds, struct task_struct * tsk,
 	}
 	wait->_qproc = NULL;
 
+	if (retval) {
+		PDEBUG_V("Select Return: %d, PID: %d\n", retval, current->pid);
+		return retval;
+
+	}
+
 	if (table->error) {
 		retval = table->error;
 	}

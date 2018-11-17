@@ -20,6 +20,37 @@ void llist_init(llist * l) {
 	l->equals = equals;
 }
 
+int llist_prepend(llist *l, void * item) {
+
+	llist_elem * new_elem;
+
+	new_elem = (llist_elem *) malloc(sizeof(llist_elem));
+	if (new_elem == NULL) {
+		return OUT_OF_MEMORY_ERROR;
+	}
+	new_elem->item = item;
+	l->size ++;
+
+	if (l->head == NULL) {
+
+		l->head = new_elem;
+		l->tail = new_elem;
+		l->head->next = NULL;
+		l->head->prev = NULL;
+		l->tail->next = NULL;
+		l->tail->prev = NULL;
+		return SUCCESS;
+	}
+
+
+	
+	new_elem->next = l->head;
+	new_elem->prev  = NULL;
+	l->head = new_elem;
+	return SUCCESS;
+
+}
+
 int llist_append(llist *l, void * item) {
 
 	llist_elem * new_elem;
@@ -134,6 +165,8 @@ void * llist_remove_at(llist * l, int index) {
 					head->next->prev = NULL;
 
 				l->head = head->next;
+				if (l->size == 1)
+					l->tail = l->head;
 				free(head);
 				return result;
 			}
@@ -149,6 +182,9 @@ void * llist_remove_at(llist * l, int index) {
 					l->size = 0;
 				}
 
+				if (l->size == 1)
+					l->head = l->tail;
+
 				free(head);
 				return result;
 			}
@@ -156,18 +192,18 @@ void * llist_remove_at(llist * l, int index) {
 			if (head->prev != NULL)
 				head->prev->next = head->next;
 
-			if (head->next != NULL) {
+			if (head->next != NULL) 
 				head->next->prev = head->prev;
 
-				free(head);
-				return result;
-			}
-			i++;
-			head = head->next;
+			free(head);
+			return result;
+			
+			
 		}
-		return NULL;
-
+		i++;
+		head = head->next;
 	}
+	return NULL;
 }
 
 int llist_size(llist * l) {
@@ -209,7 +245,7 @@ int llist_remove(llist * l, void * item) {
 		elem = head->item;
 		if (l->equals(elem, item) == 0) {
 			llist_remove_at(l, i);
-			free(elem);
+			//free(elem);
 			return SUCCESS;
 		}
 		head = head->next;

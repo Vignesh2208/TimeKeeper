@@ -860,10 +860,13 @@ void resume_all_syscall_blocked_processes_from_tracer(unsigned long arg) {
 
 	curr_tracer->tracked_virtual_time += arg;
 	if (curr_tracer->spinner_task) {
-		curr_tracer->spinner_task->freeze_time += arg;
+		curr_tracer->spinner_task->freeze_time = curr_tracer->tracked_virtual_time;
 	}
 	set_children_time(curr_tracer, curr_tracer->tracer_task,
 				curr_tracer->tracked_virtual_time, 0);
+
+	curr_tracer->tracer_task->freeze_time = curr_tracer->tracked_virtual_time;
+	
 	
 
 	get_tracer_struct_read(curr_tracer);
@@ -1167,10 +1170,14 @@ lxc_schedule_elem * get_next_runnable_task(tracer * curr_tracer) {
 	int n_checked_processes = 0;
 	int n_scheduled_processes = 0;
 
-
 	if (!curr_tracer)
 		return NULL;
 
+	llist* schedule_queue = &curr_tracer->schedule_queue;
+	llist_elem* head = schedule_queue->head;
+	
+
+	/*
 	n_scheduled_processes = schedule_list_size(curr_tracer);
 
 	while (n_checked_processes < n_scheduled_processes) {
@@ -1190,6 +1197,19 @@ lxc_schedule_elem * get_next_runnable_task(tracer * curr_tracer) {
 		if (curr_elem->n_insns_curr_round)
 			return curr_elem;
 	}
+	*/
+	
+	head = schedule_queue->head;
+	while (head != NULL) {
+		curr_elem = (lxc_schedule_elem *)head->item;
+		if (!curr_elem)
+			return NULL;
+
+		if (curr_elem->n_insns_curr_round)
+			return curr_elem;
+		head = head->next;
+	}
+
 	return NULL; // all processes are blocked. nothing to run.
 
 }
@@ -1311,8 +1331,8 @@ int unfreeze_proc_exp_single_core_mode(tracer * curr_tracer) {
 	} 
 
 
-	curr_tracer->tracer_task->freeze_time =
-	    curr_tracer->tracer_task->freeze_time + curr_tracer->freeze_quantum;
+	//curr_tracer->tracer_task->freeze_time =
+	//    curr_tracer->tracer_task->freeze_time + curr_tracer->freeze_quantum;
 	
 
 

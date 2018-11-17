@@ -41,13 +41,13 @@ void print_tracee_list(llist * tracee_list) {
 
 	llist_elem * head = tracee_list->head;
 	tracee_entry * tracee;
-	LOG("Active tracees: ");
+	//LOG("Active tracees: ");
 	while (head != NULL) {
 		tracee = (tracee_entry *) head->item;
-		LOG("%d->", tracee->pid);
+		LOG_ESP("%d: %lu, %d, %d\n", tracee->pid, tracee->vrun_time, tracee->n_preempts, tracee->n_sleeps);
 		head = head->next;
 	}
-	LOG("\n");
+	//LOG("\n");
 }
 
 
