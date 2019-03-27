@@ -1,0 +1,41 @@
+** Scripts for easier automation with LXCs and ns-3 **
+
+Steps to Using:
+
+Install Dependencies: 
+	sudo apt-get install libreadline-dev
+
+Steps to integrate TimeKeeper and ns-3:
+
+1. Run 'make'
+2. Run './lxcStarter <#LXCs> <TDF>':
+        When you run this command, #LXCs will be created with the specified TDF and you will be given a prompt: 'Enter a command'. 
+3. In a new tab, create a ns-3 topology:
+        For a CSMA network:
+                1. Modify global variable in tap-csma-creator.py
+                        PATH_TO_NS3_TAP_SRC should point to the tapBridge source code within ns-3
+                2. Run: 'python tap-csma-creator.py <#LXCs> <simulatorTDF>. This will move the newly created .cc file into the
+                        tapBridge examples source folder in the ns-3 directory.
+                3. In ns-3 base directory: ./waf --run tap-csma-virtual-machine then wait for TimeKeeper integration to complete
+
+        For a Wifi network:
+                1. Modify global variable in tap-wifi-creator.py
+                        PATH_TO_NS3_TAP_SRC should point to the tapBridge source code within ns-3
+                2. Run: 'python tap-wifi-creator.py <#LXCs> <simulatorTDF>. This will move the newly created .cc file into the
+                        tapBridge examples source folder in the ns-3 directory.
+                3. In ns-3 base directory: ./waf --run tap-wifi-virtual-machine then wait for TimeKeeper integration to complete
+4. Navigate to where the lxcStarter process is running, and run 'start'. This will tell TimeKeeper to start the synchronized experiment.
+5. From the lxcStarter process, you can send specific commands to each LXC.
+6. When you are done with the experiment, send 'exit' to the lxcStarter process.
+
+How to send commands to LXCs:
+	'./lxcStarter 2 1' will create 2 LXCs with TDF 1, named lxc-1 and lxc2, with ip addresses 10.0.0.1 and 10.0.0.2 respectively.
+	to make lxc-1 print the current running processes, you would enter: '1 ps -A'. The first number means to send the command to
+	lxc-1, everything after that will be what gets executed on that process. The output will be directed to /tmp/lxc-1.output.
+	Likewise, if you want to see the files in the current directory of lxc-2, you then run '2 ls -l', and the output of the 
+	command will get written to /tmp/lxc-2.output.  
+
+	You can also send the same command to all LXCs at once (if you have thousands running for example) simple do 'all <command>'
+	ie: 'all ifconfig' will perform ifconfig on every LXC, and output it to /tmp/lxc-#.output.
+
+	

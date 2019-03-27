@@ -1,0 +1,24 @@
+TimeKeeper has been tested with Ubuntu 12.04 32-bit and 64-bit with Linux kernel version 3.10.9
+
+Outlined below are basic instructions. See the installation/usage guide found in the documentation directory for additional assistance.
+
+1. Install the kernel modifications:
+	- ./kernel_setup
+		The kernel_setup script will download Linux Kernel version 3.10.9, and store it in /src directory. 
+		Then it will modify the source code with the necessary changes.
+	- Compile the kernel. I have followed the instructions outlined in: http://mitchtech.net/compile-linux-kernel-on-ubuntu-12-04-lts-detailed/.
+
+
+2. Install Core
+	- ./core_setup.sh
+		The core_setup script will install necessary packages to run CORE, the compile and install CORE on your system. 
+		You should not already have CORE installed on the system
+
+
+3. Make and install kernel module
+	- python setup_module.py
+		Run the python script on follow the instructions. It will ask you how many EXP_CPUS you want to contribute to the experiment.
+		Be sure not assign every vCPU on your system to TimeKeeper.		
+	- sudo insmod ./TimeKeeper.ko
+
+From here, TimeKeeper should be installed, loaded into the Linux Kernel, and good to go!

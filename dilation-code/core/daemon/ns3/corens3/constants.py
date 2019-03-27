@@ -1,0 +1,18 @@
+# Constants created by autoconf ./configure script
+COREDPY_VERSION		= "4.7"
+CORE_STATE_DIR		= "/var"
+CORE_CONF_DIR		= "/etc/core"
+CORE_DATA_DIR		= "/usr/local/share/core"
+CORE_LIB_DIR		= "/usr/local/lib/core"
+CORE_SBIN_DIR		= "/usr/local/sbin"
+
+BRCTL_BIN               = "/sbin/brctl"
+IP_BIN                  = "/sbin/ip"
+TC_BIN                  = "/sbin/tc"
+EBTABLES_BIN            = "/sbin/ebtables"
+IFCONFIG_BIN            = "/sbin/ifconfig"
+NGCTL_BIN               = "no/ngctl"
+VIMAGE_BIN              = "no/vimage"
+QUAGGA_STATE_DIR        = "/var/run/quagga"
+MOUNT_BIN               = "/bin/mount"
+UMOUNT_BIN              = "/bin/umount"

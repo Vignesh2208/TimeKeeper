@@ -20,17 +20,6 @@
 
 #define SIG_END 44
 
-int select_dialated(int nfds, fd_set *read_fds, fd_set *write_fds, fd_set *except_fds, struct timeval *timeout){
-
-#ifdef __x86_64
-	return syscall(316,nfds,read_fds,write_fds,except_fds,timeout);
-	
-#endif
-	return syscall(353,nfds,read_fds,write_fds,except_fds,timeout);
-	
-
-}
-
 /*
 The original, unmodified gettimeofday() system call
 */

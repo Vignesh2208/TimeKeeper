@@ -48,9 +48,6 @@ int gettimepid(int pid, struct timeval *tv, struct timezone *tz);
 //Just like gettimeofday() system call, but returns the actual system time
 void gettimeofdayoriginal(struct timeval *tv, struct timezone *tz);
 
-
-int select_dialated(int nfds, fd_set *read_fds, fd_set *write_fds, fd_set *except_fds, struct timeval *timeout);
-
 //Given a frozen process specified by PID, will advance it's virtual time by interval (microseconds)
 int leap(int pid, int interval);
 
