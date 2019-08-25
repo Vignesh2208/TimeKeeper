@@ -1,12 +1,9 @@
 
 ## TimeKeeper-4.0
 ```
-TimeKeeper-4.0 is a work in progress. There are several changes which are planned from the previous version. Most notably, it will use a new technique
-to control advancement of virtual time. Virtual time will be controlled based on the number of instructions executed by a dilated process. 
+TimeKeeper is a linux virtual time system based on kernel signalling techniques. It can control execution order and run time of processes and maintain a separate virtual clock for each process under its control.
 
-TimeKeeper-4.0 is currently under development phase and is expected to be completed by Aug 2018.
-Refer to TODO file for currently tracked bugs.
-```
+A newer virtual time system called Kronos: https://github.com/Vignesh2208/Kronos has been developed which has a much more accurate virtual time advancement mechanism based on instruction counting. As such TimeKeeper is no longer actively maintained.
 
 ```
 Setup Requirements:
