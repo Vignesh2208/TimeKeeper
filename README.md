@@ -1,5 +1,5 @@
 
-## TimeKeeper-4.0
+## TimeKeeper
 ```
 TimeKeeper is a linux virtual time system based on kernel signalling techniques. It can control execution order and run time of processes and maintain a separate virtual clock for each process under its control.
 
